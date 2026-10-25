@@ -52,6 +52,8 @@ lib/
       tools/              # Tool logic (eraser hit-testing, lasso selection & transform)
     settings/             # Tidy strength, slant mode, finger-drawing toggle, debug overlay
   ink/                    # Pure Dart, no Flutter widgets: Stroke, InkPoint, geometry utils
+  document/               # Pure Dart: notebook/page models, paper geometry, undo/redo commands
+  render/                 # Flutter painting shared by screen + PDF export (stroke outlines, paper, text styles)
   beautify/               # Pure Dart: the tidy pipeline (see docs/beautify-spec.md)
   pdf/                    # pdfrx rendering helpers + PdfExport channel wrapper
   storage/                # Repositories, JSON codecs, atomic file writes, autosave
@@ -151,6 +153,25 @@ Target: ink must feel instant at 60–120 Hz.
 - Write on it with all tools; tidy works too, using the "blank paper" mode from the spec.
 - **Export PDF** (menu): makes a new PDF file and lets the user choose where to save/share it. Also allow exporting blank notebooks as PDF.
 
+## Expanded scope (approved by the owner, 2026-10-25)
+
+The owner asked for a "fully fledged" note app and approved these on top of the MVP:
+
+**Editor**
+- **Text boxes & images**: typed text boxes (font, size, colour, bold/italic/underline, alignment, background) that can be moved/resized; insert pictures from the device onto a page. Both are lasso-selectable and exported to PDF.
+- **Shapes & straight lines**: hold the pen still at the end of a stroke to snap it to a line, arrow, rectangle, ellipse/circle or triangle (setting, on by default), plus a shape tool. Shapes are strokes with `shape` set (`raw` keeps the hand-drawn version, so "Restore original" works). Shapes are never tidied.
+- **Pen styles & partial eraser**: ballpoint / fountain / pencil, a custom colour picker, and a pixel (partial) eraser that cuts strokes, besides the whole-stroke eraser.
+- **Page tools & more paper**: page thumbnail grid (jump, reorder, duplicate, insert, delete, change paper), plus dotted, Cornell and music paper, and white / cream / dark paper colours.
+
+**Library**
+- **Folders (nested), tags & favourites**, colored covers, sort by edited / created / title, duplicate, move.
+- **Search** over notebook titles, tags, folder names, typed text and PDF text (not handwriting).
+- **Dark mode** (system / light / dark) and an optional **PIN app lock**.
+
+**Delivery**: public GitHub repo `MalekBaghdadi/NeatInk` with a one-click APK download (GitHub Release) and a GitHub Actions workflow that builds the APK on version tags.
+
+Backup/restore was offered and **not** chosen; it stays in "Later".
+
 ## PDF export (details)
 
 Implement in Kotlin with PdfBox-Android, called from Dart through a `MethodChannel("neatink/pdf_export")`.
@@ -209,6 +230,6 @@ Signing: for now, the default Flutter template signs release builds with the deb
 - Real handwriting-style synthesis (rewriting letters in a nicer style) — needs an on-device model.
 - Arabic / French tidy support.
 - Searching handwriting (on-device recognition).
-- Templates, stickers, images, text boxes, audio recording.
-- Folders/tags, backup to a file, Wi-Fi transfer to a PC.
+- Stickers, audio recording.
+- Backup to a file, Wi-Fi transfer to a PC.
 - Low-latency front-buffer rendering via Android `androidx.graphics` (only if ink latency is a problem).
