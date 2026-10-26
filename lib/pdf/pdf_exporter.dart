@@ -113,6 +113,9 @@ class PdfExporter {
           'index': index,
           'page': page.toMap(),
         }).then((_) => report(index + 1));
+        // A failure while the next page is still being built must not be
+        // reported as unhandled; `await drawing` below still rethrows it.
+        drawing.ignore();
       }
       await drawing;
       cancel?._throwIfCancelled();

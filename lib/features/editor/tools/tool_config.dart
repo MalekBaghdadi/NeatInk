@@ -79,6 +79,10 @@ class ToolConfig {
     this.arrowBarbMinAngleDeg = 12,
     this.arrowBarbMaxAngleDeg = 75,
     this.arrowTipToleranceFraction = 0.4,
+    this.arrowBuildBarbFraction = 0.2,
+    this.arrowBuildMinBarbPt = 8,
+    this.arrowBuildMaxBarbPt = 28,
+    this.arrowBuildBarbAngleDeg = 28,
     // Hold-to-snap.
     this.holdDurationMs = 500,
     this.holdRadiusPt = 3,
@@ -297,6 +301,15 @@ class ToolConfig {
   /// When the head is drawn by going back to the tip, the return must land
   /// within this fraction of the longer barb from the tip.
   final double arrowTipToleranceFraction;
+
+  /// Arrows built by the shape tool: each barb is this fraction of the shaft
+  /// long, clamped to [arrowBuildMinBarbPt, arrowBuildMaxBarbPt]...
+  final double arrowBuildBarbFraction;
+  final double arrowBuildMinBarbPt;
+  final double arrowBuildMaxBarbPt;
+
+  /// ...and makes this angle with the shaft.
+  final double arrowBuildBarbAngleDeg;
 
   // ----------------------------------------------------------------- hold
 

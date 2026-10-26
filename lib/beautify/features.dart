@@ -582,6 +582,7 @@ BaselineFit? fitBaseline(
       if (p.y <= limit) p,
   ];
   if (pts.isEmpty) pts = bottoms;
+  pts = _baselineConsensus(pts, scale, config);
 
   var line = _fit(pts);
   if (line != null && pts.length > 2) {
@@ -605,6 +606,59 @@ BaselineFit? fitBaseline(
   // One extremum (or all at the same x): horizontal through their median.
   final y = median([for (final p in pts) p.y])!;
   return BaselineFit(line: LineFit(0, y), extrema: pts, ownSlope: null);
+}
+
+/// Spec 3a.3 allows RANSAC. The bottoms of letters are not the only
+/// extrema: once a word is tilted, the right ends of flat bars (E, H, the
+/// crossbar of a t) become extrema too, at other heights, and can outvote
+/// the real baseline in a plain least-squares fit. This keeps the largest
+/// set of extrema that lie on one common line: every pair of extrema defines
+/// a candidate line, the line with the most points within a small tolerance
+/// wins (ties: the flatter one, since descender tails and bar ends pair up
+/// into steep lines, then the lower one on the page), and its points are
+/// returned.
+List<Vec2> _baselineConsensus(
+    List<Vec2> pts, double scale, TidyConfig config) {
+  final n = pts.length;
+  if (n < 3 || n > config.baselineMaxRansacPoints) return pts;
+  final tol = math.max(config.baselineInlierTolFactor,
+          config.outlierResidualFloorFactor) *
+      scale;
+  final minDx = config.baselinePairMinDxFactor * scale;
+  final maxSlope = math.tan(degToRad(config.baselineCandidateMaxSkewDeg));
+  List<int>? best;
+  var bestMeanY = 0.0;
+  var bestSlope = 0.0;
+  for (var i = 0; i < n; i++) {
+    for (var j = i + 1; j < n; j++) {
+      final dx = pts[j].x - pts[i].x;
+      if (dx.abs() < minDx) continue;
+      final slope = (pts[j].y - pts[i].y) / dx;
+      if (slope.abs() > maxSlope) continue;
+      final inliers = <int>[];
+      var sumY = 0.0;
+      for (var k = 0; k < n; k++) {
+        final r = pts[k].y - (pts[i].y + slope * (pts[k].x - pts[i].x));
+        if (r.abs() <= tol) {
+          inliers.add(k);
+          sumY += pts[k].y;
+        }
+      }
+      final meanY = sumY / inliers.length;
+      final better = best == null ||
+          inliers.length > best.length ||
+          (inliers.length == best.length &&
+              (slope.abs() < bestSlope - 1e-9 ||
+                  (slope.abs() < bestSlope + 1e-9 && meanY > bestMeanY)));
+      if (better) {
+        best = inliers;
+        bestMeanY = meanY;
+        bestSlope = slope.abs();
+      }
+    }
+  }
+  if (best == null || best.length < 2) return pts;
+  return [for (final k in best) pts[k]];
 }
 
 LineFit? _fit(List<Vec2> pts) =>

@@ -123,6 +123,13 @@ class TidyConfig {
     this.lineGroupFactor = 0.5,
     this.animMs = 180,
     this.slowWordWarnMs = 8,
+    this.unreliableXHeightBlend = 0.5,
+    this.overlapMinBoxPt = 1.0,
+    this.rememberedWordLimit = 400,
+    this.baselineInlierTolFactor = 0.15,
+    this.baselinePairMinDxFactor = 0.5,
+    this.baselineCandidateMaxSkewDeg = 35,
+    this.baselineMaxRansacPoints = 60,
   });
 
   // ---- Step 0: preprocessing -------------------------------------------
@@ -335,4 +342,33 @@ class TidyConfig {
 
   /// Words slower than this should be logged by the caller.
   final int slowWordWarnMs;
+
+  // ---- Additions of the implementation (not in the spec table) ---------
+
+  /// When the x-height came from too few letter tops to be trusted (and is
+  /// not an all-caps word), the size correction is blended by only this
+  /// fraction of the strength, so one odd word is not rescaled by a guess.
+  final double unreliableXHeightBlend;
+
+  /// Thickness floor (pt) for a word box when measuring overlap with another
+  /// word, so a perfectly flat strike-through line still has an area.
+  final double overlapMinBoxPt;
+
+  /// A page remembers at most this many words (oldest forgotten first).
+  final int rememberedWordLimit;
+
+  /// Baseline search: an extremum is an inlier of a candidate line when it is
+  /// within this (× scale hint) of it.
+  final double baselineInlierTolFactor;
+
+  /// Candidate baselines are drawn through pairs of extrema at least this far
+  /// apart horizontally (× scale hint), so near-vertical pairs (the ends of a
+  /// stem, a column of bar ends) never define a baseline.
+  final double baselinePairMinDxFactor;
+
+  /// Candidate baselines steeper than this are ignored.
+  final double baselineCandidateMaxSkewDeg;
+
+  /// Above this many extrema the search falls back to plain least squares.
+  final int baselineMaxRansacPoints;
 }
