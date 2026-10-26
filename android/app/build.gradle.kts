@@ -34,8 +34,19 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // R8 is enabled for release by the Flutter Gradle plugin; these
+            // rules keep PdfBox-Android (PDF export) working after shrinking.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
+}
+
+dependencies {
+    // Vector PDF export (PdfExportPlugin.kt). Apache-2.0, fully offline.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }
 
 kotlin {

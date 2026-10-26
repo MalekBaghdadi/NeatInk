@@ -1,0 +1,235 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../app/app_info.dart';
+import '../debug/pointer_debug_screen.dart';
+import 'app_settings.dart';
+import 'settings_controller.dart';
+import 'widgets/paper_defaults_editor.dart';
+import 'widgets/security_settings.dart';
+import 'widgets/settings_section.dart';
+
+/// Settings: appearance, writing, new-notebook defaults, export, security,
+/// developer tools and about. Every change is saved immediately.
+class SettingsScreen extends ConsumerWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final controller = ref.read(settingsProvider.notifier);
+    void change(AppSettings Function(AppSettings) edit) =>
+        controller.update(edit);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          key: const ValueKey('settings-list'),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          children: [
+            SettingsSection(
+              title: 'Appearance',
+              icon: Icons.palette_outlined,
+              children: [
+                SettingsChoiceTile<AppThemeMode>(
+                  key: const ValueKey('settings-theme'),
+                  title: 'Theme',
+                  value: settings.themeMode,
+                  choices: const [
+                    (AppThemeMode.system, 'System'),
+                    (AppThemeMode.light, 'Light'),
+                    (AppThemeMode.dark, 'Dark'),
+                  ],
+                  onChanged: (v) => change((s) => s.copyWith(themeMode: v)),
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: 'Writing',
+              icon: Icons.edit_outlined,
+              children: [
+                SwitchListTile(
+                  key: const ValueKey('settings-tidy'),
+                  secondary: const Icon(Icons.auto_fix_high_outlined),
+                  title: const Text('Tidy as you write'),
+                  subtitle: const Text(
+                      'About half a second after you finish a word, NeatInk '
+                      'gently straightens it, sets it on the line and evens '
+                      'out its size and spacing. It stays your handwriting.'),
+                  value: settings.tidyEnabled,
+                  onChanged: (v) => change((s) => s.copyWith(tidyEnabled: v)),
+                ),
+                SettingsChoiceTile<TidyStrength>(
+                  key: const ValueKey('settings-tidy-strength'),
+                  title: 'Tidy strength',
+                  subtitle: 'How far words move toward the tidy version.',
+                  enabled: settings.tidyEnabled,
+                  value: settings.tidyStrength,
+                  choices: const [
+                    (TidyStrength.light, 'Light'),
+                    (TidyStrength.medium, 'Medium'),
+                    (TidyStrength.strong, 'Strong'),
+                  ],
+                  onChanged: (v) => change((s) => s.copyWith(tidyStrength: v)),
+                ),
+                SettingsChoiceTile<SlantMode>(
+                  key: const ValueKey('settings-slant'),
+                  title: 'Slant',
+                  subtitle: 'Keep the natural lean of your letters, or '
+                      'stand them upright.',
+                  enabled: settings.tidyEnabled,
+                  value: settings.slantMode,
+                  choices: const [
+                    (SlantMode.keep, 'Keep my slant'),
+                    (SlantMode.upright, 'Upright'),
+                  ],
+                  onChanged: (v) => change((s) => s.copyWith(slantMode: v)),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('settings-shape-snap'),
+                  secondary: const Icon(Icons.category_outlined),
+                  title: const Text('Hold to snap shapes'),
+                  subtitle: const Text(
+                      'Hold the pen still at the end of a stroke to turn it '
+                      'into a straight line, arrow, rectangle, ellipse or '
+                      'triangle.'),
+                  value: settings.shapeSnapEnabled,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(shapeSnapEnabled: v)),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('settings-draw-with-finger'),
+                  secondary: const Icon(Icons.touch_app_outlined),
+                  title: const Text('Draw with finger'),
+                  subtitle: const Text(
+                      'Off: only the pen writes, and fingers scroll and '
+                      'zoom, so a palm resting on the screen never leaves '
+                      'marks (palm rejection). Turn on if your pen is not '
+                      'recognised as a stylus (check with Developer › '
+                      'Pointer test).'),
+                  value: settings.drawWithFinger,
+                  onChanged: (v) => change((s) => s.copyWith(drawWithFinger: v)),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('settings-pen-button-erases'),
+                  secondary: const Icon(Icons.auto_fix_normal_outlined),
+                  title: const Text('Pen button erases'),
+                  subtitle: const Text(
+                      "Erase with the pen's eraser end or side button, if it "
+                      'has one.'),
+                  value: settings.stylusButtonErases,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(stylusButtonErases: v)),
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: 'New notebooks',
+              icon: Icons.note_add_outlined,
+              children: [
+                PaperDefaultsEditor(
+                  key: const ValueKey('settings-default-paper'),
+                  paper: settings.defaultPaper,
+                  onChanged: (p) => change((s) => s.copyWith(defaultPaper: p)),
+                ),
+              ],
+            ),
+            SettingsSection(
+              title: 'Export',
+              icon: Icons.picture_as_pdf_outlined,
+              children: [
+                SwitchListTile(
+                  key: const ValueKey('settings-export-lines'),
+                  secondary: const Icon(Icons.grid_on_outlined),
+                  title: const Text('Draw paper lines in exported PDFs'),
+                  subtitle: const Text(
+                      'Include the lines, grid or dots of your pages. '
+                      'Imported PDF pages are always exported as they are.'),
+                  value: settings.exportPaperLines,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(exportPaperLines: v)),
+                ),
+              ],
+            ),
+            const SecuritySettings(),
+            SettingsSection(
+              title: 'Developer',
+              icon: Icons.developer_mode_outlined,
+              children: [
+                SwitchListTile(
+                  key: const ValueKey('settings-debug-overlay'),
+                  secondary: const Icon(Icons.straighten_outlined),
+                  title: const Text('Tidy debug overlay'),
+                  subtitle: const Text(
+                      'Show the detected baselines, x-height band and slant '
+                      'lines in the editor.'),
+                  value: settings.debugOverlay,
+                  onChanged: (v) => change((s) => s.copyWith(debugOverlay: v)),
+                ),
+                ListTile(
+                  key: const ValueKey('settings-pointer-test'),
+                  leading: const Icon(Icons.gesture_outlined),
+                  title: const Text('Pointer test'),
+                  subtitle: const Text(
+                      'Check that your pen is reported as a stylus, with '
+                      'pressure, tilt and hover.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => PointerDebugScreen.open(context),
+                ),
+              ],
+            ),
+            const _AboutSection(),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AboutSection extends StatelessWidget {
+  const _AboutSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SettingsSection(
+      title: 'About',
+      icon: Icons.info_outline_rounded,
+      children: [
+        ListTile(
+          leading: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.edit_note_rounded,
+                color: scheme.onPrimaryContainer),
+          ),
+          title: const Text(AppInfo.name),
+          subtitle: const Text('Version ${AppInfo.displayVersion}'),
+        ),
+        const ListTile(
+          leading: Icon(Icons.wifi_off_rounded),
+          title: Text(AppInfo.offlineStatement),
+        ),
+        ListTile(
+          key: const ValueKey('settings-licenses'),
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('Open-source licenses'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => showLicensePage(
+            context: context,
+            applicationName: AppInfo.name,
+            applicationVersion: AppInfo.displayVersion,
+            applicationLegalese: AppInfo.legalese,
+          ),
+        ),
+      ],
+    );
+  }
+}

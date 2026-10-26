@@ -187,7 +187,7 @@ Implement in Kotlin with PdfBox-Android, called from Dart through a `MethodChann
 
 Mark them `[x]` here as you finish them. After each milestone, build an APK and list what the owner should test on the tablet.
 
-- [ ] **M0 — Project setup.** In *this* folder (it already holds CLAUDE.md and docs/, so keep them): `flutter create --org com.neatink --project-name neatink --platforms=android .`, add lints (`flutter_lints`, strict analysis options), folder structure, Riverpod, remove `INTERNET` from the release manifest, landscape + portrait. Builds a release APK.
+- [x] **M0 — Project setup.** In *this* folder (it already holds CLAUDE.md and docs/, so keep them): `flutter create --org com.neatink --project-name neatink --platforms=android .`, add lints (`flutter_lints`, strict analysis options), folder structure, Riverpod, remove `INTERNET` from the release manifest, landscape + portrait. Builds a release APK.
 - [ ] **M1 — Ink canvas.** One blank page; stylus drawing with `perfect_freehand`; pressure; pen/finger separation; pan/zoom; a debug screen that shows raw pointer info from the M-Pencil.
 - [ ] **M2 — Notebooks & storage.** Library screen, create/rename/delete, multiple pages, paper types, autosave/load, atomic writes, thumbnails.
 - [ ] **M3 — Tools.** Highlighter, stroke eraser, lasso (move/resize/delete/recolor), colors/widths, undo/redo command stack.
@@ -233,3 +233,92 @@ Signing: for now, the default Flutter template signs release builds with the deb
 - Stickers, audio recording.
 - Backup to a file, Wi-Fi transfer to a PC.
 - Low-latency front-buffer rendering via Android `androidx.graphics` (only if ink latency is a problem).
+
+---
+
+# STATUS & HANDOFF (read this first in a new session)
+
+_Last updated 2026-10-26 by Claude (end of session 1). Keep this section current: update it whenever something here changes._
+
+## Owner decisions so far
+
+- **Scope**: MVP + everything in "Expanded scope" above. Backup/restore was NOT chosen.
+- **Delivery**: public repo `MalekBaghdadi/NeatInk` (keep the name and `com.neatink.neatink`), a GitHub Release with a one-click APK download (README links to `releases/latest/download/...`), and a GitHub Actions workflow that builds the APK on version tags.
+  - The owner's `gh` token has only `gist, read:org, repo` scopes. Before pushing `.github/workflows/*` the owner must run `gh auth refresh -h github.com -s workflow` (it opens a browser). Ask before every push.
+- **How to work**: the main session (Opus) leads: it coordinates, integrates and reviews. Worker agents run on **Sonnet**, **2–3 at a time**. Session 1 ran 7 parallel Opus agents at high effort and hit the account usage limit within ~20 minutes, twice, which cut every agent off mid-work.
+- **Approved**: installing **Visual Studio Build Tools (C++ workload)** so `flutter test` can run, but only if no lighter workaround exists. A Windows admin prompt may appear for the owner.
+- **Signing (proposed, not done yet)**: generate a release keystore outside the repo, add a git-ignored `android/key.properties`, and put the same key in GitHub Actions secrets so local and CI builds can update each other. Tell the owner before uploading the secrets and tell them where the keystore backup is.
+
+## Toolchain on this PC
+
+- **Flutter 3.47.8 / Dart 3.13.7** is a shallow git clone at `C:\dev\flutter`. It is not on PATH, so call `/c/dev/flutter/bin/flutter` (Git Bash) directly. `flutter config` sets the Android SDK to `C:\dev\android-sdk` and the JDK to Temurin 21. `JAVA_HOME` points at JDK 25, so set `JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"` when running `sdkmanager` or Gradle directly.
+- **Android SDK** (`C:\dev\android-sdk`): `cmdline-tools/latest`, `platform-tools`, `platforms;android-36`, `build-tools;36.0.0`.
+- **❌ NDK missing.** Gradle needs **NDK 28.2.13676358**. Its automatic download failed after 2 h on this network ("Android sdkmanager did not install NDK 28.2.13676358"). Install it explicitly. `cmd` splits arguments at `;`, so put the package name in a file. Create `C:\dev\ndk.txt` containing the line `ndk;28.2.13676358`, then run `sdkmanager.bat --sdk_root=C:\dev\android-sdk --package_file=C:\dev\ndk.txt` (with `JAVA_HOME` on JDK 21; run it in the background).
+- **❌ `flutter test` is blocked.** pdfrx pulls in `pdfium_dart`, whose native-assets build hook compiles C for the Windows host and fails with "No compiler configured on host 'windows_x64'". Fix: install VS Build Tools with the C++ workload (approved), unless there is a lighter workaround. The storage agent's 132 tests were run in a stripped-down mirror project (same `lib/ink`, `lib/document` and `lib/storage`, without pdfrx), so they still need to run in the real project once this is fixed. `flutter analyze` works.
+- Git Bash's `tar` can't unpack `.zip` files; use `/c/Windows/System32/tar.exe -xf`. Bash heredocs containing many quotes or backticks break; write files with the Write/Edit tools or a Python script instead.
+- The network is slow (about 0.3–0.7 MB/s in total; parallel connections barely help). Big downloads take tens of minutes, so run them in the background.
+- `C:\dev\wait-ready.sh` and `C:\dev\neatink-ready` were a waiting mechanism for session-1 agents and can be ignored.
+
+## Code state (end of session 1)
+
+Commits: `c72d25b` project brief; `6a7126b` M0 scaffold and shared contracts; then a **WIP checkpoint commit** of everything the agents had written (see `git log`). Nothing has been pushed; no GitHub repo exists yet.
+
+| Area | State |
+|---|---|
+| **Contracts**: `lib/ink/*`, `lib/document/*`, `lib/storage/notebook_repository.dart`, `lib/features/settings/app_settings.dart`, `lib/app/providers.dart`, `lib/render/stroke_outline.dart`, `lib/pdf/pdf_export_request.dart` | Done, analyzer clean. Every other part builds on these, so only make additive changes. |
+| **Storage** `lib/storage/` | **Done.** `FileNotebookRepository`, atomic writes with `.bak`/`.corrupt` copies, search, `AutosaveController` and `NotebookSaver`. 132 tests in `test/storage/` (they passed in the mirror; still to be rerun in the real project). |
+| **Tidy engine** `lib/beautify/` | **Barely started.** Only `features.dart`, `resample.dart`, `stats.dart` and `tidy_config.dart` exist. Missing: `word_segmenter`, `line_context`, `transform`, `tidy_pipeline` and `smoothing`, plus every spec test (`test/beautify/` doesn't exist). |
+| **Tool logic** `lib/features/editor/tools/` | Mostly written: spatial index, eraser, pixel eraser, lasso, selection transform, shapes, hold detector, plus `test/editor_tools/`. Analyzer errors: `ToolConfig` lacks the `arrowBuild*` getters. Unverified, because tests can't run yet. |
+| **PDF** `lib/pdf/` | Dart side written: import, page cache and background, export builder, exporter channel, coordinates. Kotlin: only `PdfCoords.kt` exists. **`PdfExportPlugin.kt` is not written** and isn't registered in `MainActivity`. The PdfBox dependency and `proguard-rules.pro` are in place. `test/pdf/` is missing. Check that `lib/render/text_style.dart` exists. |
+| **App shell, settings, lock, debug** | Written: real `main.dart`, theme, routes, settings screen and controller, PIN lock, pointer debug screen. Tests in `test/app`, `test/settings` and `test/lock`. `routes.dart` fails only because `editor_screen.dart` is missing. |
+| **Library** `lib/features/library/` | Written: 32 files covering the grid, folders, tags, favourites, the new-notebook sheet, PDF import and search. Also `lib/render/paper_painter.dart`, `test/library/` and `test/fakes/in_memory_repository.dart`. Tests not yet run. |
+| **Editor core** `lib/features/editor/` | Mostly written: 32 files covering the controller, viewport, input router, live ink, page painting, toolbar, tool prefs and thumbnails. **`editor_screen.dart` is missing** and `test/editor/` doesn't exist. |
+| **Editor features (wave 2)** | **Not started.** They need wiring into the editor: eraser, pixel eraser, lasso and selection; text boxes and images; shapes (hold-to-snap plus a shape tool); the page navigator grid (reorder, duplicate, insert, delete, change paper); tidy (segmenter glue, 180 ms animation, `ApplyTidy` undo, Restore original, debug overlay); PDF backgrounds in the editor; the export UI (progress, save, share); and search results that jump to the right page. |
+
+`flutter analyze` (2026-10-26) reports 7 issues: 2 come from the missing `editor_screen.dart`, 4 from the missing `ToolConfig.arrowBuild*`, and 1 is an info in `test/library/paper_painter_test.dart`.
+
+### Agreed cross-module names (agents rely on these)
+
+- `FileNotebookRepository(Directory root, {Uuid? uuid, DateTime Function()? clock})`. Use one instance for the whole app.
+- `AutosaveController({required Future<void> Function(DocChange) save, Duration delay})` with `markDirty`, `flushNow` (never throws), `hasPendingChanges`, `errors` and `dispose`.
+- `NotebookSaver(repo).save(doc, dirty)`. Wiring: `doc.addListener(autosave.markDirty)`, then `flushNow()` on pause and before closing.
+- `settingsProvider`: a `NotifierProvider<SettingsController, AppSettings>` with `update(fn)`, in `lib/features/settings/settings_controller.dart`. `clockProvider` lives in `lib/app/providers.dart`.
+- `AppRoutes.openEditor(context, notebookId, {pageIndex})`, `.openSettings`, `.openSearch` and `.openPointerDebug`, in `lib/app/routes.dart`.
+- `LibraryScreen()`, `SearchScreen()`, and `EditorScreen({required notebookId, int? initialPageIndex})` in `lib/features/editor/editor_screen.dart`.
+- `importPdfNotebook(repo, path, {title, folderId})` throws `PdfImportException(message)`.
+- `PaperPainter(Paper, pageWidthPt, pageHeightPt)`, `textStyleFor(TextItem)` in `lib/render/text_style.dart`, and `InMemoryNotebookRepository` in `test/fakes/`.
+- `MethodChannel('neatink/pdf_export')`, which reports `progress {done,total}` back to Dart.
+
+### Rules that kept parallel agents from colliding
+
+- Each agent owns specific folders and edits only those. Only the lead edits `pubspec.yaml` and `analysis_options.yaml`.
+- Agents never run `git commit`, `checkout`, `stash` or `reset`, `flutter create`, or `pub add`. The lead commits.
+- Each agent checks only its own files with `flutter analyze <paths>` and runs only its own tests.
+- Partial work from an agent that was cut off is continued, not rewritten: read what exists first.
+
+## Next steps (in order)
+
+1. Install the NDK (see Toolchain) and get `flutter build apk --debug` building.
+2. Make `flutter test` work in the real project (VS Build Tools C++ is approved), then run every existing test.
+3. Finish the wave-1 areas with Sonnet agents, 2–3 at a time, each continuing the partial work in its own folders:
+   - the tidy engine, built in full and passing every test in the spec's table;
+   - `EditorScreen` and the editor tests;
+   - the tool-logic fixes and tests;
+   - the Kotlin `PdfExportPlugin`, its registration, and `test/pdf`;
+   - shell and library tests passing.
+4. Integration gate: whole-project `flutter analyze` with 0 issues, all tests passing, a debug APK that builds, and the app launching (an emulator is optional; the network is slow).
+5. Wave 2: the editor features listed in the table.
+6. Review pass:
+   - no `INTERNET` permission in the **merged release** manifest (check the built APK with `apkanalyzer manifest permissions`) and no storage permissions;
+   - every dependency's license is allowed;
+   - never-lose-ink paths (raw kept, atomic saves, flush on pause);
+   - performance (lazy pages, cached pictures).
+7. Release:
+   - app icon and version 1.0.0;
+   - signing (see above);
+   - `flutter build apk --release --split-per-abi` plus a universal APK;
+   - a README with a big "Download APK" link;
+   - create the public repo and push (ask first);
+   - a GitHub Release with the APK assets (stable asset name for `releases/latest/download/NeatInk.apk`);
+   - `.github/workflows/release.yml` (needs the `workflow` scope).
+8. Give the owner a "test this on the tablet" checklist covering the M-Pencil (pressure, palm rejection, eraser end), tidy, PDF import and export, autosave after swiping the app away, and the app lock.
