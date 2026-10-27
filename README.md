@@ -1,9 +1,8 @@
 # Mariam's Notes
 
 A handwriting notes app for Android tablets, made for Mariam. Write with a
-stylus, and the app gently tidies each word a moment after you finish it:
-it straightens the line, evens out size and spacing, and keeps it your own
-handwriting.
+stylus, and when you want it neat, the app reads your handwriting and retypes
+it on the lines in a font you choose.
 
 (The project and repository are called NeatInk; the app on the tablet is
 **Mariam's Notes**.)
@@ -12,13 +11,18 @@ handwriting.
 
 **[Download Mariam's Notes (APK)](https://github.com/MalekBaghdadi/NeatInk/releases/latest/download/MariamsNotes.apk)**
 
-1. Open the link on the tablet and download the file.
+1. Open the link on the tablet and download the file (about 43 MB).
 2. Open it. Android asks to allow installs from your browser or Files app; allow it.
 3. Install. Updates install over the old version and keep your notebooks.
 
-Smaller downloads for specific tablets are on the
-[Releases page](https://github.com/MalekBaghdadi/NeatInk/releases/latest)
-(`arm64-v8a` suits almost every modern tablet).
+The link is the 64-bit build, which suits almost every tablet made in the last
+decade. If Android says the app isn't compatible, take
+`MariamsNotes-armeabi-v7a.apk` (32-bit) from the
+[Releases page](https://github.com/MalekBaghdadi/NeatInk/releases/latest).
+`SHA256SUMS.txt` there lets you check that a download is complete.
+
+If the download keeps failing on a slow connection, download the file on a PC
+and copy it to the tablet.
 
 ## What it does
 
