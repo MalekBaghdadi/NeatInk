@@ -16,7 +16,7 @@ class PinLockScreen extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: VerifyPinView(
-          title: 'NeatInk is locked',
+          title: "Mariam's Notes is locked",
           subtitle: 'Enter your PIN to open your notebooks.',
           submitLabel: 'Unlock',
           onVerified: onUnlocked,
@@ -33,9 +33,9 @@ class ForgotPinHelp extends StatefulWidget {
 
   /// What happens when the PIN is forgotten. Also shown in Settings.
   static const String explanation =
-      "A forgotten PIN can't be recovered: NeatInk keeps no copy of it and "
+      "A forgotten PIN can't be recovered: Mariam's Notes keeps no copy of it and "
       'has no account to reset it with. The only way back in is to clear '
-      "NeatInk's data in Android Settings › Apps › NeatInk › Storage, which "
+      "Mariam's Notes' data in Android Settings › Apps › Mariam's Notes › Storage, which "
       'permanently deletes all your notebooks.';
 
   @override

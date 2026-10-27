@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app_info.dart';
 import '../../../document/notebook_meta.dart';
 import '../library_state.dart';
 import 'library_menus.dart';
@@ -102,7 +103,7 @@ class _LibrarySidePanelState extends State<LibrarySidePanel> {
         if (widget.inDrawer)
           Padding(
             padding: const EdgeInsets.fromLTRB(28, 12, 16, 12),
-            child: Text('NeatInk', style: theme.textTheme.titleLarge),
+            child: Text(AppInfo.name, style: theme.textTheme.titleLarge),
           ),
         _NavRow(
           key: const Key('nav-all'),

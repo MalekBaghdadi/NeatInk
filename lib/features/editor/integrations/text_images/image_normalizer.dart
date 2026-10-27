@@ -62,7 +62,7 @@ Future<NormalizedImage> normalizeImage(
       descriptor = await ui.ImageDescriptor.encoded(buffer);
     } catch (_) {
       throw const ImageImportException(
-          "That file isn't a picture NeatInk can open.");
+          "That file isn't a picture Mariam's Notes can open.");
     }
     final rawWidth = descriptor.width, rawHeight = descriptor.height;
     final tooBig = math.max(rawWidth, rawHeight) > maxSide;

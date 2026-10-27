@@ -44,7 +44,7 @@ class StartupErrorApp extends StatelessWidget {
                         Icon(Icons.error_outline_rounded,
                             size: 48, color: scheme.error),
                         const SizedBox(height: 16),
-                        Text("NeatInk couldn't start",
+                        Text("${AppInfo.name} couldn't start",
                             style: theme.textTheme.headlineSmall),
                         const SizedBox(height: 8),
                         Text(

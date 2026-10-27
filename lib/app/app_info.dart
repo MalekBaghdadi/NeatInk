@@ -3,7 +3,7 @@
 /// Keep [version] and [buildNumber] in sync with `version:` in pubspec.yaml
 /// (`1.0.0+1` → version `1.0.0`, build `1`).
 abstract final class AppInfo {
-  static const String name = 'NeatInk';
+  static const String name = "Mariam's Notes";
   static const String version = '1.0.0';
   static const int buildNumber = 1;
 
@@ -17,5 +17,5 @@ abstract final class AppInfo {
 
   static const String legalese =
       'Your notebooks never leave this device. '
-      'NeatInk is built with open-source software; see the licenses below.';
+      "Mariam's Notes is built with open-source software; see the licenses below.";
 }

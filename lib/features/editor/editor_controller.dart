@@ -300,7 +300,7 @@ class EditorController extends ChangeNotifier {
           'disk.';
     }
     if (e is FormatException) {
-      return 'This notebook was saved by a newer version of NeatInk, or its '
+      return "This notebook was saved by a newer version of Mariam's Notes, or its "
           'data is damaged. Nothing was changed on disk.';
     }
     return "The notebook couldn't be opened: $e";

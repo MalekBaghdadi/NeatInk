@@ -84,7 +84,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
     if (!mounted || _warnedAboutSaveError) return;
     _warnedAboutSaveError = true;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text("Your latest changes couldn't be saved. NeatInk will "
+      content: Text("Your latest changes couldn't be saved. Mariam's Notes will "
           'keep trying.'),
     ));
   }

@@ -113,7 +113,7 @@ void main() {
     await storePin(prefs, '2468');
     await pumpApp(tester);
 
-    expect(find.text('NeatInk is locked'), findsOneWidget);
+    expect(find.text("Mariam's Notes is locked"), findsOneWidget);
     expect(keypad, findsOneWidget);
     expect(notes(skipOffstage: false), findsNothing);
     expect(notesCreated, 0);
