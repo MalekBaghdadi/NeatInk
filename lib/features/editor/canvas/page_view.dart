@@ -147,6 +147,7 @@ class EditorPageView extends StatelessWidget {
         layer,
         imageLayer: ext.imageLayer,
         textLayer: ext.textLayer,
+        hiddenStrokeIds: ext.hiddenStrokeIds,
       ),
     );
   }

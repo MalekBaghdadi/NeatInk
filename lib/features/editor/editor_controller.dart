@@ -600,6 +600,9 @@ class EditorController extends ChangeNotifier {
     for (final handler in extensions.toolHandlers.values) {
       handler.commitPending();
     }
+    for (final hook in List.of(extensions.beforeSaveHooks)) {
+      hook();
+    }
     return saveNow();
   }
 

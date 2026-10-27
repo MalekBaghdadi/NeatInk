@@ -260,7 +260,31 @@ _Last updated 2026-10-26 by Claude (end of session 1). Keep this section current
 - The network is slow (about 0.3–0.7 MB/s in total; parallel connections barely help). Big downloads take tens of minutes, so run them in the background.
 - `C:\dev\wait-ready.sh` and `C:\dev\neatink-ready` were a waiting mechanism for session-1 agents and can be ignored.
 
-## Code state (end of session 1)
+## Session 2 progress (2026-10-26)
+
+- **Wave 1 is done and committed as `9d12369`:**
+  - the full tidy engine in `lib/beautify/` (179 tests);
+  - `EditorScreen`;
+  - the Kotlin `PdfExportPlugin`, compiled with kotlinc against the real jars, but not yet through Gradle and never run on a device;
+  - the `ToolConfig` fixes and the paper painter fix.
+- Whole project: `flutter analyze` reports 0 issues and 609 mirror tests pass. **`flutter build apk --debug` works** (the first build took about 23 minutes: Gradle also installed platform 35 and CMake 3.22.1). The Kotlin `PdfExportPlugin` compiles in Gradle.
+- **Wave 2 was started** as six editor integrations, each in `lib/features/editor/integrations/<name>/` with tests in `test/editor/integrations/<name>/`: `erase_select`, `tidy`, `text_images`, `shapes` (which adds `tools/shape_recognizer.dart`, because nothing classified shapes before), `pages` and `pdf`. Each exposes one `<name>Integration`. **The lead registers them in `editorIntegrationsProvider`** (`editor_integrations.dart`); the workers don't.
+- Open notes from wave 1:
+  - Tidy numbers are tuned only on synthetic letters; check them with the debug overlay on the tablet.
+  - PDF export drops the source PDF's bookmarks and form fields, because it rebuilds the file by importing pages.
+  - Text boxes in exported PDFs use Helvetica, Times or Courier.
+
+## Session 3 (2026-10-27): wave 2 finished
+
+- Three wave-2 files had been NUL-corrupted by a cut-off (shapes handler + integration, tidy test); they were deleted and redone. **After any cut-off, scan for NUL bytes** (Grep ` ` with multiline over lib/ and test/).
+- All six integrations exist, are tested in the mirror, and are installed by the real app: `lib/features/editor/default_integrations.dart` lists them and `main.dart` overrides `editorIntegrationsProvider` with it. The provider's own default stays empty on purpose: `pdfIntegration` imports pdfrx, which would stop every editor test from loading in the mirror.
+- Full mirror suite: 739 tests pass (`flutter test --reporter expanded --timeout 30s`, ~20 s). `flutter analyze`: 0 issues. Always pass `--timeout`: a stuck test otherwise hangs the run for 20+ min.
+- Test gotcha: `controller.close()` renders a thumbnail (`picture.toImage`), which hangs under `flutter_tester`; tests call the handlers' `commitPending()` / `beforeSaveHooks` instead.
+- Fixed: image corner-resize could not shrink horizontally (`resizedImageFrame`).
+- Untested by construction (import pdfrx): `integrations/pdf/pdf_background.dart`, `pdf_integration.dart`. Never run on a device: everything in wave 2.
+- Tablet checks flagged by workers: a stylus tap on the page quick-nav pill might also draw ink; PDF page thumbnails in the navigator are white under the ink (no PDF render).
+
+## Code state (end of session 1; superseded by the section above where they differ)
 
 Commits: `c72d25b` project brief; `6a7126b` M0 scaffold and shared contracts; then a **WIP checkpoint commit** of everything the agents had written (see `git log`). Nothing has been pushed; no GitHub repo exists yet.
 

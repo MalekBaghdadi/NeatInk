@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'app/bootstrap.dart';
 import 'app/error_views.dart';
+import 'features/editor/default_integrations.dart';
+import 'features/editor/editor_integrations.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +24,11 @@ Future<void> _start() async {
     await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     final services = await AppServices.load();
     runApp(ProviderScope(
-      overrides: services.overrides,
+      overrides: [
+        ...services.overrides,
+        editorIntegrationsProvider
+            .overrideWithValue(defaultEditorIntegrations),
+      ],
       child: const NeatInkApp(),
     ));
   } catch (error, stack) {

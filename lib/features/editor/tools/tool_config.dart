@@ -87,6 +87,9 @@ class ToolConfig {
     this.holdDurationMs = 500,
     this.holdRadiusPt = 3,
     this.holdMinPathLengthPt = 15,
+    // Shape tool.
+    this.shapeToolSquareSnapFraction = 0.06,
+    this.shapeToolMinDragPt = 4,
   });
 
   /// The values the app ships with.
@@ -321,4 +324,13 @@ class ToolConfig {
 
   /// ...after drawing more than this much ink.
   final double holdMinPathLengthPt;
+
+  // ----------------------------------------------------------- shape tool
+
+  /// A dragged rectangle / ellipse whose width and height differ by less than
+  /// this fraction becomes a square / circle.
+  final double shapeToolSquareSnapFraction;
+
+  /// A shape-tool drag shorter than this draws nothing (an accidental tap).
+  final double shapeToolMinDragPt;
 }

@@ -248,4 +248,13 @@ class EditorExtensions {
 
   /// Overflow menu "Page paper". Disabled when null.
   EditorAction? changePagePaper;
+
+  /// Committed pen / highlighter strokes with these ids are not painted
+  /// (the tidy animation draws them itself meanwhile). After changing it,
+  /// call `EditorController.invalidatePageRender(pageId)`.
+  final Set<String> hiddenStrokeIds = {};
+
+  /// Run by `EditorController.close()` after the tools committed their
+  /// pending gestures and before saving (tidy commits its pending word).
+  final List<VoidCallback> beforeSaveHooks = [];
 }

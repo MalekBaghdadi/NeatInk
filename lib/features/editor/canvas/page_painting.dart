@@ -44,6 +44,7 @@ void paintPageLayer(
   InkLayer layer, {
   PageLayerPainter? imageLayer,
   PageLayerPainter? textLayer,
+  Set<String> hiddenStrokeIds = const {},
 }) {
   final paint = Paint()
     ..isAntiAlias = true
@@ -53,12 +54,16 @@ void paintPageLayer(
     case InkLayer.lower:
       imageLayer?.paint(canvas, context);
       for (final s in strokes) {
-        if (s.isHighlighter) paintStroke(canvas, s, paint);
+        if (s.isHighlighter && !hiddenStrokeIds.contains(s.id)) {
+          paintStroke(canvas, s, paint);
+        }
       }
     case InkLayer.upper:
       textLayer?.paint(canvas, context);
       for (final s in strokes) {
-        if (!s.isHighlighter) paintStroke(canvas, s, paint);
+        if (!s.isHighlighter && !hiddenStrokeIds.contains(s.id)) {
+          paintStroke(canvas, s, paint);
+        }
       }
   }
 }
