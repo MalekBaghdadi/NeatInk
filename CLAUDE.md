@@ -282,6 +282,7 @@ _Last updated 2026-10-26 by Claude (end of session 1). Keep this section current
 - Test gotcha: `controller.close()` renders a thumbnail (`picture.toImage`), which hangs under `flutter_tester`; tests call the handlers' `commitPending()` / `beforeSaveHooks` instead.
 - Fixed: image corner-resize could not shrink horizontally (`resizedImageFrame`).
 - Untested by construction (import pdfrx): `integrations/pdf/pdf_background.dart`, `pdf_integration.dart`. Never run on a device: everything in wave 2.
+- Gate (2026-10-27): `flutter build apk --debug` OK; `flutter build apk --release --split-per-abi` OK (arm64 31.9 MB, debug-key signed). `apkanalyzer manifest permissions` on the arm64 release APK shows no INTERNET and no storage permissions (only the app's own DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION). Dependency licenses are all MIT/BSD/Apache. Remaining: release steps 7-8 (icon, signing, README, repo + push [ask first], GitHub Release, workflow [needs `workflow` scope], tablet checklist).
 - Tablet checks flagged by workers: a stylus tap on the page quick-nav pill might also draw ink; PDF page thumbnails in the navigator are white under the ink (no PDF render).
 
 ## Code state (end of session 1; superseded by the section above where they differ)
