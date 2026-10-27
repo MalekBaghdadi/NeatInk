@@ -38,6 +38,10 @@ jobs:
             echo "keyAlias=mariamnotes"
             echo "storeFile=$RUNNER_TEMP/mariam-notes.jks"
           } > android/key.properties
+          # Fail here, with a clear message, if the secrets don't open the key.
+          keytool -list -keystore "$RUNNER_TEMP/mariam-notes.jks" \
+            -storepass "$KEY_PASSWORD" -alias mariamnotes > /dev/null \
+            || { echo "::error::KEYSTORE_BASE64 / KEY_PASSWORD do not open the signing key"; exit 1; }
 
       - run: flutter pub get
       - run: flutter analyze
