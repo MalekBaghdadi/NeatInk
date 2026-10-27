@@ -232,6 +232,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
           tooltip: 'Pages',
           onPressed: () => ext.openPageNavigator!(context, c),
         ),
+      if (ext.convertHandwriting != null) _convertButton(context),
       IconButton(
         key: const ValueKey('undo'),
         icon: const Icon(Icons.undo),
@@ -275,6 +276,30 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
         ],
       ),
     ];
+  }
+
+  /// The "Convert" button: a labelled button where there is room (tablet
+  /// landscape), an icon on narrower screens.
+  Widget _convertButton(BuildContext context) {
+    final c = _controller;
+    final action = c.extensions.convertHandwriting!;
+    final enabled = c.pageCount > 0 &&
+        c.isPageEditable(c.doc.meta.pages[c.currentPageIndex].id);
+    final VoidCallback? onPressed = enabled ? () => unawaited(action(context, c)) : null;
+    if (MediaQuery.sizeOf(context).width >= 900) {
+      return TextButton.icon(
+        key: const ValueKey('convert-to-text'),
+        icon: const Icon(Icons.text_fields),
+        label: const Text('Convert'),
+        onPressed: onPressed,
+      );
+    }
+    return IconButton(
+      key: const ValueKey('convert-to-text'),
+      icon: const Icon(Icons.text_fields),
+      tooltip: 'Convert handwriting to text',
+      onPressed: onPressed,
+    );
   }
 
   Widget _buildBody(BuildContext context) {

@@ -10,6 +10,7 @@ import 'canvas/live_ink.dart';
 import 'canvas/viewport_controller.dart';
 import 'editor_controller.dart';
 import 'editor_tool.dart';
+import 'tools/selection.dart';
 
 // Extension points of the editor core.
 //
@@ -208,6 +209,11 @@ typedef ToolOptionsBuilder = Widget Function(
 typedef EditorAction = Future<void> Function(
     BuildContext context, EditorController controller);
 
+/// A selection-menu action that works on the lasso [selection] (e.g. convert
+/// its handwriting to text).
+typedef SelectionAction = Future<void> Function(
+    BuildContext context, EditorController controller, Selection selection);
+
 /// The editor's plug-in registry, filled by `EditorIntegration`s;
 /// if anything changes after the editor is showing, call
 /// `EditorController.extensionsChanged()`.
@@ -248,6 +254,14 @@ class EditorExtensions {
 
   /// Overflow menu "Page paper". Disabled when null.
   EditorAction? changePagePaper;
+
+  /// App bar "Convert" button: handwriting to typed text, for the lasso
+  /// selection if there is one, else the page in view. Hidden when null.
+  EditorAction? convertHandwriting;
+
+  /// Selection menu "Convert" button: handwriting in the selection to typed
+  /// text. Hidden when null.
+  SelectionAction? convertSelection;
 
   /// Committed pen / highlighter strokes with these ids are not painted
   /// (the tidy animation draws them itself meanwhile). After changing it,

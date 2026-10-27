@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../editor_controller.dart';
+import '../convert/convert_scope.dart';
 import '../../tool_prefs.dart';
 import '../../toolbar/color_picker_dialog.dart';
 import '../../toolbar/toolbar_widgets.dart';
@@ -55,6 +56,22 @@ class _SelectionMenuState extends State<SelectionMenu> {
     );
   }
 
+  /// The Convert button shows when the convert feature is installed and the
+  /// selection holds pen strokes to read.
+  bool get _canConvert {
+    final sel = _handler.state.selection;
+    return _controller.extensions.convertSelection != null &&
+        sel != null &&
+        hasConvertibleStrokes(_controller, sel);
+  }
+
+  void _convert() {
+    final sel = _handler.state.selection;
+    final action = _controller.extensions.convertSelection;
+    if (sel == null || action == null) return;
+    action(context, _controller, sel);
+  }
+
   Widget _bar(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
@@ -97,6 +114,13 @@ class _SelectionMenuState extends State<SelectionMenu> {
                   label: 'Duplicate',
                   onPressed: _handler.duplicateSelected,
                 ),
+                if (_canConvert)
+                  _MenuButton(
+                    key: const ValueKey('selection-convert'),
+                    icon: Icons.text_fields,
+                    label: 'Convert to text',
+                    onPressed: _convert,
+                  ),
               ],
             ),
             if (_colorsOpen) _colors(context),

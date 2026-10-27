@@ -273,6 +273,15 @@ _Last updated 2026-10-26 by Claude (end of session 1). Keep this section current
   - PDF export drops the source PDF's bookmarks and form fields, because it rebuilds the file by importing pages.
   - Text boxes in exported PDFs use Helvetica, Times or Courier.
 
+## Session 4 (2026-10-27/28): v1.1.0 'Convert to text' (read this first)
+
+- Alpha test of 1.0.0: all fine except auto-tidy (it tidied after every stroke after toggling / visiting a PDF notebook). Owner then asked for a 'level 4' feature, so **auto-tidy was removed** and replaced by **Convert handwriting to typed text**.
+- Pipeline: `lib/recognition/` (stroke_grouping -> word_image 128x32 -> `HtrPlugin.kt` ONNX Runtime -> ctc + lexicon rescoring) -> `integrations/convert/` (review sheet with editable lines, font picker, layout onto the baseline, one undo step). Model: SimpleHTR ONNX from PellelNitram/xournalpp-htr-simple-htr (MIT, trained on IAM, owner OK'd non-commercial use), word list = SymSpell en-80k (MIT; Google Books Ngrams CC BY 3.0). Notes + python check: `docs/htr-model-notes.md`, `docs/htr_check.py`. Credits are on the licences page (`registerRecognitionLicenses`).
+- Fonts: 18 OFL families in `assets/fonts/` with the `FontKind` registry (`lib/document/font_kind.dart`); PDF export embeds the same TTFs (`PdfExportPlugin.kt`).
+- Tunables to adjust after the tablet test: `ConvertConfig.lowConfidenceThreshold` (0.35, uncalibrated), `fontXHeightRatio` per font category, grouping thresholds (`GroupingConfig`), lexicon weight 0.3. The review sheet has a 'Show what the recognizer saw' section for tuning.
+- Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
+- NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
+- Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
 ## Session 3 (2026-10-27): wave 2 finished
 
 - Three wave-2 files had been NUL-corrupted by a cut-off (shapes handler + integration, tidy test); they were deleted and redone. **After any cut-off, scan for NUL bytes** (Grep `backslash-x00` with multiline over lib/ and test/).

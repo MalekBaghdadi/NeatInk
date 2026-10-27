@@ -51,6 +51,14 @@ android {
         }
     }
 
+    // Compress native libraries inside the APK: ONNX Runtime alone is 34 MB per ABI,
+    // and the download matters more than the extra install space.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = if (keyPropsFile.exists()) {

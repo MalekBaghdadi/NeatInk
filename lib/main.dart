@@ -9,12 +9,14 @@ import 'app/bootstrap.dart';
 import 'app/error_views.dart';
 import 'features/editor/default_integrations.dart';
 import 'features/editor/editor_integrations.dart';
+import 'recognition/recognition_licenses.dart';
 import 'render/font_licenses.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   installErrorHandlers();
   registerFontLicenses();
+  registerRecognitionLicenses();
   await _start();
 }
 

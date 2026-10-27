@@ -1,4 +1,5 @@
 import 'editor_integrations.dart';
+import 'integrations/convert/convert_integration.dart';
 import 'integrations/erase_select/erase_select_integration.dart';
 import 'integrations/pages/pages_integration.dart';
 import 'integrations/pdf/pdf_integration.dart';
@@ -15,4 +16,5 @@ final List<EditorIntegration> defaultEditorIntegrations = [
   shapesIntegration,
   pagesIntegration,
   pdfIntegration,
+  convertIntegration,
 ];

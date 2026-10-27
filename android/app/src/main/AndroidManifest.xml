@@ -4,6 +4,7 @@
          (The debug/profile manifests still add it for hot reload; their
          build-type manifests take priority over this one.) -->
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
     <application
         android:label="Mariam\'s Notes"

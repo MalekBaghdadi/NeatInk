@@ -24,7 +24,7 @@ Smaller downloads for specific tablets are on the
 
 - Notebooks with blank, lined, grid, dotted, Cornell and music pages, in white, cream or dark.
 - Pen, pencil and fountain styles, highlighter, eraser (whole stroke or partial), lasso, shapes that snap straight when you hold the pen still.
-- Convert handwriting to typed text in a font you choose (coming in 1.1)
+- **Convert to text**: tap Convert and the app reads your handwriting (on the tablet, nothing is uploaded), shows what it understood so you can fix any word, and retypes it on the lines in a font you choose (18 fonts: school-friendly, handwriting-style, serif, sans and more). One undo gives your handwriting back.
 - Text boxes and pictures on any page.
 - Import a PDF, write on it, and export a new PDF with your writing on it.
 - Folders, tags, favourites, search, dark mode and an optional PIN lock.
