@@ -305,8 +305,7 @@ class LassoHandler extends CanvasToolHandler {
   }
 
   /// True when [s] shows something other than its hand-drawn points.
-  static bool isRestorable(Stroke s) =>
-      s.tidy.applied || s.shape != null || !s.pointsAreRaw;
+  static bool isRestorable(Stroke s) => s.shape != null || !s.pointsAreRaw;
 
   /// Whether the selection has anything a colour can be applied to.
   bool get canRecolor {
@@ -376,7 +375,7 @@ class LassoHandler extends CanvasToolHandler {
     final shift = Affine2.translation(d, d);
     final strokes = [
       for (final s in sel.strokesOn(page))
-        s.transformed(shift).copyWith(id: _uuid.v4(), clearWordId: true),
+        s.transformed(shift).copyWith(id: _uuid.v4()),
     ];
     final texts = [
       for (final t in sel.textsOn(page))

@@ -23,59 +23,15 @@ enum PenStyle {
 /// the generated shape and `raw` the hand-drawn original.
 enum ShapeKind { line, arrow, rectangle, ellipse, triangle }
 
-/// Tidy bookkeeping for a stroke (see docs/beautify-spec.md).
-class TidyInfo {
-  const TidyInfo({this.applied = false, this.version = 0, this.locked = false});
-
-  static const TidyInfo none = TidyInfo();
-
-  factory TidyInfo.fromJson(Map<String, dynamic>? j) => j == null
-      ? none
-      : TidyInfo(
-          applied: j['applied'] as bool? ?? false,
-          version: (j['version'] as num?)?.toInt() ?? 0,
-          locked: j['locked'] as bool? ?? false,
-        );
-
-  /// `points` currently differ from `raw` because tidy moved them.
-  final bool applied;
-
-  /// Pipeline version that produced the tidied points.
-  final int version;
-
-  /// The user undid or restored this stroke's tidy, so it must never be
-  /// tidied again automatically.
-  final bool locked;
-
-  TidyInfo copyWith({bool? applied, int? version, bool? locked}) => TidyInfo(
-        applied: applied ?? this.applied,
-        version: version ?? this.version,
-        locked: locked ?? this.locked,
-      );
-
-  Map<String, dynamic> toJson() => {
-        'applied': applied,
-        'version': version,
-        if (locked) 'locked': true,
-      };
-
-  @override
-  bool operator ==(Object other) =>
-      other is TidyInfo &&
-      other.applied == applied &&
-      other.version == version &&
-      other.locked == locked;
-
-  @override
-  int get hashCode => Object.hash(applied, version, locked);
-}
-
 /// An immutable ink stroke in page coordinates.
 ///
 /// * [raw] is exactly what the pen produced. It is only ever changed by
 ///   lasso move/resize, which transforms [raw] and [points] together.
-/// * [points] is what is displayed. Equal to [raw] until tidied or snapped
+/// * [points] is what is displayed. Equal to [raw] until snapped
 ///   to a shape.
+///
+/// Old files may still carry `wordId` / `tidy` keys (auto-tidy was removed);
+/// they are ignored on load and no longer written.
 ///
 /// Strokes are immutable so commands can keep old/new versions for undo and
 /// renderers can cache outlines per instance (e.g. with an `Expando`).
@@ -90,8 +46,6 @@ class Stroke {
     required double size,
     required List<InkPoint> raw,
     List<InkPoint>? points,
-    String? wordId,
-    TidyInfo tidy = TidyInfo.none,
     ShapeKind? shape,
   }) {
     final r = raw is _FrozenPoints ? raw : _FrozenPoints(raw);
@@ -101,11 +55,11 @@ class Stroke {
     } else {
       p = points is _FrozenPoints ? points : _FrozenPoints(points);
     }
-    return Stroke._(id, tool, penStyle, color, size, r, p, wordId, tidy, shape);
+    return Stroke._(id, tool, penStyle, color, size, r, p, shape);
   }
 
   Stroke._(this.id, this.tool, this.penStyle, this.color, this.size, this.raw,
-      this.points, this.wordId, this.tidy, this.shape);
+      this.points, this.shape);
 
   factory Stroke.fromJson(Map<String, dynamic> j) {
     final raw = _pointsFromJson(j['raw']);
@@ -120,8 +74,6 @@ class Stroke {
       size: (j['size'] as num?)?.toDouble() ?? 2.2,
       raw: raw,
       points: pts,
-      wordId: j['wordId'] as String?,
-      tidy: TidyInfo.fromJson(j['tidy'] as Map<String, dynamic>?),
       shape: j['shape'] == null
           ? null
           : _enumByName(ShapeKind.values, j['shape'], ShapeKind.line),
@@ -139,13 +91,11 @@ class Stroke {
   final double size;
   final List<InkPoint> raw;
   final List<InkPoint> points;
-  final String? wordId;
-  final TidyInfo tidy;
   final ShapeKind? shape;
 
   bool get isHighlighter => tool == StrokeTool.highlighter;
 
-  /// True when [points] is the very same list as [raw] (never tidied,
+  /// True when [points] is the very same list as [raw] (never
   /// snapped or otherwise changed independently of `raw`).
   bool get pointsAreRaw => identical(points, raw);
 
@@ -164,9 +114,6 @@ class Stroke {
     double? size,
     List<InkPoint>? raw,
     List<InkPoint>? points,
-    String? wordId,
-    bool clearWordId = false,
-    TidyInfo? tidy,
     ShapeKind? shape,
     bool clearShape = false,
   }) =>
@@ -178,8 +125,6 @@ class Stroke {
         size: size ?? this.size,
         raw: raw ?? this.raw,
         points: points ?? this.points,
-        wordId: clearWordId ? null : (wordId ?? this.wordId),
-        tidy: tidy ?? this.tidy,
         shape: clearShape ? null : (shape ?? this.shape),
       );
 
@@ -196,8 +141,6 @@ class Stroke {
       raw: newRaw,
       points:
           pointsAreRaw ? newRaw : [for (final p in points) p.transformed(m)],
-      wordId: wordId,
-      tidy: tidy,
       shape: shape,
     );
   }
@@ -211,8 +154,6 @@ class Stroke {
         'raw': [for (final p in raw) p.toJson()],
         // Spec: `points` is always written so the file is self-describing.
         'points': [for (final p in points) p.toJson()],
-        'wordId': wordId,
-        'tidy': tidy.toJson(),
         if (shape != null) 'shape': shape!.name,
       };
 

@@ -59,7 +59,7 @@ void main() {
       expect(pieces[1].points.first.pos.distanceTo(c), closeTo(reach, quantEps));
     });
 
-    test('pieces keep tool, style, colour, size, word and tidy', () {
+    test('pieces keep tool, style, colour and size', () {
       final styled = Stroke(
         id: 'styled',
         tool: StrokeTool.pen,
@@ -69,8 +69,6 @@ void main() {
         raw: [
           for (var i = 0; i <= 20; i++) InkPoint(i * 5.0, 10, 0.3 + i * 0.01, i * 8),
         ],
-        wordId: 'w7',
-        tidy: const TidyInfo(version: 1, locked: true),
       );
       final ids = idGen();
       final pieces =
@@ -81,15 +79,13 @@ void main() {
         expect(p.penStyle, PenStyle.fountain);
         expect(p.color, 0xFF1565C0);
         expect(p.size, 3);
-        expect(p.wordId, 'w7');
-        expect(p.tidy, styled.tidy);
         expect(p.shape, isNull);
         expect(p.pointsAreRaw, isTrue);
       }
     });
 
-    test('tidied strokes: raw and points are sliced at the same indices', () {
-      // points = raw moved 2 pt down and 1 pt right (one-to-one, like tidy).
+    test('edited strokes: raw and points are sliced at the same indices', () {
+      // points = raw moved 2 pt down and 1 pt right (one-to-one).
       final raw = [
         for (var i = 0; i <= 25; i++) InkPoint(i * 4.0, 100 + (i % 3), 0.5, i * 10),
       ];
@@ -100,7 +96,6 @@ void main() {
         size: 2,
         raw: raw,
         points: [for (final p in raw) p.withPos(p.x + 1, p.y + 2)],
-        tidy: const TidyInfo(applied: true, version: 1),
       );
       final pieces = cutStroke(
           tidied, const Vec2(41.3, 90), const Vec2(41.3, 110), 3,
@@ -109,7 +104,6 @@ void main() {
       for (final piece in pieces) {
         expect(piece.pointsAreRaw, isFalse);
         expect(piece.raw.length, piece.points.length);
-        expect(piece.tidy.applied, isTrue);
         for (var i = 0; i < piece.raw.length; i++) {
           // The offset between raw and points is preserved point by point,
           // including the interpolated boundary points.
@@ -143,7 +137,6 @@ void main() {
       for (final p in pieces) {
         expect(p.shape, isNull);
         expect(p.pointsAreRaw, isTrue);
-        expect(p.tidy.locked, isTrue);
         for (final q in p.points) {
           expect(q.y, 0);
         }

@@ -223,12 +223,11 @@ void main() {
       await h.close();
     });
 
-    testWidgets('restore original: tidied and shape strokes go back to raw',
+    testWidgets('restore original: edited and shape strokes go back to raw',
         (tester) async {
       final raw = linePoints(100, 100, 200, 104, spacing: 5);
       final tidied = strokeOf('t', raw).copyWith(
         points: strokeOf('x', linePoints(100, 100, 200, 100, spacing: 5)).raw,
-        tidy: const TidyInfo(applied: true, version: 1),
       );
       final snapped = strokeOf('s', linePoints(100, 150, 200, 153, spacing: 5))
           .copyWith(
@@ -247,19 +246,17 @@ void main() {
       for (final id in ['t', 's']) {
         final s = h.strokes.firstWhere((s) => s.id == id);
         expect(s.pointsAreRaw, isTrue, reason: id);
-        expect(s.tidy.applied, isFalse, reason: id);
         expect(s.shape, isNull, reason: id);
       }
       expect(h.strokes.firstWhere((s) => s.id == 't').points.last.y,
           closeTo(104, 1e-9));
-      // The never-tidied stroke is not touched (nor locked against tidy).
-      expect(h.strokes.firstWhere((s) => s.id == 'plain').tidy.locked, isFalse);
+      // The plain stroke is not touched.
+      expect(h.strokes.firstWhere((s) => s.id == 'plain').pointsAreRaw, isTrue);
       expect(h.undoDepth, 1);
       expect(h.lasso.canRestoreOriginal, isFalse);
 
       h.controller.undo();
       final back = h.strokes.firstWhere((s) => s.id == 't');
-      expect(back.tidy.applied, isTrue);
       expect(back.pointsAreRaw, isFalse);
       expect(h.strokes.firstWhere((s) => s.id == 's').shape, ShapeKind.line);
       await h.close();

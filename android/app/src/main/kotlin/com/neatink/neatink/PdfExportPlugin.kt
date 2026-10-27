@@ -17,17 +17,20 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.font.PDFont
+import com.tom_roush.pdfbox.pdmodel.font.PDType0Font
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import com.tom_roush.pdfbox.util.Matrix
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -70,8 +73,13 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private val sessions = ConcurrentHashMap<Int, Session>()
     private val nextSession = AtomicInteger(1)
 
+    /** Reads the bundled text-box fonts (Flutter assets); null when detached. */
+    @Volatile
+    private var fontAssets: FontAssets? = null
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         initPdfBox(binding.applicationContext)
+        fontAssets = FontAssets(binding.applicationContext, binding.flutterAssets)
         channel = MethodChannel(binding.binaryMessenger, CHANNEL).also {
             it.setMethodCallHandler(this)
         }
@@ -80,6 +88,7 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel?.setMethodCallHandler(null)
         channel = null
+        fontAssets = null
         // Frees native documents and partial files of exports the engine
         // abandoned; queued behind any page that is still being drawn.
         executor.execute { sessions.values.toList().forEach { dispose(it, deleteOutput = true) } }
@@ -142,6 +151,7 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 pageCount = (args["pageCount"] as? Number)?.toInt() ?: 0,
                 source = source,
                 doc = out,
+                fontAssets = fontAssets,
             )
             return id
         } catch (t: Throwable) {
@@ -219,6 +229,8 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         closeQuietly(s.doc)
         closeQuietly(s.source)
         s.images.clear()
+        s.fonts.clear()
+        s.typefaces.clear()
         if (deleteOutput) File(s.outputPath + ".part").delete()
     }
 
@@ -370,23 +382,42 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 val bold = t["bold"] == true
                 val italic = t["italic"] == true
                 val kind = t["font"] as? String ?: "sans"
-                val font = pdfFont(kind, bold, italic)
+                // The bundled TTF Dart resolved for this weight/slant, and
+                // which styles that file really has (the rest is faked).
+                val asset = t["fontAsset"] as? String
+                val fileBold = t["fontAssetBold"] == true
+                val fileItalic = t["fontAssetItalic"] == true
+                val embedded = asset?.let { embeddedFont(it) }
+                val font = embedded ?: pdfFont(kind, bold, italic)
+                // Faking applies to embedded files; the standard-14 fallback
+                // already picks the bold/italic variant.
+                val fakeBold = embedded != null && bold && !fileBold
+                val fakeItalic = embedded != null && italic && !fileItalic
 
                 var shownWidth = t.num("width", 0.0).toFloat()
                 if (encodable(font, text)) {
                     setFill(color)
+                    if (fakeBold) {
+                        setStroke(color)
+                        cs.setLineWidth(max(0.2f, size / 28f))
+                        cs.setRenderingMode(RenderingMode.FILL_STROKE)
+                    }
                     cs.beginText()
                     cs.setFont(font, size)
                     // Inside the page's app-space matrix y points down, so the
-                    // text matrix flips it back to draw upright glyphs.
-                    cs.setTextMatrix(Matrix(1f, 0f, 0f, -1f, x, baseline))
+                    // text matrix flips it back to draw upright glyphs. The
+                    // shear (c) slants the glyphs for a faked italic.
+                    cs.setTextMatrix(Matrix(1f, 0f, if (fakeItalic) FAKE_ITALIC_SHEAR else 0f, -1f, x, baseline))
                     cs.showText(text)
                     cs.endText()
+                    if (fakeBold) cs.setRenderingMode(RenderingMode.FILL)
                 } else {
-                    // Characters the standard-14 fonts cannot encode (Arabic,
-                    // CJK, emoji, ...): draw the line as an image so it is
-                    // visible, at the cost of not being selectable.
-                    shownWidth = drawTextAsImage(text, kind, bold, italic, size, color, x, baseline)
+                    // Characters the font cannot encode (Arabic, CJK, emoji,
+                    // ...): draw the line as an image so it is visible, at
+                    // the cost of not being selectable.
+                    shownWidth = drawTextAsImage(
+                        text, kind, asset, fileBold, fileItalic, bold, italic, size, color, x, baseline,
+                    )
                 }
                 if (t["underline"] == true && shownWidth > 0f) {
                     setStroke(color)
@@ -401,24 +432,26 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
         /** Returns the width in points that the line occupies. */
         private fun drawTextAsImage(
-            text: String, kind: String, bold: Boolean, italic: Boolean,
-            size: Float, argb: Long, x: Float, baseline: Float,
+            text: String, kind: String, asset: String?, fileBold: Boolean, fileItalic: Boolean,
+            bold: Boolean, italic: Boolean, size: Float, argb: Long, x: Float, baseline: Float,
         ): Float {
             val scale = TEXT_IMAGE_SCALE
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                typeface = Typeface.create(
-                    when (kind) {
-                        "serif" -> Typeface.SERIF
-                        "mono" -> Typeface.MONOSPACE
-                        else -> Typeface.SANS_SERIF
-                    },
-                    when {
-                        bold && italic -> Typeface.BOLD_ITALIC
-                        bold -> Typeface.BOLD
-                        italic -> Typeface.ITALIC
-                        else -> Typeface.NORMAL
-                    },
-                )
+                val bundled = asset?.let { embeddedTypeface(it) }
+                typeface = if (bundled != null) {
+                    // The bundled file already has its own weight/slant; the
+                    // platform fakes only what the file lacks.
+                    Typeface.create(bundled, styleFlags(bold && !fileBold, italic && !fileItalic))
+                } else {
+                    Typeface.create(
+                        when (kind) {
+                            "serif" -> Typeface.SERIF
+                            "mono" -> Typeface.MONOSPACE
+                            else -> Typeface.SANS_SERIF
+                        },
+                        styleFlags(bold, italic),
+                    )
+                }
                 textSize = size * scale
                 this.color = argb.toInt() or (0xFF shl 24) // alpha is applied by the PDF
             }
@@ -508,6 +541,42 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             }
         }
 
+        private fun styleFlags(bold: Boolean, italic: Boolean): Int = when {
+            bold && italic -> Typeface.BOLD_ITALIC
+            bold -> Typeface.BOLD
+            italic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        }
+
+        /**
+         * The bundled TTF [asset] embedded in the output (subset, selectable
+         * text), loaded once per export; null when it cannot be read so the
+         * caller falls back to the standard-14 fonts.
+         */
+        private fun embeddedFont(asset: String): PDFont? {
+            if (s.fonts.containsKey(asset)) return s.fonts[asset]
+            val font = try {
+                s.fontAssets?.open(asset)?.use { PDType0Font.load(s.doc, it, true) }
+            } catch (e: OutOfMemoryError) {
+                throw e
+            } catch (e: Exception) {
+                null // A missing or unreadable font must not fail the export.
+            }
+            s.fonts[asset] = font
+            return font
+        }
+
+        private fun embeddedTypeface(asset: String): Typeface? {
+            if (s.typefaces.containsKey(asset)) return s.typefaces[asset]
+            val tf = try {
+                s.fontAssets?.typeface(asset)
+            } catch (e: Exception) {
+                null
+            }
+            s.typefaces[asset] = tf
+            return tf
+        }
+
         private fun pdfFont(kind: String, bold: Boolean, italic: Boolean): PDFont = when (kind) {
             "serif" -> when {
                 bold && italic -> PDType1Font.TIMES_BOLD_ITALIC
@@ -548,11 +617,32 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val pageCount: Int,
         val source: PDDocument?,
         val doc: PDDocument,
+        val fontAssets: FontAssets?,
     ) {
         var done = 0
 
         /** Decoded images by file path, so one picture used twice is embedded once. */
         val images = HashMap<String, PDImageXObject>()
+
+        /**
+         * Embedded fonts by asset path (family + weight + slant), so a font
+         * used on many lines is embedded once. A null value remembers a
+         * failed load.
+         */
+        val fonts = HashMap<String, PDFont?>()
+        val typefaces = HashMap<String, Typeface?>()
+    }
+
+    /** Access to the font files the app bundles (declared in pubspec.yaml). */
+    private class FontAssets(
+        private val context: Context,
+        private val flutterAssets: FlutterPlugin.FlutterAssets,
+    ) {
+        private fun path(asset: String) = flutterAssets.getAssetFilePathByName(asset)
+
+        fun open(asset: String): InputStream = context.assets.open(path(asset))
+
+        fun typeface(asset: String): Typeface = Typeface.createFromAsset(context.assets, path(asset))
     }
 
     private class ExportError(val code: String, message: String) : Exception(message)
@@ -585,6 +675,9 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         /** Pixels per point when a text line has to be drawn as an image. */
         private const val TEXT_IMAGE_SCALE = 3f
         private const val MAX_TEXT_IMAGE_PIXELS = 16L * 1024 * 1024
+
+        /** Shear for an italic faked on a font that has no italic file (about 11.5 degrees). */
+        private const val FAKE_ITALIC_SHEAR = 0.2f
 
         /** Bezier control distance for a quarter circle. */
         private const val CIRCLE_K = 0.5523f

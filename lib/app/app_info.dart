@@ -10,7 +10,7 @@ abstract final class AppInfo {
   /// Version as shown to the user, e.g. "1.0.0 (build 1)".
   static const String displayVersion = '$version (build $buildNumber)';
 
-  static const String tagline = 'Handwritten notes, tidy as you write.';
+  static const String tagline = 'Handwritten notes, typed up beautifully.';
 
   static const String offlineStatement =
       '100% offline: no internet permission, no accounts, no tracking';

@@ -80,10 +80,7 @@ class TextFormatBar extends StatelessWidget {
               tooltip: 'Font',
               initialValue: item.font,
               onSelected: (f) => editor.applyFormat((t) => t.copyWith(font: f)),
-              itemBuilder: (_) => [
-                for (final f in FontKind.values)
-                  PopupMenuItem(value: f, child: Text(_fontLabel(f))),
-              ],
+              itemBuilder: (_) => fontPickerItems(item.font),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: SizedBox(
@@ -91,7 +88,11 @@ class TextFormatBar extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(_fontLabel(item.font)),
+                      Text(
+                        item.font.label,
+                        key: const ValueKey('text-font-label'),
+                        style: TextStyle(fontFamily: item.font.family),
+                      ),
                       const Icon(Icons.arrow_drop_down),
                     ],
                   ),
@@ -197,11 +198,46 @@ class TextFormatBar extends StatelessWidget {
         ),
       );
 
-  static String _fontLabel(FontKind f) => switch (f) {
-        FontKind.sans => 'Sans',
-        FontKind.serif => 'Serif',
-        FontKind.mono => 'Mono',
-      };
+  /// The font picker's menu: one non-selectable heading per [FontCategory],
+  /// each followed by its fonts, every font name shown in its own font.
+  /// Entry keys are `text-font-<id>`; the current font is highlighted.
+  static List<PopupMenuEntry<FontKind>> fontPickerItems(FontKind current) => [
+        for (final category in FontCategory.values) ...[
+          PopupMenuItem<FontKind>(
+            key: ValueKey('text-font-heading-${category.name}'),
+            enabled: false,
+            height: 30,
+            child: Text(
+              category.label.toUpperCase(),
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8),
+            ),
+          ),
+          for (final f in FontKind.inCategory(category))
+            PopupMenuItem<FontKind>(
+              key: ValueKey('text-font-${f.name}'),
+              value: f,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      f.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: f.family, fontSize: 18),
+                    ),
+                  ),
+                  if (f == current) ...[
+                    const SizedBox(width: 10),
+                    const Icon(Icons.check, size: 18),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ];
 
   static IconData _alignIcon(TextAlignKind a) => switch (a) {
         TextAlignKind.left => Icons.format_align_left,

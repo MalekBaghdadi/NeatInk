@@ -103,12 +103,6 @@ void main() {
   testWidgets('writing options update the settings', (tester) async {
     final c = await pumpSettings(tester);
 
-    await choose(tester, 'settings-tidy-strength', 'Strong');
-    expect(settingsOf(c).tidyStrength, TidyStrength.strong);
-
-    await choose(tester, 'settings-slant', 'Upright');
-    expect(settingsOf(c).slantMode, SlantMode.upright);
-
     await toggle(tester, 'settings-shape-snap');
     expect(settingsOf(c).shapeSnapEnabled, isFalse);
 
@@ -120,27 +114,24 @@ void main() {
     expect(settingsOf(c).stylusButtonErases, isFalse);
   });
 
-  testWidgets('turning tidy off disables strength and slant',
-      (tester) async {
-    final c = await pumpSettings(tester);
-
-    await toggle(tester, 'settings-tidy');
-    expect(settingsOf(c).tidyEnabled, isFalse);
-
-    await choose(tester, 'settings-tidy-strength', 'Light');
-    expect(settingsOf(c).tidyStrength, TidyStrength.medium,
-        reason: 'disabled while tidy is off');
+  testWidgets('tidy settings are gone', (tester) async {
+    await pumpSettings(tester);
+    for (final k in [
+      'settings-tidy',
+      'settings-tidy-strength',
+      'settings-slant',
+      'settings-debug-overlay',
+    ]) {
+      expect(find.byKey(ValueKey(k)), findsNothing, reason: k);
+    }
   });
 
-  testWidgets('export and developer switches update the settings',
+  testWidgets('export switch updates the settings',
       (tester) async {
     final c = await pumpSettings(tester);
 
     await toggle(tester, 'settings-export-lines');
     expect(settingsOf(c).exportPaperLines, isFalse);
-
-    await toggle(tester, 'settings-debug-overlay');
-    expect(settingsOf(c).debugOverlay, isTrue);
   });
 
   testWidgets('new-notebook paper: type, colour and spacing', (tester) async {

@@ -1,4 +1,6 @@
-/// Every tuning number of the "tidy as you write" pipeline lives here
+/// Tuning numbers for the handwriting geometry helpers (originally written for
+/// the removed "tidy as you write" pipeline; many fields are currently unused
+/// but kept for the recognition code). They live here
 /// (docs/beautify-spec.md, "Tuning constants"). Nothing else in
 /// `lib/beautify/` hard-codes a threshold: the pipeline receives a
 /// [TidyConfig] so tests (and the owner, with the debug overlay) can change
@@ -8,56 +10,6 @@
 /// values degrees. `…Factor` values multiply an x-height, a line height or a
 /// line spacing, as each doc comment says.
 library;
-
-/// How "Keep my slant" vs "Upright" picks the target slant (spec step 4).
-enum TidySlantMode {
-  /// Make the lean consistent: target = running median of recent words.
-  keep,
-
-  /// Stand words up: target slant = 0.
-  upright,
-}
-
-/// The user-facing tidy settings, already reduced to numbers.
-class TidySettings {
-  const TidySettings({
-    this.strength = mediumStrength,
-    this.slantMode = TidySlantMode.keep,
-  });
-
-  /// Blend amount for "Light" (spec step 5).
-  static const double lightStrength = 0.5;
-
-  /// Blend amount for "Medium" (the default).
-  static const double mediumStrength = 0.8;
-
-  /// Blend amount for "Strong".
-  static const double strongStrength = 1.0;
-
-  static const TidySettings light = TidySettings(strength: lightStrength);
-  static const TidySettings medium = TidySettings(strength: mediumStrength);
-  static const TidySettings strong = TidySettings(strength: strongStrength);
-
-  /// Blend factor `s` in [0, 1]: each correction moves `s` of the way from
-  /// "no change" to its ideal value.
-  final double strength;
-  final TidySlantMode slantMode;
-
-  TidySettings copyWith({double? strength, TidySlantMode? slantMode}) =>
-      TidySettings(
-        strength: strength ?? this.strength,
-        slantMode: slantMode ?? this.slantMode,
-      );
-
-  @override
-  bool operator ==(Object other) =>
-      other is TidySettings &&
-      other.strength == strength &&
-      other.slantMode == slantMode;
-
-  @override
-  int get hashCode => Object.hash(strength, slantMode);
-}
 
 /// All tuning constants of the tidy pipeline, with the spec's defaults.
 class TidyConfig {

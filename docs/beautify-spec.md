@@ -1,3 +1,5 @@
+> **Note (session 4):** auto-tidy was removed from the app (v1.1 replaces it with "convert handwriting to typed text"). This file is kept for reference only; `lib/beautify/` now holds just the reusable geometry helpers (`features.dart`, `stats.dart`, `resample.dart`, `tidy_config.dart`).
+
 # Tidy-as-you-write — specification (level 3)
 
 ## Goal

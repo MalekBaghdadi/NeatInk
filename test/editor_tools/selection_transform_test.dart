@@ -28,8 +28,6 @@ Stroke tidiedStroke(String id) {
     size: 2,
     raw: raw,
     points: [for (final p in raw) p.withPos(p.x, p.y + 1)],
-    wordId: 'w1',
-    tidy: const TidyInfo(applied: true, version: 1),
   );
 }
 
@@ -197,8 +195,6 @@ void main() {
         expect(after.points[i].y, before.points[i].y - 3);
         expect(after.points[i].t, before.points[i].t);
       }
-      expect(after.tidy, before.tidy);
-      expect(after.wordId, 'w1');
       expect(after.size, before.size);
       // Untidied strokes keep sharing one list.
       expect(edit.strokesAfter[1].pointsAreRaw, isTrue);
@@ -331,27 +327,21 @@ void main() {
       expect(edit.textChanges, isEmpty);
     });
 
-    test('restore original puts points back to raw and locks tidy', () {
+    test('restore original puts points back to raw and clears shapes', () {
       final shape = strokeOf('shape', linePoints(0, 0, 30, 2)).copyWith(
           points: [InkPoint(0, 0, 0.5, 0), InkPoint(30, 0, 0.5, 80)],
           shape: ShapeKind.line);
-      final locked = strokeOf('locked', linePoints(0, 40, 30, 40))
-          .copyWith(tidy: const TidyInfo(locked: true));
-      final page = samplePage()..strokes.addAll([shape, locked]);
+      final page = samplePage()..strokes.add(shape);
       final edit = restoreOriginalSelection(page, selectAll(page));
       final ids = edit.strokesBefore.map((s) => s.id).toList();
-      // 'locked' is already raw, untidied and locked: nothing to do.
-      expect(ids, ['tidy', 'plain', 'hl', 'shape']);
+      // 'plain' and 'hl' already show their raw points: nothing to do.
+      expect(ids, ['tidy', 'shape']);
       for (final s in edit.strokesAfter) {
         expect(s.pointsAreRaw, isTrue, reason: s.id);
-        expect(s.tidy.applied, isFalse);
-        expect(s.tidy.locked, isTrue);
         expect(s.shape, isNull);
       }
       final restored = edit.strokesAfter.first;
       expect(restored.points, same(restored.raw));
-      expect(restored.tidy.version, 1);
-      expect(restored.wordId, 'w1');
     });
 
     test('delete removes strokes and items; undo restores order', () {

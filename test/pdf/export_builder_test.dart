@@ -195,6 +195,26 @@ void main() {
       expect(line.width, lessThan(300));
     });
 
+    test('exported lines name the registry font file to embed', () {
+      const item = TextItem(
+          id: 't',
+          x: 0,
+          y: 0,
+          width: 300,
+          height: 40,
+          text: 'Hello world',
+          fontSize: 16,
+          italic: true,
+          font: FontKind.openSans);
+      final line = exportTextItem(item).lines.single;
+      expect(line.font, FontKind.openSans);
+      final map = line.toMap();
+      expect(map['font'], 'open_sans');
+      expect(map['fontAsset'], 'assets/fonts/OpenSans/OpenSans-Italic.ttf');
+      expect(map['fontAssetItalic'], true);
+      expect(map['fontAssetBold'], false);
+    });
+
     test('long text wraps into several lines going down the page', () {
       const item = TextItem(
           id: 't',

@@ -24,7 +24,7 @@ import 'tool_config.dart';
 /// Returns original stroke id → remaining pieces (possibly empty), ready for
 /// `SpliceStrokesCommand`. Strokes the sweep doesn't touch are absent.
 /// Pieces get fresh ids from [newId] and keep the original's tool, pen
-/// style, colour, size, word id and tidy info.
+/// style, colour and size.
 Map<String, List<Stroke>> pixelErase({
   required Iterable<Stroke> candidates,
   required Vec2 from,
@@ -47,13 +47,11 @@ Map<String, List<Stroke>> pixelErase({
 /// the pieces that remain (empty when it is erased completely).
 ///
 /// Raw/points alignment: when the stroke is not a shape and `raw` and
-/// `points` have the same length (always true for untidied and tidied
-/// strokes, because tidy moves points one-to-one), both lists are cut at the
+/// `points` have the same length, both lists are cut at the
 /// same positions, so every piece still knows its original ink. Otherwise
 /// (snapped shapes) the cut is made on `points`, each piece uses those
 /// points as both `raw` and `points`, and the shape kind is dropped: a piece
-/// of a rectangle is just a line. Such pieces are marked tidy-locked
-/// because their `raw` is no longer hand-drawn ink.
+/// of a rectangle is just a line.
 List<Stroke>? cutStroke(
   Stroke stroke,
   Vec2 from,
@@ -106,8 +104,6 @@ List<Stroke>? cutStroke(
         size: stroke.size,
         raw: stroke.pointsAreRaw ? piecePoints : _slice(stroke.raw, a, b),
         points: stroke.pointsAreRaw ? null : piecePoints,
-        wordId: stroke.wordId,
-        tidy: stroke.tidy,
       ));
     } else {
       pieces.add(Stroke(
@@ -117,8 +113,6 @@ List<Stroke>? cutStroke(
         color: stroke.color,
         size: stroke.size,
         raw: piecePoints,
-        wordId: stroke.wordId,
-        tidy: TidyInfo(version: stroke.tidy.version, locked: true),
       ));
     }
   }

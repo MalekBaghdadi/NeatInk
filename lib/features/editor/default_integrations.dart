@@ -4,7 +4,6 @@ import 'integrations/pages/pages_integration.dart';
 import 'integrations/pdf/pdf_integration.dart';
 import 'integrations/shapes/shapes_integration.dart';
 import 'integrations/text_images/text_images_integration.dart';
-import 'integrations/tidy/tidy_integration.dart';
 
 /// The integrations the real app installs into every editor, in order.
 ///
@@ -15,6 +14,5 @@ final List<EditorIntegration> defaultEditorIntegrations = [
   textImagesIntegration,
   shapesIntegration,
   pagesIntegration,
-  tidyIntegration,
   pdfIntegration,
 ];

@@ -1,4 +1,4 @@
-import '../document/page_items.dart' show FontKind;
+import '../document/page_items.dart' show FontFile, FontKind;
 
 /// Data sent from Dart to the Kotlin PdfBox exporter over the
 /// `neatink/pdf_export` MethodChannel. All coordinates are page points with
@@ -64,6 +64,10 @@ class ExportTextLine {
   /// Measured line width (used for underline and alignment checks).
   final double width;
 
+  /// The registry file the exporter should embed for this line's weight and
+  /// slant (the closest the family has; see [FontKind.resolveFile]).
+  FontFile get fontFile => font.resolveFile(bold: bold, italic: italic);
+
   Map<String, Object> toMap() => {
         'text': text,
         'x': x,
@@ -74,6 +78,13 @@ class ExportTextLine {
         'italic': italic,
         'underline': underline,
         'font': font.name,
+        // Additive font info for the exporter: the Flutter asset path of the
+        // resolved TTF and which styles that file really has, so the
+        // exporter can fake only what is missing (e.g. bold for a family
+        // without a Bold file).
+        'fontAsset': fontFile.asset,
+        'fontAssetBold': fontFile.bold,
+        'fontAssetItalic': fontFile.italic,
         'width': width,
       };
 }

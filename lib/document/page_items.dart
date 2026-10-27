@@ -1,11 +1,12 @@
 import '../ink/ink_rect.dart';
 import '../ink/stroke.dart' show colorFromHex, colorToHex, enumByName;
+import 'font_kind.dart';
+
+// The font registry: `FontKind` (bundled families, `FontKind.sans`,
+// `.values`, `.byName`), `FontCategory`, `FontFile`.
+export 'font_kind.dart';
 
 enum TextAlignKind { left, center, right }
-
-/// Fonts available to text boxes. Rendered with the platform's font for the
-/// family (Roboto / Noto Serif / monospace on Android).
-enum FontKind { sans, serif, mono }
 
 /// A typed text box placed on a page. Position and size are in page points.
 class TextItem {
@@ -39,7 +40,7 @@ class TextItem {
         italic: j['italic'] as bool? ?? false,
         underline: j['underline'] as bool? ?? false,
         align: enumByName(TextAlignKind.values, j['align'], TextAlignKind.left),
-        font: enumByName(FontKind.values, j['font'], FontKind.sans),
+        font: FontKind.byName(j['font'] is String ? j['font'] as String : null),
         background: colorFromHex(j['background'] as String? ?? '#00000000'),
       );
 

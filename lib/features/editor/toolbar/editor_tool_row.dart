@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../settings/settings_controller.dart';
 import '../editor_controller.dart';
 import '../editor_tool.dart';
 import 'tool_options.dart';
 import 'toolbar_widgets.dart';
 
 /// The tool row under the top bar: the tools, the options of the selected
-/// tool and the "Tidy as you write" toggle.
+/// tool.
 ///
 /// Wide screens (landscape tablets) fit everything in one row; narrower
 /// ones put the options on a second row. The options scroll sideways when
@@ -46,8 +44,6 @@ class EditorToolRow extends StatelessWidget {
                     tools,
                     const ToolbarDivider(),
                     Expanded(child: options),
-                    const ToolbarDivider(),
-                    const TidyToggle(),
                     const SizedBox(width: 12),
                   ],
                 ),
@@ -67,7 +63,6 @@ class EditorToolRow extends StatelessWidget {
                           child: tools,
                         ),
                       ),
-                      const TidyToggle(),
                       const SizedBox(width: 12),
                     ],
                   ),
@@ -125,25 +120,4 @@ class _ScrollableOptions extends StatelessWidget {
           child: child,
         ),
       );
-}
-
-/// "Tidy as you write" on/off, bound to the app setting.
-class TidyToggle extends ConsumerWidget {
-  const TidyToggle({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final on = ref.watch(settingsProvider.select((s) => s.tidyEnabled));
-    return FilterChip(
-      key: const ValueKey('tidy-toggle'),
-      avatar: const Icon(Icons.auto_awesome, size: 18),
-      label: const Text('Tidy'),
-      selected: on,
-      showCheckmark: false,
-      tooltip: on ? 'Tidy as you write is on' : 'Tidy as you write is off',
-      onSelected: (value) => ref
-          .read(settingsProvider.notifier)
-          .update((s) => s.copyWith(tidyEnabled: value)),
-    );
-  }
 }

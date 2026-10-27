@@ -67,11 +67,10 @@ Stroke penStroke(String id, {int points = 12, double y0 = 100}) => Stroke(
       color: 0xFF1E88E5,
       size: 2.2,
       raw: wavePoints(points, y0: y0),
-      wordId: 'w-$id',
     );
 
-/// A tidied stroke: `points` differ from `raw` (quantized like the tidy
-/// output after a save, so comparisons after a reload are exact).
+/// A stroke whose `points` differ from `raw` (quantized, so comparisons
+/// after a reload are exact).
 Stroke tidiedStroke(String id) {
   final raw = wavePoints(10);
   return Stroke(
@@ -84,8 +83,6 @@ Stroke tidiedStroke(String id) {
       for (final pt in raw)
         InkPoint.quantized(pt.x + 0.5, pt.y - 1.25, pt.pressure, pt.t),
     ],
-    wordId: 'word-1',
-    tidy: const TidyInfo(applied: true, version: 1),
   );
 }
 

@@ -1,5 +1,5 @@
 name: neatink
-description: "NeatInk: handwriting notes for Android tablets. Offline, local, tidy as you write."
+description: "NeatInk: handwriting notes for Android tablets. Offline, local, handwriting to typed text."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -37,3 +37,175 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Bundled text-box fonts (static TTFs, SIL OFL; see assets/fonts/*/OFL.txt).
+  # Keep in sync with lib/document/font_kind.dart.
+  fonts:
+    - family: NI-Roboto
+      fonts:
+        - asset: assets/fonts/Roboto/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto/Roboto-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Roboto/Roboto-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Roboto/Roboto-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-OpenSans
+      fonts:
+        - asset: assets/fonts/OpenSans/OpenSans-Regular.ttf
+        - asset: assets/fonts/OpenSans/OpenSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/OpenSans/OpenSans-Italic.ttf
+          style: italic
+        - asset: assets/fonts/OpenSans/OpenSans-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Lato
+      fonts:
+        - asset: assets/fonts/Lato/Lato-Regular.ttf
+        - asset: assets/fonts/Lato/Lato-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Lato/Lato-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Lato/Lato-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Nunito
+      fonts:
+        - asset: assets/fonts/Nunito/Nunito-Regular.ttf
+        - asset: assets/fonts/Nunito/Nunito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito/Nunito-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Nunito/Nunito-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Arimo
+      fonts:
+        - asset: assets/fonts/Arimo/Arimo-Regular.ttf
+        - asset: assets/fonts/Arimo/Arimo-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Arimo/Arimo-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Arimo/Arimo-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Tinos
+      fonts:
+        - asset: assets/fonts/Tinos/Tinos-Regular.ttf
+        - asset: assets/fonts/Tinos/Tinos-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Tinos/Tinos-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Tinos/Tinos-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Merriweather
+      fonts:
+        - asset: assets/fonts/Merriweather/Merriweather-Regular.ttf
+        - asset: assets/fonts/Merriweather/Merriweather-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Merriweather/Merriweather-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Merriweather/Merriweather-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Lora
+      fonts:
+        - asset: assets/fonts/Lora/Lora-Regular.ttf
+        - asset: assets/fonts/Lora/Lora-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Lora/Lora-Italic.ttf
+          style: italic
+        - asset: assets/fonts/Lora/Lora-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-LibreBaskerville
+      fonts:
+        - asset: assets/fonts/LibreBaskerville/LibreBaskerville-Regular.ttf
+        - asset: assets/fonts/LibreBaskerville/LibreBaskerville-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/LibreBaskerville/LibreBaskerville-Italic.ttf
+          style: italic
+        - asset: assets/fonts/LibreBaskerville/LibreBaskerville-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-RobotoMono
+      fonts:
+        - asset: assets/fonts/RobotoMono/RobotoMono-Regular.ttf
+        - asset: assets/fonts/RobotoMono/RobotoMono-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/RobotoMono/RobotoMono-Italic.ttf
+          style: italic
+        - asset: assets/fonts/RobotoMono/RobotoMono-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Lexend
+      fonts:
+        - asset: assets/fonts/Lexend/Lexend-Regular.ttf
+        - asset: assets/fonts/Lexend/Lexend-Bold.ttf
+          weight: 700
+    - family: NI-AtkinsonHyperlegible
+      fonts:
+        - asset: assets/fonts/AtkinsonHyperlegible/AtkinsonHyperlegible-Regular.ttf
+        - asset: assets/fonts/AtkinsonHyperlegible/AtkinsonHyperlegible-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/AtkinsonHyperlegible/AtkinsonHyperlegible-Italic.ttf
+          style: italic
+        - asset: assets/fonts/AtkinsonHyperlegible/AtkinsonHyperlegible-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-ComicNeue
+      fonts:
+        - asset: assets/fonts/ComicNeue/ComicNeue-Regular.ttf
+        - asset: assets/fonts/ComicNeue/ComicNeue-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/ComicNeue/ComicNeue-Italic.ttf
+          style: italic
+        - asset: assets/fonts/ComicNeue/ComicNeue-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: NI-Caveat
+      fonts:
+        - asset: assets/fonts/Caveat/Caveat-Regular.ttf
+        - asset: assets/fonts/Caveat/Caveat-Bold.ttf
+          weight: 700
+    - family: NI-PatrickHand
+      fonts:
+        - asset: assets/fonts/PatrickHand/PatrickHand-Regular.ttf
+    - family: NI-Kalam
+      fonts:
+        - asset: assets/fonts/Kalam/Kalam-Regular.ttf
+        - asset: assets/fonts/Kalam/Kalam-Bold.ttf
+          weight: 700
+    - family: NI-IndieFlower
+      fonts:
+        - asset: assets/fonts/IndieFlower/IndieFlower-Regular.ttf
+    - family: NI-DancingScript
+      fonts:
+        - asset: assets/fonts/DancingScript/DancingScript-Regular.ttf
+        - asset: assets/fonts/DancingScript/DancingScript-Bold.ttf
+          weight: 700
+  # Handwriting recognition: ONNX model, charset and word frequencies.
+  assets:
+    - assets/htr/model.onnx
+    - assets/htr/config.json
+    - assets/htr/word_freq.txt
+    - assets/fonts/Roboto/OFL.txt
+    - assets/fonts/OpenSans/OFL.txt
+    - assets/fonts/Lato/OFL.txt
+    - assets/fonts/Nunito/OFL.txt
+    - assets/fonts/Arimo/OFL.txt
+    - assets/fonts/Tinos/OFL.txt
+    - assets/fonts/Merriweather/OFL.txt
+    - assets/fonts/Lora/OFL.txt
+    - assets/fonts/LibreBaskerville/OFL.txt
+    - assets/fonts/RobotoMono/OFL.txt
+    - assets/fonts/Lexend/OFL.txt
+    - assets/fonts/AtkinsonHyperlegible/OFL.txt
+    - assets/fonts/ComicNeue/OFL.txt
+    - assets/fonts/Caveat/OFL.txt
+    - assets/fonts/PatrickHand/OFL.txt
+    - assets/fonts/Kalam/OFL.txt
+    - assets/fonts/IndieFlower/OFL.txt
+    - assets/fonts/DancingScript/OFL.txt

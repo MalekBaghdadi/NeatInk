@@ -51,43 +51,6 @@ class SettingsScreen extends ConsumerWidget {
               icon: Icons.edit_outlined,
               children: [
                 SwitchListTile(
-                  key: const ValueKey('settings-tidy'),
-                  secondary: const Icon(Icons.auto_fix_high_outlined),
-                  title: const Text('Tidy as you write'),
-                  subtitle: const Text(
-                      'About half a second after you finish a word, NeatInk '
-                      'gently straightens it, sets it on the line and evens '
-                      'out its size and spacing. It stays your handwriting.'),
-                  value: settings.tidyEnabled,
-                  onChanged: (v) => change((s) => s.copyWith(tidyEnabled: v)),
-                ),
-                SettingsChoiceTile<TidyStrength>(
-                  key: const ValueKey('settings-tidy-strength'),
-                  title: 'Tidy strength',
-                  subtitle: 'How far words move toward the tidy version.',
-                  enabled: settings.tidyEnabled,
-                  value: settings.tidyStrength,
-                  choices: const [
-                    (TidyStrength.light, 'Light'),
-                    (TidyStrength.medium, 'Medium'),
-                    (TidyStrength.strong, 'Strong'),
-                  ],
-                  onChanged: (v) => change((s) => s.copyWith(tidyStrength: v)),
-                ),
-                SettingsChoiceTile<SlantMode>(
-                  key: const ValueKey('settings-slant'),
-                  title: 'Slant',
-                  subtitle: 'Keep the natural lean of your letters, or '
-                      'stand them upright.',
-                  enabled: settings.tidyEnabled,
-                  value: settings.slantMode,
-                  choices: const [
-                    (SlantMode.keep, 'Keep my slant'),
-                    (SlantMode.upright, 'Upright'),
-                  ],
-                  onChanged: (v) => change((s) => s.copyWith(slantMode: v)),
-                ),
-                SwitchListTile(
                   key: const ValueKey('settings-shape-snap'),
                   secondary: const Icon(Icons.category_outlined),
                   title: const Text('Hold to snap shapes'),
@@ -158,16 +121,6 @@ class SettingsScreen extends ConsumerWidget {
               title: 'Developer',
               icon: Icons.developer_mode_outlined,
               children: [
-                SwitchListTile(
-                  key: const ValueKey('settings-debug-overlay'),
-                  secondary: const Icon(Icons.straighten_outlined),
-                  title: const Text('Tidy debug overlay'),
-                  subtitle: const Text(
-                      'Show the detected baselines, x-height band and slant '
-                      'lines in the editor.'),
-                  value: settings.debugOverlay,
-                  onChanged: (v) => change((s) => s.copyWith(debugOverlay: v)),
-                ),
                 ListTile(
                   key: const ValueKey('settings-pointer-test'),
                   leading: const Icon(Icons.gesture_outlined),

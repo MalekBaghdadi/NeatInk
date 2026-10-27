@@ -33,9 +33,6 @@ void main() {
     final c = await containerWith({});
     final s = c.read(settingsProvider);
     expect(s.themeMode, AppThemeMode.system);
-    expect(s.tidyEnabled, isTrue);
-    expect(s.tidyStrength, TidyStrength.medium);
-    expect(s.slantMode, SlantMode.keep);
     expect(s.drawWithFinger, isFalse);
     expect(s.shapeSnapEnabled, isTrue);
     expect(s.appLockEnabled, isFalse);
@@ -47,13 +44,9 @@ void main() {
     const paper = Paper(type: PaperType.grid, spacingPt: 20, color: Paper.cream);
     c.read(settingsProvider.notifier).update((s) => s.copyWith(
           themeMode: AppThemeMode.dark,
-          tidyEnabled: false,
-          tidyStrength: TidyStrength.strong,
-          slantMode: SlantMode.upright,
           drawWithFinger: true,
           stylusButtonErases: false,
           shapeSnapEnabled: false,
-          debugOverlay: true,
           exportPaperLines: false,
           defaultPaper: paper,
           librarySort: LibrarySort.title,
@@ -71,13 +64,9 @@ void main() {
 
     final reloaded = restart(prefs).read(settingsProvider);
     expect(reloaded.themeMode, AppThemeMode.dark);
-    expect(reloaded.tidyEnabled, isFalse);
-    expect(reloaded.tidyStrength, TidyStrength.strong);
-    expect(reloaded.slantMode, SlantMode.upright);
     expect(reloaded.drawWithFinger, isTrue);
     expect(reloaded.stylusButtonErases, isFalse);
     expect(reloaded.shapeSnapEnabled, isFalse);
-    expect(reloaded.debugOverlay, isTrue);
     expect(reloaded.exportPaperLines, isFalse);
     expect(reloaded.defaultPaper, paper);
     expect(reloaded.librarySort, LibrarySort.title);
@@ -87,11 +76,11 @@ void main() {
   test('listeners see each update', () async {
     final c = await containerWith({});
     final seen = <bool>[];
-    c.listen(settingsProvider.select((s) => s.tidyEnabled),
+    c.listen(settingsProvider.select((s) => s.shapeSnapEnabled),
         (_, next) => seen.add(next));
     final notifier = c.read(settingsProvider.notifier);
-    notifier.update((s) => s.copyWith(tidyEnabled: false));
-    notifier.update((s) => s.copyWith(tidyEnabled: true));
+    notifier.update((s) => s.copyWith(shapeSnapEnabled: false));
+    notifier.update((s) => s.copyWith(shapeSnapEnabled: true));
     expect(seen, [false, true]);
   });
 
@@ -102,7 +91,7 @@ void main() {
       ('a JSON string', '"dark"'),
       ('JSON null', 'null'),
       ('an empty string', ''),
-      ('a wrong field type', '{"tidyEnabled": "yes"}'),
+      ('a wrong field type', '{"shapeSnapEnabled": "yes"}'),
       ('a wrong nested type', '{"defaultPaper": "lined"}'),
       ('a bad paper colour', '{"defaultPaper": {"color": "#zz"}}'),
     ]) {
@@ -110,7 +99,7 @@ void main() {
         final c = await containerWith({AppSettings.prefsKey: stored});
         final s = c.read(settingsProvider);
         expect(s.themeMode, AppThemeMode.system);
-        expect(s.tidyEnabled, isTrue);
+        expect(s.shapeSnapEnabled, isTrue);
         expect(s.appLockEnabled, isFalse);
       });
     }
@@ -120,14 +109,40 @@ void main() {
       final c = await containerWith({
         AppSettings.prefsKey: jsonEncode({
           'themeMode': 'sepia',
-          'tidyStrength': 'strong',
+          'librarySort': 'title',
           'futureSetting': 42,
         }),
       });
       final s = c.read(settingsProvider);
       expect(s.themeMode, AppThemeMode.system);
-      expect(s.tidyStrength, TidyStrength.strong);
-      expect(s.slantMode, SlantMode.keep);
+      expect(s.librarySort, LibrarySort.title);
+      expect(s.drawWithFinger, isFalse);
+    });
+
+    test('prefs saved by older versions (removed tidy keys) still load',
+        () async {
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({
+          'themeMode': 'dark',
+          'tidyEnabled': false,
+          'tidyStrength': 'strong',
+          'slantMode': 'upright',
+          'debugOverlay': true,
+          'drawWithFinger': true,
+        }),
+      });
+      final s = c.read(settingsProvider);
+      expect(s.themeMode, AppThemeMode.dark);
+      expect(s.drawWithFinger, isTrue);
+      final json = s.toJson();
+      for (final k in [
+        'tidyEnabled',
+        'tidyStrength',
+        'slantMode',
+        'debugOverlay',
+      ]) {
+        expect(json.containsKey(k), isFalse, reason: k);
+      }
     });
 
     test('a corrupt entry is overwritten by the next change', () async {

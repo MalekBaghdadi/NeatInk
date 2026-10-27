@@ -71,6 +71,11 @@ android {
 dependencies {
     // Vector PDF export (PdfExportPlugin.kt). Apache-2.0, fully offline.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // On-device handwriting recognition (HtrPlugin.kt). MIT, fully offline.
+    // No explicit abiFilters: the Flutter Gradle plugin already restricts the
+    // ABIs to armeabi-v7a, arm64-v8a and x86_64 (and splits per ABI), and its
+    // own filters conflict with ours under `--split-per-abi`.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")
 }
 
 kotlin {

@@ -318,20 +318,12 @@ void main() {
           points: [shapeRaw.first, shapeRaw.last],
           shape: ShapeKind.line,
         ),
-        Stroke(
-          id: 'locked',
-          tool: StrokeTool.pen,
-          color: 0xFF123456,
-          size: 3,
-          raw: wavePoints(3),
-          tidy: const TidyInfo(applied: false, version: 1, locked: true),
-        ),
       ]);
       await repo.savePage(meta.id, pageId, content);
       final loaded = await relaunch().loadPage(meta.id, pageId);
 
-      expect(loaded.strokes, hasLength(5));
-      for (var i = 0; i < 5; i++) {
+      expect(loaded.strokes, hasLength(4));
+      for (var i = 0; i < 4; i++) {
         final a = content.strokes[i], b = loaded.strokes[i];
         expect(b.id, a.id);
         expect(b.raw, a.raw, reason: '${a.id}: raw must survive exactly');
@@ -342,11 +334,9 @@ void main() {
       final plain = loaded.strokeById('plain')!;
       expect(plain.pointsAreRaw, isTrue);
       expect(plain.penStyle, PenStyle.fountain);
-      expect(plain.wordId, 'w-plain');
 
       final tidied = loaded.strokeById('tidied')!;
       expect(tidied.pointsAreRaw, isFalse);
-      expect(tidied.tidy, const TidyInfo(applied: true, version: 1));
       expect(tidied.raw, isNot(equals(tidied.points)));
 
       expect(loaded.strokeById('hl')!.tool, StrokeTool.highlighter);
@@ -354,7 +344,21 @@ void main() {
       expect(loaded.strokeById('shape')!.shape, ShapeKind.line);
       expect(loaded.strokeById('shape')!.raw, shapeRaw);
       expect(loaded.strokeById('shape')!.points, hasLength(2));
-      expect(loaded.strokeById('locked')!.tidy.locked, isTrue);
+    });
+
+    test('old stroke JSON with wordId / tidy keys still loads and drops them',
+        () {
+      final src = penStroke('old', points: 6);
+      final json = src.toJson()
+        ..['wordId'] = 'w-old'
+        ..['tidy'] = {'applied': true, 'version': 1, 'locked': true};
+      final back = Stroke.fromJson(json);
+      expect(back.id, 'old');
+      expect(back.raw, src.raw);
+      expect(back.pointsAreRaw, isTrue);
+      final out = back.toJson();
+      expect(out.containsKey('wordId'), isFalse);
+      expect(out.containsKey('tidy'), isFalse);
     });
 
     test('unquantized points are stored at the documented precision',

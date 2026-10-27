@@ -13,3 +13,9 @@
 # or signed PDFs, which the importer does not open anyway).
 -dontwarn com.gemalto.jp2.**
 -dontwarn org.bouncycastle.**
+
+# ONNX Runtime (handwriting recognition, see HtrPlugin.kt): the native library
+# looks up these Java classes and methods by name through JNI, so R8 must not
+# rename or strip them.
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**

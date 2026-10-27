@@ -110,6 +110,44 @@ void main() {
     expect(map['pages']! as List, hasLength(2));
   });
 
+  test('text lines carry the font id and the resolved font file', () {
+    Map<Object?, Object?> encode(ExportTextLine l) =>
+        roundTrip(l.toMap())! as Map<Object?, Object?>;
+
+    final bold = encode(const ExportTextLine(
+        text: 'a',
+        x: 0,
+        baselineY: 10,
+        fontSize: 12,
+        color: 0xFF000000,
+        bold: true,
+        font: FontKind.lora));
+    expect(bold['font'], 'lora');
+    expect(bold['fontAsset'], 'assets/fonts/Lora/Lora-Bold.ttf');
+    expect(bold['fontAssetBold'], true);
+    expect(bold['fontAssetItalic'], false);
+
+    // Lexend has no italic file: the Regular file is sent and flagged as
+    // upright so the exporter fakes the slant.
+    final italic = encode(const ExportTextLine(
+        text: 'a',
+        x: 0,
+        baselineY: 10,
+        fontSize: 12,
+        color: 0xFF000000,
+        italic: true,
+        font: FontKind.lexend));
+    expect(italic['italic'], true);
+    expect(italic['fontAsset'], 'assets/fonts/Lexend/Lexend-Regular.ttf');
+    expect(italic['fontAssetItalic'], false);
+
+    // The default font and the old ids still produce Roboto.
+    final plain = encode(const ExportTextLine(
+        text: 'a', x: 0, baselineY: 10, fontSize: 12, color: 0xFF000000));
+    expect(plain['font'], 'sans');
+    expect(plain['fontAsset'], 'assets/fonts/Roboto/Roboto-Regular.ttf');
+  });
+
   test('polygons and images expose exactly the documented keys', () {
     expect(const ExportPolygon([1, 2, 3, 4, 5, 6], 7).toMap().keys,
         ['xy', 'color']);

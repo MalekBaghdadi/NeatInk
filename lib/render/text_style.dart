@@ -13,13 +13,11 @@ import '../document/page_items.dart';
 ///   the system text scale factor is ignored ([TextScaler.noScaling]);
 /// * left-to-right paragraphs.
 
-/// Font family for [font]. Android resolves the generic names `serif` and
-/// `monospace` to the system's serif (Noto Serif) and monospace fonts.
-String fontFamilyFor(FontKind font) => switch (font) {
-      FontKind.sans => 'Roboto',
-      FontKind.serif => 'serif',
-      FontKind.mono => 'monospace',
-    };
+/// Font family for [font]: the family name the bundled font files are
+/// declared under in `pubspec.yaml`. Bold and italic pick the matching file
+/// (Regular / Bold / Italic / Bold Italic) of that family; only if the family
+/// lacks a file for the requested style does the engine fake it.
+String fontFamilyFor(FontKind font) => font.family;
 
 /// The text style of [item]: font size in points, colour, bold, italic and
 /// underline.

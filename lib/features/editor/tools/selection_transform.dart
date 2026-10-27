@@ -254,9 +254,8 @@ SelectionEdit recolorSelection(
 }
 
 /// "Restore original": every selected stroke goes back to its hand-drawn
-/// `raw` points. Tidy is marked not applied and locked (so it is never
-/// tidied again automatically) and any snapped shape is cleared. Strokes
-/// already in that state are left out.
+/// `raw` points and any snapped shape is cleared. Strokes already in that
+/// state are left out.
 SelectionEdit restoreOriginalSelection(PageContent page, Selection selection) {
   final before = <Stroke>[];
   final after = <Stroke>[];
@@ -270,12 +269,11 @@ SelectionEdit restoreOriginalSelection(PageContent page, Selection selection) {
   return SelectionEdit(strokesBefore: before, strokesAfter: after);
 }
 
-/// [s] with `points = raw`, tidy not applied + locked, and no shape. Returns
-/// [s] itself when it is already like that.
+/// [s] with `points = raw` and no shape. Returns [s] itself when it is
+/// already like that.
 Stroke restoreOriginalStroke(Stroke s) {
-  final tidy = s.tidy.copyWith(applied: false, locked: true);
-  if (s.pointsAreRaw && s.shape == null && s.tidy == tidy) return s;
-  return s.copyWith(points: s.raw, tidy: tidy, clearShape: true);
+  if (s.pointsAreRaw && s.shape == null) return s;
+  return s.copyWith(points: s.raw, clearShape: true);
 }
 
 /// Deletes everything in [selection]: strokes via `RemoveStrokesCommand`

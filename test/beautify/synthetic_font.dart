@@ -1,13 +1,11 @@
 import 'dart:math' as math;
 
-import 'package:neatink/beautify/features.dart';
-import 'package:neatink/beautify/tidy_pipeline.dart';
 import 'package:neatink/ink/affine2.dart';
 import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/ink/vec2.dart';
 
-/// A tiny synthetic "print" font for the tidy tests: simple polyline letters
+/// A tiny synthetic "print" font for the recognition and feature tests: simple polyline letters
 /// with the baseline at y = 0, an x-height of 10 and ascenders / capitals 19
 /// high (y points down, so letters live at negative y). Every glyph is a list
 /// of strokes, like print handwriting.
@@ -189,15 +187,6 @@ List<Stroke> makeWord(String text,
             rotateDeg: rotateDeg,
             x: x,
             y: y));
-
-/// Re-measures a tidied word: the strokes of [original] showing the result's
-/// new points, analysed on their displayed points.
-WordAnalysis reanalyze(List<Stroke> original, TidyResult result,
-    {FeatureContext context = const FeatureContext()}) {
-  return analyzeWord([
-    for (final s in original) s.copyWith(points: result.newPoints[s.id]),
-  ], useRaw: false, context: context)!;
-}
 
 /// Lowest y (largest) of a stroke's displayed points.
 double bottomOf(List<InkPoint> pts) => pts.map((p) => p.y).reduce(math.max);

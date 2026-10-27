@@ -176,7 +176,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const ValueKey('text-font')));
       await tester.tap(find.byKey(const ValueKey('text-font')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Serif').last);
+      await tester.tap(find.byKey(const ValueKey('text-font-serif')));
       await tester.pumpAndSettle();
       await commit(tester);
 
@@ -188,6 +188,37 @@ void main() {
       // Style changes are part of the same single undo step.
       controller.undo();
       expect(content().texts, isEmpty);
+    });
+
+    testWidgets('the font picker lists every category and every font',
+        (tester) async {
+      await pumpEditor(tester);
+      await selectText(tester);
+      await tapAt(tester, onPage(tester, 150, 300));
+      await type(tester, 'Fonts');
+      await tester.ensureVisible(find.byKey(const ValueKey('text-font')));
+      await tester.tap(find.byKey(const ValueKey('text-font')));
+      await tester.pumpAndSettle();
+      for (final c in FontCategory.values) {
+        expect(find.byKey(ValueKey('text-font-heading-${c.name}')), findsOneWidget,
+            reason: c.label);
+        expect(find.text(c.label.toUpperCase()), findsOneWidget);
+      }
+      for (final f in FontKind.values) {
+        expect(find.byKey(ValueKey('text-font-${f.name}')), findsOneWidget,
+            reason: f.name);
+      }
+      // Each entry is drawn in its own font.
+      final lato = tester.widget<Text>(
+          find.descendant(
+              of: find.byKey(const ValueKey('text-font-lato')),
+              matching: find.byType(Text)));
+      expect(lato.style?.fontFamily, FontKind.lato.family);
+      await tester.ensureVisible(find.byKey(const ValueKey('text-font-caveat')));
+      await tester.tap(find.byKey(const ValueKey('text-font-caveat')));
+      await tester.pumpAndSettle();
+      await commit(tester);
+      expect(content().texts.single.font, FontKind.caveat);
     });
 
     testWidgets('a formatting change on an existing box is undoable',

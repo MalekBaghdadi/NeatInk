@@ -24,7 +24,7 @@ Smaller downloads for specific tablets are on the
 
 - Notebooks with blank, lined, grid, dotted, Cornell and music pages, in white, cream or dark.
 - Pen, pencil and fountain styles, highlighter, eraser (whole stroke or partial), lasso, shapes that snap straight when you hold the pen still.
-- **Tidy as you write**, with undo and "Restore original".
+- Convert handwriting to typed text in a font you choose (coming in 1.1)
 - Text boxes and pictures on any page.
 - Import a PDF, write on it, and export a new PDF with your writing on it.
 - Folders, tags, favourites, search, dark mode and an optional PIN lock.
@@ -36,7 +36,7 @@ tracking and no ads. Your notebooks never leave the tablet.
 
 ## For developers
 
-- Flutter (Android only), Dart 3, Riverpod. Project brief and status: [CLAUDE.md](CLAUDE.md); the tidy algorithm: [docs/beautify-spec.md](docs/beautify-spec.md).
+- Flutter (Android only), Dart 3, Riverpod. Project brief and status: [CLAUDE.md](CLAUDE.md); the removed auto-tidy algorithm (kept for reference): [docs/beautify-spec.md](docs/beautify-spec.md).
 - `flutter pub get`, `flutter analyze`, `flutter test`, `flutter build apk --release`.
 - Release signing reads `android/key.properties` (git-ignored). Without it, release builds use the debug key.
 - Pushing a tag like `v1.0.0` builds and publishes the signed APKs through `.github/workflows/release.yml`.
