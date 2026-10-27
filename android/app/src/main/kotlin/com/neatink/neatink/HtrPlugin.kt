@@ -3,6 +3,7 @@ package com.neatink.neatink
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.TensorInfo
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -10,7 +11,8 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.IOException
-import java.nio.FloatBuffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -21,18 +23,30 @@ import org.json.JSONObject
  * `neatink/htr` MethodChannel (see `lib/recognition/htr_channel.dart`, which
  * is the other half of this protocol; change both together).
  *
- * The model is the IAM-trained SimpleHTR network (docs/htr-model-notes.md):
- * input `image` [N, 1, 32, 128] float, output `log_probs` [T, N, 79] float
- * (log-softmax, time first, blank = last class).
+ * The model is PaddleOCR's PP-OCRv5 English mobile text recogniser
+ * (docs/htr-model-notes.md): input `x` float32 [N, 3, 48, W] with N and W
+ * dynamic, output float32 [N, T, 438] softmax probabilities (not log), where
+ * class 0 is the CTC blank, classes 1..436 the characters of the model's
+ * dictionary and class 437 the space. T is about W / 8.
  *
- * | Dart -> Kotlin | arguments                     | reply                          |
- * |----------------|-------------------------------|--------------------------------|
- * | `recognize`    | images: List<Uint8List>       | List<Float32List>, one per image |
- * | `info`         | none                          | {classes, timesteps, blank, charset, width, height} |
+ * | Dart -> Kotlin | arguments                             | reply                         |
+ * |----------------|---------------------------------------|-------------------------------|
+ * | `recognize`    | {images: List<Map>}                   | List<Map>, one per image      |
+ * | `info`         | none                                  | Map (model facts)             |
  *
- * Each image is 4096 bytes: 32 rows x 128 columns, row-major, 0..255 with
- * white = 255 and ink dark. The reply for an image is a flat Float32List of
- * length `timesteps * classes`, row-major as [t][class] (log-probabilities).
+ * `recognize` image map: `width` Int (16..800), `height` Int (must be 48) and
+ * `pixels` Uint8List/ByteArray of `width * height` bytes, row-major, 0..255,
+ * white paper = 255, dark ink = low. The images are sent as they are (the
+ * width follows the word's aspect ratio): each image is **one** ORT call, no
+ * batching and no padding, because padding changes what the model reads.
+ * Kotlin turns a pixel v into (v / 255 - 0.5) / 0.5 and copies it to the
+ * three channels.
+ *
+ * `recognize` reply item: `{timesteps: Int T, classes: Int C, probs:
+ * Float32List}` where `probs` has `T * C` values, row-major `[t][class]`.
+ *
+ * `info` reply: `{classes, blank, charsetSize, inputHeight, minWidth,
+ * maxWidth, inputName}`.
  *
  * Every call runs on one background thread, in arrival order, and the reply
  * is posted to the main thread. The OrtSession is created lazily from the
@@ -51,10 +65,10 @@ class HtrPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     // Touched only from the executor thread.
     private var environment: OrtEnvironment? = null
     private var session: OrtSession? = null
-    private var inputName = "image"
-    private var charset: List<String> = emptyList()
+    private var inputName = "x"
     private var classes = DEFAULT_CLASSES
-    private var timesteps = 0
+    private var blank = 0
+    private var charsetSize = 0
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
@@ -96,63 +110,83 @@ class HtrPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     // --- Protocol ----------------------------------------------------------
 
-    private fun recognize(arguments: Any?): List<FloatArray> {
+    private class WordInput(val width: Int, val pixels: ByteArray)
+
+    private fun recognize(arguments: Any?): List<Map<String, Any>> {
         val images = (arguments as? Map<*, *>)?.get("images") as? List<*>
             ?: throw HtrError("bad_image", "images is missing.")
-        val pixels = images.mapIndexed { i, any ->
-            val bytes = any as? ByteArray
-            if (bytes == null || bytes.size != IMAGE_BYTES) {
-                throw HtrError("bad_image", "Image $i must be $IMAGE_BYTES bytes (${WIDTH}x$HEIGHT grayscale).")
-            }
-            bytes
-        }
-        if (pixels.isEmpty()) return emptyList()
+        // Validate everything first, so a bad image fails the call before any work.
+        val inputs = images.mapIndexed { i, any -> parseImage(i, any) }
+        if (inputs.isEmpty()) return emptyList()
         val s = ensureSession()
         val env = environment!!
+        return inputs.map { runOne(env, s, it) }
+    }
 
-        val out = ArrayList<FloatArray>(pixels.size)
-        var start = 0
-        while (start < pixels.size) {
-            val n = minOf(MAX_BATCH, pixels.size - start)
-            val input = FloatBuffer.allocate(n * IMAGE_BYTES)
-            for (k in 0 until n) {
-                val bytes = pixels[start + k]
-                for (b in bytes) input.put((b.toInt() and 0xFF) / 255f - 0.5f)
-            }
-            input.rewind()
-            OnnxTensor.createTensor(env, input, longArrayOf(n.toLong(), 1, HEIGHT.toLong(), WIDTH.toLong())).use { tensor ->
-                s.run(mapOf(inputName to tensor)).use { res ->
-                    @Suppress("UNCHECKED_CAST")
-                    val logProbs = res[0].value as Array<Array<FloatArray>> // [T][N][C]
-                    timesteps = logProbs.size
-                    for (k in 0 until n) {
-                        val flat = FloatArray(logProbs.size * classes)
-                        for (t in logProbs.indices) {
-                            System.arraycopy(logProbs[t][k], 0, flat, t * classes, classes)
-                        }
-                        out.add(flat)
-                    }
-                }
-            }
-            start += n
+    private fun parseImage(index: Int, any: Any?): WordInput {
+        val map = any as? Map<*, *>
+            ?: throw HtrError("bad_image", "Image $index must be a map {width, height, pixels}.")
+        val width = (map["width"] as? Number)?.toInt()
+        val height = (map["height"] as? Number)?.toInt()
+        val pixels = map["pixels"] as? ByteArray
+        if (width == null || height == null || pixels == null) {
+            throw HtrError("bad_image", "Image $index needs width, height and pixels.")
         }
-        return out
+        if (height != HEIGHT) {
+            throw HtrError("bad_image", "Image $index must be $HEIGHT pixels high, not $height.")
+        }
+        if (width < MIN_WIDTH || width > MAX_WIDTH) {
+            throw HtrError("bad_image", "Image $index must be $MIN_WIDTH..$MAX_WIDTH pixels wide, not $width.")
+        }
+        if (pixels.size != width * height) {
+            throw HtrError("bad_image", "Image $index has ${pixels.size} bytes, expected ${width * height}.")
+        }
+        return WordInput(width, pixels)
+    }
+
+    /** One image through the network: [1, 3, 48, W] in, [1, T, C] out. */
+    private fun runOne(env: OrtEnvironment, s: OrtSession, image: WordInput): Map<String, Any> {
+        val plane = HEIGHT * image.width
+        // A direct buffer is handed to ONNX Runtime without another copy.
+        val input = ByteBuffer.allocateDirect(3 * plane * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        val gray = FloatArray(plane)
+        for (k in 0 until plane) {
+            gray[k] = ((image.pixels[k].toInt() and 0xFF) / 255f - 0.5f) / 0.5f
+        }
+        repeat(3) { input.put(gray) } // the grey image goes into all three channels
+        input.rewind()
+        val shape = longArrayOf(1, 3, HEIGHT.toLong(), image.width.toLong())
+        return OnnxTensor.createTensor(env, input, shape).use { tensor ->
+            s.run(mapOf(inputName to tensor)).use { res ->
+                val out = res[0] as OnnxTensor
+                val outShape = out.info.shape // [1, T, C]
+                if (outShape.size != 3 || outShape[2].toInt() != classes) {
+                    throw HtrError("htr_failed", "Unexpected model output shape ${outShape.contentToString()}.")
+                }
+                val steps = outShape[1].toInt()
+                val buffer = out.floatBuffer
+                val probs = FloatArray(buffer.remaining())
+                buffer.get(probs)
+                if (probs.size != steps * classes) {
+                    throw HtrError("htr_failed", "Model output has ${probs.size} values, expected ${steps * classes}.")
+                }
+                mapOf<String, Any>("timesteps" to steps, "classes" to classes, "probs" to probs)
+            }
+        }
     }
 
     private fun info(): Map<String, Any> {
         ensureSession()
-        if (timesteps == 0) {
-            // One blank page reveals the (fixed) number of timesteps.
-            val white = ByteArray(IMAGE_BYTES) { 0xFF.toByte() }
-            recognize(mapOf("images" to listOf(white)))
-        }
         return mapOf(
             "classes" to classes,
-            "timesteps" to timesteps,
-            "blank" to classes - 1,
-            "charset" to charset,
-            "width" to WIDTH,
-            "height" to HEIGHT,
+            "blank" to blank,
+            "charsetSize" to charsetSize,
+            "inputHeight" to HEIGHT,
+            "minWidth" to MIN_WIDTH,
+            "maxWidth" to MAX_WIDTH,
+            "inputName" to inputName,
         )
     }
 
@@ -170,12 +204,11 @@ class HtrPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             throw HtrError("model_unreadable", e.message ?: "Cannot read the handwriting model.")
         }
         try {
-            val config = JSONObject(assets.open("$ASSET_DIR/config.json").use { String(it.readBytes(), Charsets.UTF_8) })
-            val chars = config.getJSONArray("charset")
-            charset = List(chars.length()) { chars.getString(it) }
-            classes = config.optInt("num_classes", charset.size + 1)
+            val table = JSONObject(assets.open("$ASSET_DIR/charset.json").use { String(it.readBytes(), Charsets.UTF_8) })
+            charsetSize = table.getJSONArray("charset").length()
+            blank = table.optInt("blank", 0)
         } catch (e: Exception) {
-            throw HtrError("model_unreadable", "Cannot read the handwriting model configuration.")
+            throw HtrError("model_unreadable", "Cannot read the handwriting model's character table.")
         }
         val env = OrtEnvironment.getEnvironment()
         val options = OrtSession.SessionOptions().apply {
@@ -184,7 +217,20 @@ class HtrPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         }
         try {
             val created = env.createSession(modelBytes, options)
-            inputName = created.inputNames.firstOrNull() ?: inputName
+            try {
+                inputName = created.inputNames.firstOrNull() ?: inputName
+                val outputShape = (created.outputInfo.values.firstOrNull()?.info as? TensorInfo)?.shape
+                classes = outputShape?.lastOrNull()?.takeIf { it > 0 }?.toInt() ?: charsetSize
+                if (classes != charsetSize) {
+                    throw HtrError(
+                        "model_unreadable",
+                        "The model has $classes classes but its character table has $charsetSize.",
+                    )
+                }
+            } catch (t: Throwable) {
+                created.close()
+                throw t
+            }
             environment = env
             session = created
             return created
@@ -221,11 +267,10 @@ class HtrPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private companion object {
         const val CHANNEL = "neatink/htr"
         const val ASSET_DIR = "flutter_assets/assets/htr"
-        const val WIDTH = 128
-        const val HEIGHT = 32
-        const val IMAGE_BYTES = WIDTH * HEIGHT
-        const val DEFAULT_CLASSES = 79
-        const val MAX_BATCH = 16
+        const val HEIGHT = 48
+        const val MIN_WIDTH = 16
+        const val MAX_WIDTH = 800
+        const val DEFAULT_CLASSES = 438
         const val INTRA_OP_THREADS = 2
         val NOT_IMPLEMENTED = Any()
     }

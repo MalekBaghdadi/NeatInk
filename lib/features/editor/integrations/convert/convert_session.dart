@@ -3,12 +3,18 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../document/font_kind.dart';
 import '../../../../recognition/htr_channel.dart';
+import '../../../../recognition/word_image.dart';
+import '../../../settings/convert_style_prefs.dart';
 import '../../editor_controller.dart';
 import '../../tools/selection.dart';
 import 'convert_apply.dart';
+import 'convert_build.dart';
 import 'convert_config.dart';
+import 'convert_corrections.dart';
 import 'convert_layout.dart';
 import 'convert_plan.dart';
+import 'sample_export.dart';
+import 'user_lexicon.dart';
 
 /// Where the convert sheet is.
 enum ConvertPhase {
@@ -39,7 +45,20 @@ class ConvertSession extends ChangeNotifier {
     this.selection,
     Uuid? uuid,
     this._metrics = const FlutterTextMetrics(),
-  }) : _uuid = uuid ?? const Uuid();
+    ConvertStylePrefs initialStyle = const ConvertStylePrefs(),
+    this.learner,
+    this.onStyleChosen,
+    this.appVersion = 'unknown',
+    DateTime Function()? clock,
+  })  : _uuid = uuid ?? const Uuid(),
+        _clock = clock ?? DateTime.now {
+    _font = initialStyle.font;
+    _bold = initialStyle.bold;
+    _italic = initialStyle.italic;
+    _fixedSize = initialStyle.fixedSize?.clamp(
+        ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize).toDouble();
+    _colorOverride = initialStyle.colorOverride;
+  }
 
   final EditorController controller;
   final HtrRecognizer recognizer;
@@ -48,6 +67,18 @@ class ConvertSession extends ChangeNotifier {
   final Selection? selection;
   final Uuid _uuid;
   final ConvertTextMetrics _metrics;
+  final DateTime Function() _clock;
+
+  /// Told about the words the user corrected, when a conversion is applied
+  /// (the personal dictionary). Null: nothing is learned.
+  final WordLearner? learner;
+
+  /// Called with the look used, when a conversion is applied, so it can be
+  /// remembered (and used by auto-convert).
+  final void Function(ConvertStylePrefs style)? onStyleChosen;
+
+  /// Written into shared sample files.
+  final String appVersion;
 
   ConvertPhase _phase = ConvertPhase.reading;
   double _progress = 0;
@@ -276,25 +307,13 @@ class ConvertSession extends ChangeNotifier {
     for (final plan in plans) {
       final meta = controller.doc.pageMeta(plan.pageId);
       if (meta == null || !controller.isPageEditable(plan.pageId)) continue;
-      final ruling = PageRuling.of(meta.paper, meta.width, meta.height,
-          isPdf: meta.isPdf);
-      final laid = layoutPage(
-        pageWidth: meta.width,
-        pageHeight: meta.height,
-        ruling: ruling,
+      final laid = layoutPlannedPage(
+        plan: plan,
+        meta: meta,
         style: style,
         metrics: _metrics,
         uuid: _uuid,
-        lines: [
-          for (final l in plan.lines)
-            LayoutLineInput(
-              id: l.id,
-              text: l.text,
-              geometry: LineGeometry.of(l.line),
-              color: l.dominantColor,
-              include: l.willConvert,
-            ),
-        ],
+        convert: (l) => l.willConvert,
       );
       if (laid.isEmpty) continue;
       final converted = {for (final l in laid) l.id};
@@ -314,6 +333,78 @@ class ConvertSession extends ChangeNotifier {
   /// step. Returns null when nothing was converted.
   ConvertOutcome? apply() {
     if (_phase != ConvertPhase.review) return null;
-    return applyConversion(controller, buildConversions());
+    final toLearn = wordsToLearn();
+    final outcome = applyConversion(controller, buildConversions());
+    if (outcome != null) {
+      for (final w in toLearn) {
+        learner?.learnWord(w);
+      }
+      onStyleChosen?.call(style.toPrefs());
+    }
+    return outcome;
   }
+
+  // ---------------------------------------------------------------------------
+  // Corrections
+
+  /// Replaces word [wordIndex] of [line] by [replacement] in the line's text
+  /// (an alternative reading picked in "what the recognizer saw"). When the
+  /// text no longer has one word per recognised word, the word is found by
+  /// its recognised text instead; if it can't be found nothing changes.
+  void replaceWord(PlannedLine line, int wordIndex, String replacement) {
+    if (wordIndex < 0 || wordIndex >= line.words.length) return;
+    final tokens = splitWords(line.text);
+    int at;
+    if (tokens.length == line.words.length) {
+      at = wordIndex;
+    } else {
+      at = tokens.indexOf(line.words[wordIndex].text.trim());
+      if (at < 0) return;
+    }
+    tokens[at] = replacement;
+    setText(line, tokens.join(' '));
+  }
+
+  /// Words the user corrected in the lines that will be converted: what the
+  /// personal dictionary should learn (see [correctedWords]).
+  List<String> wordsToLearn() {
+    final out = <String>{};
+    for (final line in allLines) {
+      if (!line.willConvert) continue;
+      out.addAll(correctedWords(
+        recognised: [for (final w in line.words) w.text],
+        finalText: line.text,
+      ));
+    }
+    return out.toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Samples
+
+  /// The JSON of every recognised word in scope with the text as it stands
+  /// in the review sheet, for sharing handwriting samples (see
+  /// [buildSamplesJson]). Renders each word with [renderer] exactly as the
+  /// recogniser saw it.
+  Future<String> buildSamples(WordImageRenderer renderer) async {
+    final lines = <SampleLineInput>[];
+    for (final plan in plans) {
+      for (final line in plan.lines) {
+        final images = <WordImage>[];
+        for (final w in line.words) {
+          images.add(await renderWordImage(w.group, renderer: renderer));
+        }
+        lines.add(SampleLineInput(
+            line: line, pageIndex: plan.pageIndex, images: images));
+      }
+    }
+    return encodeSamplesJson(buildSamplesJson(
+      appVersion: appVersion,
+      createdAt: _clock(),
+      lines: lines,
+    ));
+  }
+
+  /// The file name for samples made now.
+  String get sampleFileName => samplesFileName(_clock());
 }

@@ -8,6 +8,7 @@ import 'package:neatink/features/editor/integrations/convert/word_crop.dart';
 import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/recognition/htr_channel.dart';
+import 'package:neatink/recognition/word_image.dart';
 
 import 'harness.dart';
 
@@ -323,7 +324,8 @@ void main() {
     expect(key('convert-crop-0'), findsOneWidget);
     final painter = tester.widget<CustomPaint>(key('convert-crop-0')).painter!
         as WordCropPainter;
-    expect(painter.pixels, hasLength(128 * 32));
+    expect(painter.height, wordImageHeight);
+    expect(painter.pixels, hasLength(painter.width * painter.height));
     expect(painter.pixels.any((v) => v < 100), isTrue); // there is ink in it
 
     await tester.tap(key('convert-debug-toggle'));

@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 
 import 'ctc.dart';
 import 'lexicon.dart';
+import 'rescorer.dart';
 import 'stroke_grouping.dart';
+import 'user_lexicon.dart';
 import 'word_image.dart';
 
-/// Asset with the model's charset (`config.json` of the Hugging Face repo).
-const String htrConfigAsset = 'assets/htr/config.json';
+/// Asset with the model's class table (blank, characters, space).
+const String htrCharsetAsset = 'assets/htr/charset.json';
 
 /// A failed recognition call. [userMessage] is safe to show.
 class HtrException implements Exception {
@@ -34,14 +36,29 @@ class HtrException implements Exception {
 class HtrInfo {
   const HtrInfo({
     required this.classes,
-    required this.timesteps,
     required this.blank,
-    required this.charset,
+    this.charsetSize = 0,
+    this.inputHeight = wordImageHeight,
+    this.minWidth = wordImageMinWidth,
+    this.maxWidth = wordImageMaxWidth,
+    this.timesteps = 0,
+    this.charset = const [],
   });
 
   final int classes;
-  final int timesteps;
   final int blank;
+
+  /// Number of entries of the plugin's character table (equals [classes]).
+  final int charsetSize;
+  final int inputHeight;
+  final int minWidth;
+  final int maxWidth;
+
+  /// The number of timesteps depends on the image width, so the plugin no
+  /// longer reports it (0).
+  final int timesteps;
+
+  /// Not reported any more (the Dart side loads `charset.json` itself).
   final List<String> charset;
 }
 
@@ -67,6 +84,7 @@ class WordResult {
   /// The model's own best-path output before the dictionary was applied.
   final String raw;
 
+  /// Up to five other readings, best first (see [RescoredWord.alternatives]).
   final List<String> alternatives;
 }
 
@@ -74,12 +92,15 @@ class WordResult {
 ///
 /// Protocol on the `neatink/htr` channel:
 ///
-/// | Dart -> Kotlin | arguments                | reply |
-/// |----------------|--------------------------|-------|
-/// | `recognize`    | `{images: List<Uint8List>}` | `List<Float32List>`, one per image, each `timesteps * classes` log-probabilities row-major `[t][class]` |
-/// | `info`         | none                     | `{classes, timesteps, blank, charset, width, height}` |
+/// | Dart -> Kotlin | arguments | reply |
+/// |----------------|-----------|-------|
+/// | `recognize`    | `{images: [{width, height, pixels}]}` | one `{timesteps, classes, probs}` map per image |
+/// | `info`         | none      | `{classes, blank, charsetSize, inputHeight, minWidth, maxWidth, inputName}` |
 ///
-/// Each image is 4096 bytes (128x32 grey, row-major, white 255).
+/// An image is `height` = 48 rows of `width` (16..800) grey bytes, row-major,
+/// white paper = 255 (a [WordImage]). `probs` is a `Float32List` of
+/// `timesteps * classes` softmax **probabilities**, row-major `[t][class]`;
+/// class 0 is the CTC blank. The plugin runs one image per model call.
 class HtrRecognizer {
   HtrRecognizer({
     MethodChannel? channel,
@@ -87,13 +108,17 @@ class HtrRecognizer {
     Future<Lexicon?> Function()? lexiconLoader,
     Future<CtcCharset> Function()? charsetLoader,
     this._rescoreConfig = const RescoreConfig(),
-    this.batchSize = 32,
+    UserLexicon? userLexicon,
+    this.batchSize = 8,
   })  : _channel = channel ?? const MethodChannel(channelName),
         _lexiconLoader = lexiconLoader ?? _loadBundledLexicon,
-        _charsetLoader = charsetLoader ?? _loadBundledCharset;
+        _charsetLoader = charsetLoader ?? _loadBundledCharset,
+        _userLexicon = userLexicon ?? UserLexicon();
 
-  /// The app-wide recogniser.
-  static final HtrRecognizer instance = HtrRecognizer();
+  /// The app-wide recogniser, with the personal dictionary saved in the
+  /// application documents directory.
+  static final HtrRecognizer instance =
+      HtrRecognizer(userLexicon: UserLexicon(store: JsonFileUserLexiconStore()));
 
   static const String channelName = 'neatink/htr';
 
@@ -102,16 +127,22 @@ class HtrRecognizer {
   final Future<Lexicon?> Function() _lexiconLoader;
   final Future<CtcCharset> Function() _charsetLoader;
   final RescoreConfig _rescoreConfig;
+  final UserLexicon _userLexicon;
 
-  /// Images sent per channel call (bounds the platform message size).
+  /// Images sent per channel call (bounds the platform message size and
+  /// sets how often progress is reported).
   final int batchSize;
 
   Future<LexiconRescorer>? _rescorer;
+  Lexicon? _lexicon;
+
+  /// The personal dictionary (names and words the user taught the app).
+  UserLexicon get userLexicon => _userLexicon;
 
   static Future<Lexicon?> _loadBundledLexicon() => Lexicon.loadAsset();
 
   static Future<CtcCharset> _loadBundledCharset() async =>
-      CtcCharset.fromConfigJson(await rootBundle.loadString(htrConfigAsset));
+      CtcCharset.fromJson(await rootBundle.loadString(htrCharsetAsset));
 
   Future<LexiconRescorer> _loadRescorer() async {
     final pending = _rescorer ??= _buildRescorer();
@@ -137,39 +168,95 @@ class HtrRecognizer {
       // Without a word list the greedy reading is still useful.
       debugPrint('NeatInk: word list unavailable: $e');
     }
-    return LexiconRescorer(charset, lexicon, config: _rescoreConfig);
+    _lexicon = lexicon;
+    await _userLexicon.load(); // never throws
+    return LexiconRescorer(
+      charset,
+      lexicon,
+      config: _rescoreConfig,
+      userLexicon: _userLexicon,
+    );
+  }
+
+  /// Teaches the recogniser the spelling of [correctedWord] (the text the
+  /// user typed in place of a recognised word; several words are fine).
+  /// Words the English list already knows are not stored. Returns how many
+  /// entries were added or changed; the dictionary is saved before the
+  /// future completes.
+  Future<int> learn(String correctedWord) async {
+    try {
+      await _loadRescorer();
+    } on HtrException {
+      // No model: the personal dictionary still works on its own.
+    }
+    final lexicon = _lexicon;
+    final added = _userLexicon.learn(
+      correctedWord,
+      isKnownWord: lexicon?.contains,
+    );
+    await _userLexicon.flush();
+    return added;
   }
 
   /// Model facts (loads the model on first use).
   Future<HtrInfo> info() async {
     final raw = await _call<Map<Object?, Object?>>('info', null);
+    int number(String key, int fallback) => (raw[key] as num?)?.toInt() ?? fallback;
     return HtrInfo(
-      classes: (raw['classes'] as num).toInt(),
-      timesteps: (raw['timesteps'] as num).toInt(),
-      blank: (raw['blank'] as num).toInt(),
-      charset: [for (final c in raw['charset'] as List<Object?>) c as String],
+      classes: number('classes', 0),
+      blank: number('blank', 0),
+      charsetSize: number('charsetSize', 0),
+      inputHeight: number('inputHeight', wordImageHeight),
+      minWidth: number('minWidth', wordImageMinWidth),
+      maxWidth: number('maxWidth', wordImageMaxWidth),
     );
   }
 
-  /// Raw log-probabilities for 4096-byte word images. Used by the developer
+  /// Probabilities of every character at every timestep for each of
+  /// [images], turned into log-probabilities (the space class is folded into
+  /// the blank, see [CtcLogProbs.fromProbabilities]). Used by the developer
   /// screen and tests; [recognizeWords] is the normal entry point.
-  Future<List<CtcLogProbs>> recognizeImages(List<Uint8List> images, {int classes = 79}) async {
+  Future<List<CtcLogProbs>> recognizeImages(List<WordImage> images) async {
+    final rescorer = await _loadRescorer();
     final out = <CtcLogProbs>[];
     for (var start = 0; start < images.length; start += batchSize) {
       final end = (start + batchSize).clamp(0, images.length);
-      final reply = await _call<List<Object?>>('recognize', {
-        'images': images.sublist(start, end),
-      });
-      if (reply.length != end - start) {
-        throw const HtrException('protocol', 'The recognizer returned the wrong number of results.');
+      out.addAll(await _recognizeBatch(images.sublist(start, end), rescorer.charset));
+    }
+    return out;
+  }
+
+  Future<List<CtcLogProbs>> _recognizeBatch(List<WordImage> batch, CtcCharset charset) async {
+    final reply = await _call<List<Object?>>('recognize', {
+      'images': [
+        for (final img in batch)
+          {'width': img.width, 'height': img.height, 'pixels': img.pixels},
+      ],
+    });
+    if (reply.length != batch.length) {
+      throw const HtrException('protocol', 'The recognizer returned the wrong number of results.');
+    }
+    final out = <CtcLogProbs>[];
+    for (final item in reply) {
+      if (item is! Map) {
+        throw const HtrException('protocol', 'The recognizer returned a malformed result.');
       }
-      for (final item in reply) {
-        final flat = item as List<num>;
-        if (flat.isEmpty || flat.length % classes != 0) {
-          throw const HtrException('protocol', 'The recognizer returned a malformed result.');
-        }
-        out.add(CtcLogProbs.fromFlat(flat, classes));
+      final probs = item['probs'];
+      final classes = (item['classes'] as num?)?.toInt();
+      final steps = (item['timesteps'] as num?)?.toInt();
+      if (probs is! List<num> ||
+          classes != charset.classes ||
+          steps == null ||
+          steps <= 0 ||
+          probs.length != steps * classes!) {
+        throw const HtrException('protocol', 'The recognizer returned a malformed result.');
       }
+      out.add(CtcLogProbs.fromProbabilities(
+        probs,
+        classes,
+        blank: charset.blank,
+        foldIntoBlank: charset.space,
+      ));
     }
     return out;
   }
@@ -182,16 +269,18 @@ class HtrRecognizer {
   }) async {
     if (words.isEmpty) return const [];
     final rescorer = await _loadRescorer();
-    final classes = rescorer.charset.classes;
     final results = <WordResult>[];
     onProgress?.call(0, words.length);
+    // The language layer runs on this isolate; give the UI a turn whenever
+    // it has been busy for a frame or so.
+    final slice = Stopwatch()..start();
     for (var start = 0; start < words.length; start += batchSize) {
       final end = (start + batchSize).clamp(0, words.length);
-      final images = <Uint8List>[];
+      final images = <WordImage>[];
       for (var i = start; i < end; i++) {
-        images.add((await renderWordImage(words[i], renderer: _renderer)).pixels);
+        images.add(await renderWordImage(words[i], renderer: _renderer));
       }
-      final logProbs = await recognizeImages(images, classes: classes);
+      final logProbs = await _recognizeBatch(images, rescorer.charset);
       for (var i = 0; i < logProbs.length; i++) {
         final r = rescorer.rescore(logProbs[i]);
         results.add(WordResult(
@@ -201,6 +290,10 @@ class HtrRecognizer {
           raw: r.raw,
           alternatives: r.alternatives,
         ));
+        if (slice.elapsedMilliseconds > 12) {
+          await Future<void>.delayed(Duration.zero);
+          slice.reset();
+        }
       }
       onProgress?.call(results.length, words.length);
     }

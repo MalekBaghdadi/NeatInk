@@ -1,0 +1,733 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/app/providers.dart';
+import 'package:neatink/document/commands.dart';
+import 'package:neatink/document/font_kind.dart';
+import 'package:neatink/features/editor/canvas/document_view.dart';
+import 'package:neatink/features/editor/editor_tool.dart';
+import 'package:neatink/features/settings/app_settings.dart';
+import 'package:neatink/features/settings/convert_style_prefs.dart';
+import 'package:neatink/features/settings/settings_controller.dart';
+import 'package:neatink/ink/stroke.dart';
+import 'package:neatink/recognition/htr_channel.dart';
+
+import 'harness.dart';
+
+FakeRecognizer reader([Map<String, (String, double)> extra = const {}]) =>
+    FakeRecognizer({
+      'aw0': ('hello', 0.9),
+      'aw1': ('online', 0.9),
+      'bw0': ('second', 0.9),
+      'cw0': ('third', 0.9),
+      ...extra,
+    });
+
+Finder key(String k) => find.byKey(ValueKey(k));
+
+Future<void> wait(WidgetTester tester, int milliseconds) async {
+  await tester.pump(Duration(milliseconds: milliseconds));
+  await tester.pump();
+}
+
+double rightOf(List<Stroke> strokes) => strokes
+    .expand((s) => s.raw)
+    .map((p) => p.x)
+    .reduce((a, b) => a > b ? a : b);
+
+List<String> texts(ConvertHarness h) => [for (final t in h.page.texts) t.text];
+
+void main() {
+  group('when it converts', () {
+    testWidgets('about a second after the last stroke, not before',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      await h.write(writeLine('a', ['hello', 'online'], y: 104));
+      final depth = h.undoDepth;
+
+      await wait(tester, 800); // 900 ms since the last stroke
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 0);
+      expect(h.page.strokes, isNotEmpty);
+
+      await wait(tester, 200); // past 1000 ms
+      expect(texts(h), ['hello online']);
+      expect(h.page.strokes, isEmpty);
+      expect(h.recognizer.calls, 1);
+      // One undo step, named for what it did.
+      expect(h.undoDepth, depth + 1);
+      expect(h.controller.undoLabel, 'Auto-convert');
+    });
+
+    testWidgets('never in the middle of a letter written with 300 ms gaps',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      final strokes = writeLine('a', ['hello'], y: 104);
+      expect(strokes.length, greaterThanOrEqualTo(3));
+      for (final s in strokes) {
+        await h.draw(s);
+        await wait(tester, 300);
+        expect(h.page.texts, isEmpty, reason: 'after ${s.id}');
+        expect(h.recognizer.calls, 0);
+      }
+      await wait(tester, 800);
+      expect(texts(h), ['hello']);
+      expect(h.recognizer.wordsRead, 1, reason: 'the word is read once, whole');
+    });
+
+    testWidgets('putting the pen down again postpones it', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 500);
+
+      // A real pen stroke, held down for longer than the idle time.
+      final start =
+          tester.getCenter(find.byType(DocumentView)) - const Offset(100, 100);
+      final g = await tester.startGesture(start, kind: PointerDeviceKind.stylus);
+      await tester.pump(const Duration(milliseconds: 50));
+      for (var i = 0; i < 6; i++) {
+        await g.moveBy(const Offset(10, 4));
+        await wait(tester, 400);
+      }
+      expect(h.controller.inkTool.active, isNotNull);
+      expect(h.page.texts, isEmpty, reason: 'pen is down: wait');
+      expect(h.recognizer.calls, 0);
+
+      await g.up();
+      await wait(tester, 800);
+      expect(h.page.texts, isEmpty, reason: '1 s starts at pen up');
+      await wait(tester, 400);
+      expect(h.page.texts, isNotEmpty);
+      expect(h.page.texts.map((t) => t.text), contains('hello'));
+    });
+
+    testWidgets('strokes of several lines are read together, one undo step',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      await h.write([
+        ...writeLine('a', ['hello'], y: 104),
+        ...writeLine('b', ['hello'], y: 156),
+      ]);
+      final depth = h.undoDepth;
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second']);
+      expect(h.undoDepth, depth + 1);
+      h.controller.undo();
+      expect(h.page.texts, isEmpty);
+      expect(h.page.strokes, isNotEmpty);
+    });
+  });
+
+  group('what it leaves alone', () {
+    testWidgets('a low-confidence line stays ink and is not read again',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'bw0': ('seoond', 0.4)}), autoConvert: true);
+      final b = writeLine('b', ['hello'], y: 156);
+      await h.write([...writeLine('a', ['hello'], y: 104), ...b]);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+      // The doubtful line is exactly as it was drawn.
+      expect([for (final s in h.page.strokes) s.id], [for (final s in b) s.id]);
+      for (var i = 0; i < b.length; i++) {
+        expect(identical(h.page.strokes[i], b[i]), isTrue);
+      }
+      expect(h.recognizer.wordsRead, 2);
+
+      // A new line later: only that one is read.
+      await h.write(writeLine('c', ['hello'], y: 208));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'third']);
+      expect(h.recognizer.wordsRead, 3, reason: 'the doubtful line is not retried');
+      expect(h.page.strokes.map((s) => s.id).toSet(),
+          {for (final s in b) s.id});
+    });
+
+    testWidgets('one doubtful word keeps the whole line as ink', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'aw1': ('onlyne', 0.45)}), autoConvert: true);
+      await h.write(writeLine('a', ['hello', 'online'], y: 104));
+      await wait(tester, 1100);
+      expect(h.page.texts, isEmpty);
+      expect(h.page.strokes, isNotEmpty);
+      expect(h.undoDepth, greaterThan(0));
+      expect(h.controller.undoLabel, 'Pen stroke', reason: 'nothing was changed');
+    });
+
+    testWidgets('an unreadable word keeps the whole line as ink', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'aw1': ('', 0.95)}), autoConvert: true);
+      await h.write(writeLine('a', ['hello', 'online'], y: 104));
+      await wait(tester, 1100);
+      expect(h.page.texts, isEmpty);
+      expect(h.controller.undoLabel, 'Pen stroke');
+    });
+
+    testWidgets('a confidence of exactly the minimum is good enough',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'aw0': ('hello', 0.5)}), autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+    });
+
+    testWidgets('highlighter strokes and snapped shapes are ignored',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      final base = writeLine('a', ['hello'], y: 104).first;
+      final hl = base.copyWith(id: 'hl', tool: StrokeTool.highlighter);
+      final shape = base.copyWith(id: 'sh', shape: ShapeKind.line);
+      await h.write([hl, shape]);
+      await wait(tester, 2000);
+      expect(h.recognizer.calls, 0);
+      expect(h.page.strokes, hasLength(2));
+    });
+
+    testWidgets('nothing happens with the setting off', (tester) async {
+      final h = await ConvertHarness.open(tester, recognizer: reader());
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 3000);
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 0);
+    });
+
+    testWidgets('turning the setting off with a timer pending cancels it',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 400);
+      h.setAutoConvert(false);
+      await wait(tester, 3000);
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 0);
+      expect(h.page.strokes, isNotEmpty);
+
+      // Back on: only what is written from now on is converted.
+      h.setAutoConvert(true);
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(texts(h), ['second']);
+      expect(h.page.strokes.every((s) => s.id.startsWith('aw0')), isTrue);
+    });
+
+    testWidgets('turning it on later does not touch old ink', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          pages: [writeLine('a', ['hello'], y: 104)], recognizer: reader());
+      h.setAutoConvert(true);
+      await wait(tester, 3000);
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 0);
+    });
+
+    testWidgets('a read-only page is never converted', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          pages: [const []], unreadablePages: {0}, recognizer: reader(), autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 3000);
+      expect(h.recognizer.calls, 0);
+      expect(h.page.texts, isEmpty);
+      expect(h.page.strokes, isNotEmpty);
+    });
+
+    testWidgets('waits while another tool is selected, then converts',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      h.controller.selectTool(EditorTool.lasso);
+      await tester.pump();
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 3000);
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 0);
+
+      h.controller.selectTool(EditorTool.pen);
+      await wait(tester, 500);
+      expect(h.page.texts, isEmpty);
+      await wait(tester, 700);
+      expect(texts(h), ['hello']);
+    });
+
+    testWidgets('going to the background leaves the waiting ink alone',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 300);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 6));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 0);
+
+      // Writing again converts the new line only.
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(texts(h), ['second']);
+      expect(h.page.strokes.every((s) => s.id.startsWith('aw0')), isTrue);
+    });
+  });
+
+  group('undo', () {
+    testWidgets('puts the ink back, and it is not converted again',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      final a = writeLine('a', ['hello'], y: 104);
+      await h.write(a);
+      final before = List<Stroke>.of(h.page.strokes);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+
+      h.controller.undo();
+      await tester.pump();
+      expect(h.page.texts, isEmpty);
+      expect(h.page.strokes.length, before.length);
+      for (var i = 0; i < before.length; i++) {
+        expect(identical(h.page.strokes[i], before[i]), isTrue);
+      }
+      await wait(tester, 5000);
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.calls, 1);
+
+      // A new line afterwards converts alone: the restored ink stays ink.
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(texts(h), ['second']);
+      expect(h.recognizer.wordsRead, 2);
+      expect({for (final s in h.page.strokes) s.id.split('-').first}, {'aw0'});
+
+      // Redo of the first conversion still works as a plain redo.
+      h.controller.undo();
+      h.controller.undo();
+      h.controller.redo();
+      expect(h.page.texts, isEmpty, reason: 'redo of the pen strokes only');
+    });
+  });
+
+  group('merging into the previous box', () {
+    List<Stroke> firstWord = const [];
+
+    Future<ConvertHarness> twoWords(WidgetTester tester,
+        {double gap = 20, double y2 = 104}) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      final first = firstWord = writeLine('a', ['hello'], y: 104);
+      await h.write(first);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+      final second = writeLine('b', ['hello'], x: rightOf(first) + gap, y: y2);
+      await h.write(second);
+      return h;
+    }
+
+    testWidgets('a word just after it on the same baseline is appended',
+        (tester) async {
+      final h = await twoWords(tester);
+      final first = h.page.texts.single;
+      final depth = h.undoDepth;
+      await wait(tester, 1100);
+
+      expect(texts(h), ['hello second']);
+      final merged = h.page.texts.single;
+      expect(merged.id, first.id);
+      expect(merged.x, first.x);
+      expect(merged.y, first.y);
+      expect(merged.width, greaterThan(first.width));
+      expect(merged.fontSize, first.fontSize);
+      expect(h.page.strokes, isEmpty);
+      expect(h.undoDepth, depth + 1, reason: 'one step for the whole pass');
+
+      // Undo gives the second word's ink back and the old box.
+      h.controller.undo();
+      expect(texts(h), ['hello']);
+      expect(h.page.strokes.every((s) => s.id.startsWith('bw0')), isTrue);
+      expect(h.page.strokes, isNotEmpty);
+      h.controller.redo();
+      expect(texts(h), ['hello second']);
+    });
+
+    testWidgets('a word far away starts a box of its own', (tester) async {
+      final h = await twoWords(tester, gap: 60);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second']);
+    });
+
+    testWidgets('a word on another baseline starts a box of its own',
+        (tester) async {
+      final h = await twoWords(tester, y2: 116);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second']);
+    });
+
+    testWidgets('a box the user moved is left alone', (tester) async {
+      final h = await twoWords(tester);
+      final first = h.page.texts.single;
+      h.controller.execute(PageItemsCommand(h.pageIdAt(0),
+          label: 'Move text',
+          textChanges: [(first, first.copyWith(x: first.x + 5))]));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second']);
+    });
+
+    testWidgets('the box is still found after the user undoes a merge',
+        (tester) async {
+      final h = await twoWords(tester);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello second']);
+      h.controller.undo(); // the merge
+      expect(texts(h), ['hello']);
+
+      final third =
+          writeLine('c', ['hello'], x: rightOf(firstWord) + 15, y: 104);
+      await h.write(third);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello third']);
+    });
+  });
+
+  group('feedback', () {
+    testWidgets('a small chip shows while it reads, and drawing is not blocked',
+        (tester) async {
+      final fake = reader()..gate = Completer<void>();
+      final h = await ConvertHarness.open(tester,
+          recognizer: fake, autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(fake.calls, 1);
+      expect(find.text('Converting...'), findsOneWidget);
+      expect(tester.widget<IgnorePointer>(find.ancestor(
+              of: key('auto-convert-working'),
+              matching: find.byType(IgnorePointer)).first).ignoring,
+          isTrue);
+
+      fake.gate!.complete();
+      await wait(tester, 100);
+      expect(find.text('Converting...'), findsNothing);
+      expect(texts(h), ['hello']);
+    });
+
+    testWidgets('strokes written while it reads are not split off',
+        (tester) async {
+      final fake = reader()..gate = Completer<void>();
+      final h = await ConvertHarness.open(tester,
+          recognizer: fake, autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(fake.calls, 1);
+
+      await h.write(writeLine('c', ['hello'], y: 208));
+      fake.gate!.complete();
+      await wait(tester, 100);
+      expect(h.page.texts, isEmpty, reason: 'the pen moved on: reading dropped');
+      expect(h.page.strokes, isNotEmpty);
+
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'third']);
+      expect(fake.calls, 2);
+    });
+
+    testWidgets('a failure shows one SnackBar, waits, and retries on the next stroke',
+        (tester) async {
+      final fake = reader()..error = const HtrException('model_missing', 'gone');
+      final h = await ConvertHarness.open(tester,
+          recognizer: fake, autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(find.textContaining('The handwriting model could not be loaded.'),
+          findsOneWidget);
+      expect(fake.calls, 1);
+      expect(h.page.texts, isEmpty);
+      expect(h.page.strokes, isNotEmpty);
+
+      // It waits for the next stroke instead of trying again by itself.
+      await wait(tester, 5000);
+      expect(fake.calls, 1);
+
+      // The same failure again is not announced again.
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(fake.calls, 2);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      // The first message is gone and no second one was queued behind it.
+      expect(find.byType(SnackBar), findsNothing);
+
+      // Once the model works, everything that waited is converted.
+      fake.error = null;
+      await h.write(writeLine('c', ['hello'], y: 208));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second', 'third']);
+    });
+
+    testWidgets('a recogniser that never answers is given up on', (tester) async {
+      final fake = reader()..gate = Completer<void>(); // never completed
+      final h = await ConvertHarness.open(tester,
+          recognizer: fake, autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(find.text('Converting...'), findsOneWidget);
+      await tester.pump(const Duration(minutes: 2, seconds: 1));
+      expect(find.text('Converting...'), findsNothing);
+      expect(find.textContaining('Reading the handwriting failed.'),
+          findsOneWidget);
+      expect(h.page.strokes, isNotEmpty);
+
+      // The next stroke tries again.
+      fake.gate = null;
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second']);
+    });
+
+    testWidgets('an unexpected error also ends in a message, never a crash',
+        (tester) async {
+      final fake = reader()..error = StateError('boom');
+      final h = await ConvertHarness.open(tester,
+          recognizer: fake, autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(find.textContaining('Reading the handwriting failed.'),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(h.page.strokes, isNotEmpty);
+    });
+  });
+
+  group('the toggle', () {
+    Future<ConvertHarness> open(WidgetTester tester, Size size,
+            {Map<String, Object> prefs = const {}}) =>
+        ConvertHarness.open(tester,
+            recognizer: reader(), size: size, prefsValues: prefs);
+
+    testWidgets('wide: an "Auto" button next to Convert, highlighted when on',
+        (tester) async {
+      final h = await open(tester, const Size(1000, 1400));
+      expect(key('auto-convert-toggle'), findsOneWidget);
+      expect(find.text('Auto'), findsOneWidget);
+      expect(find.byTooltip('Auto-convert handwriting to text'), findsOneWidget);
+      expect(find.text('Roboto'), findsNothing, reason: 'font only shows when on');
+      final convert = tester.getCenter(key('convert-to-text'));
+      final auto = tester.getCenter(key('auto-convert-toggle'));
+      expect(auto.dx, greaterThan(convert.dx));
+      expect(auto.dy, closeTo(convert.dy, 1));
+
+      Color? background() => tester
+          .widget<TextButton>(key('auto-convert-toggle'))
+          .style
+          ?.backgroundColor
+          ?.resolve({});
+      expect(background(), isNull);
+      await tester.tap(key('auto-convert-toggle'));
+      await tester.pump();
+      expect(h.container.read(settingsProvider).autoConvert, isTrue);
+      expect(background(), isNotNull);
+      expect(tester.widget<Text>(key('auto-convert-font')).data, 'Roboto');
+
+      await tester.tap(key('auto-convert-toggle'));
+      await tester.pump();
+      expect(h.container.read(settingsProvider).autoConvert, isFalse);
+      expect(background(), isNull);
+    });
+
+    testWidgets('the font in use is shown when it is on', (tester) async {
+      await open(tester, const Size(1000, 1400), prefs: {
+        AppSettings.prefsKey: jsonEncode({'autoConvert': true}),
+        ConvertStylePrefs.prefsKey:
+            jsonEncode(const ConvertStylePrefs(fontId: 'lora').toJson()),
+      });
+      expect(tester.widget<Text>(key('auto-convert-font')).data,
+          FontKind.lora.label);
+    });
+
+    for (final size in const [Size(700, 1200), Size(420, 800), Size(360, 640)]) {
+      testWidgets('narrow (${size.width.toInt()} wide): an icon button, no overflow',
+          (tester) async {
+        final h = await open(tester, size);
+        expect(key('auto-convert-toggle'), findsOneWidget);
+        expect(find.text('Auto'), findsNothing);
+        expect(find.byTooltip('Auto-convert handwriting to text'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        expect(tester.widget<IconButton>(key('auto-convert-toggle')).isSelected,
+            isFalse);
+
+        await tester.tap(key('auto-convert-toggle'));
+        await tester.pump();
+        expect(h.container.read(settingsProvider).autoConvert, isTrue);
+        expect(tester.widget<IconButton>(key('auto-convert-toggle')).isSelected,
+            isTrue);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('phone width: Pages and Add page move into the menu',
+        (tester) async {
+      final h = await open(tester, const Size(360, 640));
+      expect(key('add-page'), findsNothing);
+      expect(key('page-indicator'), findsNothing);
+      expect(key('undo'), findsOneWidget);
+      expect(key('convert-to-text'), findsOneWidget);
+      await tester.tap(key('editor-menu'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(key('menu-add-page'), findsOneWidget);
+      await tester.tap(key('menu-add-page'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(h.controller.pageCount, 2);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a mid-size screen keeps the buttons and the page count',
+        (tester) async {
+      await open(tester, const Size(450, 800));
+      expect(key('add-page'), findsNothing);
+      expect(key('page-indicator'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a tablet keeps every button', (tester) async {
+      await open(tester, const Size(700, 1200));
+      expect(key('add-page'), findsOneWidget);
+      expect(key('page-indicator'), findsOneWidget);
+      expect(key('auto-convert-toggle'), findsOneWidget);
+    });
+
+    testWidgets('switching it on with the toggle converts what is written next',
+        (tester) async {
+      final h = await open(tester, const Size(700, 1200));
+      await tester.tap(key('auto-convert-toggle'));
+      await tester.pump();
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+    });
+
+    testWidgets('read-only pages keep the toggle (the setting is global)',
+        (tester) async {
+      await ConvertHarness.open(tester,
+          pages: [const []], unreadablePages: {0}, recognizer: reader());
+      expect(key('auto-convert-toggle'), findsOneWidget);
+    });
+  });
+
+  group('the remembered look', () {
+    testWidgets('auto-convert types in it', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(),
+          autoConvert: true,
+          prefsValues: {
+            ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs(
+                    fontId: 'lora',
+                    bold: true,
+                    italic: true,
+                    fixedSize: 20,
+                    colorOverride: 0xFF1A237E)
+                .toJson()),
+          });
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      final t = h.page.texts.single;
+      expect(t.font, FontKind.lora);
+      expect(t.bold, isTrue);
+      expect(t.italic, isTrue);
+      expect(t.fontSize, lessThanOrEqualTo(20));
+      expect(t.color, 0xFF1A237E);
+    });
+
+    testWidgets('by default: Roboto, auto size, the ink colour', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      await h.write(
+          writeLine('a', ['hello'], y: 104, color: 0xFF880E4F));
+      await wait(tester, 1100);
+      final t = h.page.texts.single;
+      expect(t.font, FontKind.sans);
+      expect(t.bold, isFalse);
+      expect(t.color, 0xFF880E4F);
+    });
+
+    testWidgets('the manual sheet saves what the user chose, auto uses it',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          pages: [writeLine('a', ['hello'], y: 104)],
+          recognizer: reader(),
+          autoConvert: true);
+      await h.tapConvert();
+      await tester.tap(key('convert-font'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(key('text-font-lora'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(key('convert-bold'));
+      await tester.pump();
+      await tester.tap(key('convert-colour-ff1a237e'));
+      await tester.pump();
+      await tester.tap(key('convert-apply'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final saved = h.container.read(convertStylePrefsProvider);
+      expect(saved.fontId, 'lora');
+      expect(saved.bold, isTrue);
+      expect(saved.colorOverride, 0xFF1A237E);
+      expect(saved.fixedSize, isNull);
+      final stored = jsonDecode(h.container
+          .read(sharedPreferencesProvider)
+          .getString(ConvertStylePrefs.prefsKey)!) as Map<String, dynamic>;
+      expect(stored['font'], 'lora');
+      expect(stored['sizeMode'], 'auto');
+      await tester.pump(const Duration(seconds: 6));
+
+      // The toggle names that font, and a later auto pass types in it.
+      expect(tester.widget<Text>(key('auto-convert-font')).data, 'Lora');
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      final auto = h.page.texts.firstWhere((t) => t.text == 'second');
+      expect(auto.font, FontKind.lora);
+      expect(auto.bold, isTrue);
+    });
+
+    testWidgets('the manual sheet starts from the remembered look',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          pages: [writeLine('a', ['hello'], y: 104)],
+          recognizer: reader(),
+          prefsValues: {
+            ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs(
+                    fontId: 'lora', bold: true, fixedSize: 18)
+                .toJson()),
+          });
+      await h.tapConvert();
+      expect(tester.widget<Text>(key('convert-font-label')).data, 'Lora');
+      expect(tester.widget<FilterChip>(key('convert-bold')).selected, isTrue);
+      expect(tester.widget<Text>(key('convert-size-label')).data, '18 pt');
+    });
+
+    testWidgets('closing the sheet without converting remembers nothing',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          pages: [writeLine('a', ['hello'], y: 104)], recognizer: reader());
+      await h.tapConvert();
+      await tester.tap(key('convert-bold'));
+      await tester.pump();
+      await tester.tap(key('convert-close'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(h.container.read(convertStylePrefsProvider),
+          const ConvertStylePrefs());
+    });
+  });
+}

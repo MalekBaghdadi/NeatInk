@@ -4,86 +4,118 @@ import 'dart:ui' as ui;
 
 import '../ink/ink_point.dart';
 import '../ink/stroke.dart';
-import '../render/stroke_outline.dart';
 import 'stroke_grouping.dart';
 
-/// Size of the recogniser's input image.
+/// Height of the recogniser's input image in pixels (fixed by the model).
+const int wordImageHeight = 48;
+
+/// Narrowest and widest word image. The width follows the word's aspect
+/// ratio; a word wider than [wordImageMaxWidth] is squeezed horizontally.
+const int wordImageMinWidth = 16;
+const int wordImageMaxWidth = 800;
+
+/// The width of the ink in pixels at [wordImageHeight] pixels of image
+/// height. THE tuning constant of the rendering: the model reads thin pen
+/// strokes (about 1.5 to 2 px at this height) slightly better than thick
+/// ones.
+const double wordImageStrokePx = 1.8;
+
+/// Width of the old fixed 128x32 input.
+@Deprecated('Word images have a variable width: use WordImage.width.')
 const int wordImageWidth = 128;
-const int wordImageHeight = 32;
 
 /// Tuning numbers for [renderWordImage].
 class WordImageConfig {
   const WordImageConfig({
-    this.margin = 2.0,
-    this.strokeToXHeight = 0.2,
-    this.minStrokePx = 1.6,
-    this.maxStrokePx = 3.0,
+    this.strokePx = wordImageStrokePx,
+    this.minWidth = wordImageMinWidth,
+    this.maxWidth = wordImageMaxWidth,
     this.maxScale = 10.0,
+    this.minExtentFactor = 0.3,
   });
 
-  /// White border kept around the ink, in pixels.
-  final double margin;
+  /// Pen width in image pixels (see [wordImageStrokePx]).
+  final double strokePx;
 
-  /// Pen width as a fraction of the (scaled) x-height. IAM word images have
-  /// ink about 2 to 3 px wide at 32 px height.
-  final double strokeToXHeight;
-  final double minStrokePx;
-  final double maxStrokePx;
+  final int minWidth;
+  final int maxWidth;
 
-  /// Largest enlargement in pixels per point. Even tiny writing (about 3 pt
-  /// x-height) needs less, so a lone dot or dash is not blown up to fill the
-  /// canvas.
+  /// Largest enlargement in pixels per point. A lone dot or dash is not
+  /// blown up to fill the image; it stays small, centred on white.
   final double maxScale;
+
+  /// A word is taken to be at least this many x-heights wide and high.
+  final double minExtentFactor;
 }
 
 /// A word rendered for the recogniser.
 class WordImage {
-  const WordImage({required this.pixels, required this.scale, required this.strokeWidthPx});
+  WordImage({
+    required this.pixels,
+    required this.scale,
+    required this.strokeWidthPx,
+    int? width,
+    this.height = wordImageHeight,
+  }) : width = width ?? pixels.length ~/ height;
 
-  /// [wordImageWidth] x [wordImageHeight] bytes, row-major, 0 = ink and
-  /// 255 = paper.
+  /// [width] x [height] bytes, row-major, 0 = ink and 255 = paper.
   final Uint8List pixels;
 
-  /// Pixels per page point.
+  /// Image size in pixels; [height] is [wordImageHeight].
+  final int width;
+  final int height;
+
+  /// Pixels per page point (vertically).
   final double scale;
 
   final double strokeWidthPx;
 }
 
 /// Draws strokes already placed in image pixel space (black ink, width
-/// `Stroke.size` px) onto a white [wordImageWidth] x [wordImageHeight]
-/// canvas and returns the grey pixels. Injectable because
-/// `Picture.toImage` never completes under `flutter_tester`.
+/// `Stroke.size` px) onto a white [width] x [height] canvas and returns the
+/// grey pixels. Injectable because `Picture.toImage` never completes under
+/// `flutter_tester`.
 abstract class WordImageRenderer {
-  Future<Uint8List> rasterize(List<Stroke> strokes);
+  Future<Uint8List> rasterize(List<Stroke> strokes, {required int width, int height = wordImageHeight});
 }
 
-/// Renders with `dart:ui`, using the same pen outlines as the screen.
+/// Renders with `dart:ui`: every stroke is a round-capped polyline of its
+/// width, anti-aliased.
 class UiWordImageRenderer implements WordImageRenderer {
   const UiWordImageRenderer();
 
   @override
-  Future<Uint8List> rasterize(List<Stroke> strokes) async {
+  Future<Uint8List> rasterize(List<Stroke> strokes, {required int width, int height = wordImageHeight}) async {
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(
-      recorder,
-      ui.Rect.fromLTWH(0, 0, wordImageWidth.toDouble(), wordImageHeight.toDouble()),
-    );
-    canvas.drawRect(
-      ui.Rect.fromLTWH(0, 0, wordImageWidth.toDouble(), wordImageHeight.toDouble()),
-      ui.Paint()..color = const ui.Color(0xFFFFFFFF),
-    );
-    final paint = ui.Paint()
-      ..color = const ui.Color(0xFF000000)
-      ..isAntiAlias = true;
+    final bounds = ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble());
+    final canvas = ui.Canvas(recorder, bounds);
+    canvas.drawRect(bounds, ui.Paint()..color = const ui.Color(0xFFFFFFFF));
     for (final s in strokes) {
-      canvas.drawPath(cachedStrokePath(s), paint);
+      final pts = [
+        for (final p in s.points)
+          if (p.isFinite) p,
+      ];
+      if (pts.isEmpty) continue;
+      final line = ui.Paint()
+        ..color = const ui.Color(0xFF000000)
+        ..isAntiAlias = true
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = s.size
+        ..strokeCap = ui.StrokeCap.round
+        ..strokeJoin = ui.StrokeJoin.round;
+      final first = pts.first;
+      final path = ui.Path()..moveTo(first.x, first.y);
+      for (var i = 1; i < pts.length; i++) {
+        path.lineTo(pts[i].x, pts[i].y);
+      }
+      if (pts.length == 1) path.lineTo(first.x, first.y); // a dot
+      canvas.drawPath(path, line);
     }
     final picture = recorder.endRecording();
-    final image = await picture.toImage(wordImageWidth, wordImageHeight);
+    final image = await picture.toImage(width, height);
     try {
       final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-      final out = Uint8List(wordImageWidth * wordImageHeight);
+      final out = Uint8List(width * height);
       if (data != null) {
         for (var i = 0; i < out.length; i++) {
           out[i] = data.getUint8(i * 4);
@@ -105,8 +137,8 @@ class PolylineWordImageRenderer implements WordImageRenderer {
   const PolylineWordImageRenderer();
 
   @override
-  Future<Uint8List> rasterize(List<Stroke> strokes) async {
-    final coverage = Float64List(wordImageWidth * wordImageHeight);
+  Future<Uint8List> rasterize(List<Stroke> strokes, {required int width, int height = wordImageHeight}) async {
+    final coverage = Float64List(width * height);
     for (final s in strokes) {
       final pts = [
         for (final p in s.points)
@@ -115,11 +147,11 @@ class PolylineWordImageRenderer implements WordImageRenderer {
       if (pts.isEmpty) continue;
       final r = s.size / 2;
       if (pts.length == 1) {
-        _capsule(coverage, pts[0].x, pts[0].y, pts[0].x, pts[0].y, r);
+        _capsule(coverage, width, height, pts[0].x, pts[0].y, pts[0].x, pts[0].y, r);
         continue;
       }
       for (var i = 1; i < pts.length; i++) {
-        _capsule(coverage, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, r);
+        _capsule(coverage, width, height, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y, r);
       }
     }
     final out = Uint8List(coverage.length);
@@ -129,12 +161,12 @@ class PolylineWordImageRenderer implements WordImageRenderer {
     return out;
   }
 
-  void _capsule(Float64List cov, double x0, double y0, double x1, double y1, double r) {
+  void _capsule(Float64List cov, int width, int height, double x0, double y0, double x1, double y1, double r) {
     final reach = r + 1;
     final minX = math.max(0, (math.min(x0, x1) - reach).floor());
-    final maxX = math.min(wordImageWidth - 1, (math.max(x0, x1) + reach).ceil());
+    final maxX = math.min(width - 1, (math.max(x0, x1) + reach).ceil());
     final minY = math.max(0, (math.min(y0, y1) - reach).floor());
-    final maxY = math.min(wordImageHeight - 1, (math.max(y0, y1) + reach).ceil());
+    final maxY = math.min(height - 1, (math.max(y0, y1) + reach).ceil());
     final dx = x1 - x0, dy = y1 - y0;
     final len2 = dx * dx + dy * dy;
     for (var py = minY; py <= maxY; py++) {
@@ -146,16 +178,22 @@ class PolylineWordImageRenderer implements WordImageRenderer {
         final d = math.sqrt(ex * ex + ey * ey);
         // Full coverage inside the pen radius, a 1 px linear edge outside.
         final c = (r + 0.5 - d).clamp(0.0, 1.0);
-        final i = py * wordImageWidth + px;
+        final i = py * width + px;
         if (c > cov[i]) cov[i] = c;
       }
     }
   }
 }
 
-/// Deskews [word] by its line's baseline slope, fits it into the recogniser's
-/// 128x32 canvas keeping the aspect ratio (centred, small margin) and
-/// rasterises it as dark ink on white.
+/// Deskews [word] by its line's baseline slope and renders it as thin dark
+/// ink on white, [wordImageHeight] pixels high and as wide as its aspect
+/// ratio asks (at least [WordImageConfig.minWidth], at most
+/// [WordImageConfig.maxWidth]).
+///
+/// The ink's bounding box fills the image: no white border (the model reads
+/// padded handwriting worse and answers in capitals). Only half a pen width
+/// is kept free on every side so the outermost strokes are not clipped, and
+/// tiny marks (dots, commas) stay small and centred.
 Future<WordImage> renderWordImage(
   WordGroup word, {
   WordImageRenderer renderer = const UiWordImageRenderer(),
@@ -182,25 +220,27 @@ Future<WordImage> renderWordImage(
     }
   }
   if (minX == double.infinity) {
-    final blank = await renderer.rasterize(const []);
-    return WordImage(pixels: blank, scale: 1, strokeWidthPx: 0);
+    final blank = await renderer.rasterize(const [], width: config.minWidth);
+    return WordImage(pixels: blank, width: config.minWidth, scale: 1, strokeWidthPx: 0);
   }
 
   final xh = word.xHeight ?? math.max(maxX - minX, maxY - minY).clamp(1.0, double.infinity) / 3;
-  // A lone dot or dash must not be blown up to fill the canvas.
-  final w = math.max(maxX - minX, 0.3 * xh);
-  final h = math.max(maxY - minY, 0.3 * xh);
+  final w = math.max(maxX - minX, config.minExtentFactor * xh);
+  final h = math.max(maxY - minY, config.minExtentFactor * xh);
 
-  double fit(double border) => math.min(
-        config.maxScale,
-        math.min(
-          (wordImageWidth - 2 * border) / w,
-          (wordImageHeight - 2 * border) / h,
-        ),
-      );
-  final first = fit(config.margin);
-  final width = (config.strokeToXHeight * xh * first).clamp(config.minStrokePx, config.maxStrokePx);
-  final scale = fit(config.margin + width / 2);
+  final stroke = config.strokePx;
+  const height = wordImageHeight;
+  // Pixels per point: the ink (plus half a pen width on each side) fills the
+  // image height.
+  final sy = math.min(config.maxScale, (height - stroke) / h);
+  var sx = sy;
+  var width = (w * sx + stroke).round();
+  if (width > config.maxWidth) {
+    // Very long word: squeeze it horizontally into the widest image.
+    width = config.maxWidth;
+    sx = (width - stroke) / w;
+  }
+  if (width < config.minWidth) width = config.minWidth;
 
   final midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
   final placed = <Stroke>[
@@ -210,8 +250,8 @@ Future<WordImage> renderWordImage(
           for (final p in st.points)
             if (p.isFinite)
               InkPoint(
-                wordImageWidth / 2 + (lx(p) - midX) * scale,
-                wordImageHeight / 2 + (ly(p) - midY) * scale,
+                width / 2 + (lx(p) - midX) * sx,
+                height / 2 + (ly(p) - midY) * sy,
                 0.5,
                 p.t,
               ),
@@ -220,14 +260,15 @@ Future<WordImage> renderWordImage(
           id: st.id,
           tool: StrokeTool.pen,
           color: 0xFF000000,
-          size: width,
+          size: stroke,
           raw: pts,
         );
       }(),
   ];
   return WordImage(
-    pixels: await renderer.rasterize(placed),
-    scale: scale,
-    strokeWidthPx: width,
+    pixels: await renderer.rasterize(placed, width: width, height: height),
+    width: width,
+    scale: sy,
+    strokeWidthPx: stroke,
   );
 }

@@ -282,6 +282,17 @@ _Last updated 2026-10-26 by Claude (end of session 1). Keep this section current
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
+## Session 5 (2026-10-27): v1.2.0 recognition rework (read this first)
+
+- Owner tested v1.1.0 on the tablet with real handwriting: about half the letters were wrong (SimpleHTR/IAM model: 'Malek'->'Maick', 'Mariam'->'Masiasn', 'Note'->'Notc'), with 0.9+ confidence on wrong words. Benchmarked on real crops from the tablet screenshot (exact words of 9): SimpleHTR 2, TrOCR-small 3 (hallucinates words, rejected), **PaddleOCR PP-OCRv5 English mobile rec 5-6** -> adopted (Apache-2.0, 7.8 MB, `assets/htr/model.onnx` + `charset.json`). Bench scripts + notes: `docs/htr_bench/`, `docs/htr-model-notes.md` (crops themselves are personal and were NOT committed).
+- Remaining errors are genuinely ambiguous letters ('e' written like 'c', cursive 'r'), so the language layer matters: `lib/recognition/rescorer.dart` (look-alike smoothing, word list + **personal dictionary**), `user_lexicon.dart` (JSON in app docs dir), learning from review-sheet corrections (`RecognizerWordLearner`), **Settings > My words** screen. With Malek/Mariam/Baghdadi in My words the desktop benchmark reaches 7/9.
+- Word grouping is adaptive now (the 'Note'+'boo'+'k' split bug).
+- NEW **Auto-convert** (toggle in the editor top bar + Settings, like the old tidy toggle): ~1 s after the pen lifts, lines whose words all pass `autoMinConfidence` (0.5) become text in the remembered style; others stay ink; merges into the previous box on the same baseline; one undo step 'Auto-convert'. Code: `integrations/convert/auto_convert_*.dart`.
+- NEW **Share samples** button in the Convert review sheet: writes `mariams-notes-samples-*.json` (word strokes + the exact model input PNG + corrected text) and opens the share sheet so the owner can send real data for tuning/fine-tuning (nothing is sent automatically). Ask the owner for these files before tuning more.
+- Tunables (all uncalibrated until real data): `RescoreConfig` (lambda 0.6, confusionMass 0.08...), `ConvertConfig.lowConfidenceThreshold` 0.35 / `autoMinConfidence` 0.5 / `autoIdleMs` 1000, `GroupingConfig`, `wordImageStrokePx` 1.8.
+- Possible next steps if accuracy is still short: fine-tune the recogniser on the owner's shared samples (convert ONNX->PyTorch with onnx2torch, CPU is enough for a 7 MB model), add a line-level pass, ensemble with a second model.
+- Release 1.2.0: pubspec 1.2.0+3. Licence credits updated (PaddleOCR Apache-2.0; SimpleHTR/IAM credit removed).
+
 ## Session 3 (2026-10-27): wave 2 finished
 
 - Three wave-2 files had been NUL-corrupted by a cut-off (shapes handler + integration, tidy test); they were deleted and redone. **After any cut-off, scan for NUL bytes** (Grep `backslash-x00` with multiline over lib/ and test/).

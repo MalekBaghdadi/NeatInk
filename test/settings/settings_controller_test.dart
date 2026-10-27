@@ -51,6 +51,7 @@ void main() {
           defaultPaper: paper,
           librarySort: LibrarySort.title,
           lockAfterSeconds: 300,
+          autoConvert: true,
         ));
 
     final s = c.read(settingsProvider);
@@ -71,6 +72,65 @@ void main() {
     expect(reloaded.defaultPaper, paper);
     expect(reloaded.librarySort, LibrarySort.title);
     expect(reloaded.lockAfterSeconds, 300);
+    expect(reloaded.autoConvert, isTrue);
+  });
+
+  group('autoConvert', () {
+    test('is off by default', () async {
+      final c = await containerWith({});
+      expect(c.read(settingsProvider).autoConvert, isFalse);
+      expect(const AppSettings().autoConvert, isFalse);
+    });
+
+    test('copyWith changes only it', () {
+      const base = AppSettings(shapeSnapEnabled: false, lockAfterSeconds: 60);
+      final on = base.copyWith(autoConvert: true);
+      expect(on.autoConvert, isTrue);
+      expect(on.shapeSnapEnabled, isFalse);
+      expect(on.lockAfterSeconds, 60);
+      expect(on.copyWith(shapeSnapEnabled: true).autoConvert, isTrue,
+          reason: 'other changes keep it');
+      expect(on.copyWith(autoConvert: false).autoConvert, isFalse);
+    });
+
+    test('JSON round trip', () {
+      expect(const AppSettings(autoConvert: true).toJson()['autoConvert'], isTrue);
+      expect(const AppSettings().toJson()['autoConvert'], isFalse);
+      expect(
+          AppSettings.fromJson(const AppSettings(autoConvert: true).toJson())
+              .autoConvert,
+          isTrue);
+    });
+
+    test('settings saved before it existed load with it off', () async {
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({
+          'themeMode': 'dark',
+          'drawWithFinger': true,
+          'shapeSnapEnabled': false,
+        }),
+      });
+      final s = c.read(settingsProvider);
+      expect(s.autoConvert, isFalse);
+      expect(s.themeMode, AppThemeMode.dark);
+      expect(s.shapeSnapEnabled, isFalse);
+    });
+
+    test('a value of the wrong type falls back to off', () async {
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({'autoConvert': 'yes'}),
+      });
+      expect(c.read(settingsProvider).autoConvert, isFalse);
+    });
+
+    test('survives a restart', () async {
+      final c = await containerWith({});
+      c
+          .read(settingsProvider.notifier)
+          .update((s) => s.copyWith(autoConvert: true));
+      final again = restart(c.read(sharedPreferencesProvider));
+      expect(again.read(settingsProvider).autoConvert, isTrue);
+    });
   });
 
   test('listeners see each update', () async {

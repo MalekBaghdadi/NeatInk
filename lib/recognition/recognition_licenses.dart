@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 /// Credits for the handwriting recognition on Flutter's licence page
-/// (Settings > Open-source licenses): the model, its training data, the
-/// runtime that executes it and the word list that corrects its output.
+/// (Settings > Open-source licenses): the model, the runtime that executes it
+/// and the word list that corrects its output.
 ///
 /// Call once at startup; repeated calls are ignored.
 void registerRecognitionLicenses() {
@@ -12,6 +12,22 @@ void registerRecognitionLicenses() {
 }
 
 bool _registered = false;
+
+const String _apacheNotice = '''
+Copyright (c) PaddlePaddle Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+''';
 
 const String _mitBody = '''
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,20 +52,15 @@ THE SOFTWARE.
 /// The credit entries, in display order. Public for tests.
 Stream<LicenseEntry> recognitionLicenseEntries() async* {
   yield const LicenseEntryWithLineBreaks(
-    ['SimpleHTR word recognition model (handwriting to text)'],
+    ['PaddleOCR PP-OCRv5 text recognition model (handwriting to text)'],
     '''
-The on-device handwriting recognizer is the SimpleHTR word model published
-as "xournalpp-htr-simple-htr" by the Xournal++ HTR project
-(https://huggingface.co/PellelNitram/xournalpp-htr-simple-htr), whose
-architecture is based on SimpleHTR by Harald Scheidl
-(https://github.com/githubharald/SimpleHTR). MIT licence.
+The on-device handwriting recognizer is the English mobile text recognition
+model of PP-OCRv5 from the PaddleOCR project of PaddlePaddle / Baidu
+(https://github.com/PaddlePaddle/PaddleOCR), in the ONNX export published at
+https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec_onnx. It runs
+entirely on the device and no handwriting ever leaves it.
 
-The model was trained on the IAM Handwriting Database (University of Bern),
-which is free for non-commercial research use. Mariam's Notes is a free,
-non-commercial app; the model runs entirely on the device and no handwriting
-ever leaves it.
-
-$_mitBody''',
+$_apacheNotice''',
   );
   yield const LicenseEntryWithLineBreaks(
     ['ONNX Runtime'],

@@ -114,6 +114,41 @@ void main() {
     expect(settingsOf(c).stylusButtonErases, isFalse);
   });
 
+  testWidgets('auto-convert has a switch with a one-line explanation, off by default',
+      (tester) async {
+    final c = await pumpSettings(tester);
+    expect(find.byKey(const ValueKey('settings-auto-convert')), findsOneWidget);
+    expect(find.text('Auto-convert handwriting'), findsOneWidget);
+    expect(find.textContaining('turns into text by itself'), findsOneWidget);
+    expect(tester.widget<SwitchListTile>(
+            find.byKey(const ValueKey('settings-auto-convert'))).value,
+        isFalse);
+    expect(settingsOf(c).autoConvert, isFalse);
+
+    await toggle(tester, 'settings-auto-convert');
+    expect(settingsOf(c).autoConvert, isTrue);
+    expect(tester.widget<SwitchListTile>(
+            find.byKey(const ValueKey('settings-auto-convert'))).value,
+        isTrue);
+    // It is saved: a fresh start sees it.
+    final stored = prefs.getString(AppSettings.prefsKey)!;
+    expect(stored, contains('"autoConvert":true'));
+
+    await toggle(tester, 'settings-auto-convert');
+    expect(settingsOf(c).autoConvert, isFalse);
+  });
+
+  testWidgets('auto-convert switch shows the saved value', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      AppSettings.prefsKey: '{"autoConvert": true}',
+    });
+    prefs = await SharedPreferences.getInstance();
+    await pumpSettings(tester);
+    expect(tester.widget<SwitchListTile>(
+            find.byKey(const ValueKey('settings-auto-convert'))).value,
+        isTrue);
+  });
+
   testWidgets('tidy settings are gone', (tester) async {
     await pumpSettings(tester);
     for (final k in [

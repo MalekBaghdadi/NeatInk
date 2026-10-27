@@ -7,6 +7,7 @@ import '../../../../document/page_items.dart';
 import '../../../../document/paper.dart';
 import '../../../../recognition/stroke_grouping.dart';
 import '../../../../render/text_style.dart';
+import '../../../settings/convert_style_prefs.dart';
 import '../text_images/text_editor.dart';
 import 'convert_config.dart';
 
@@ -137,6 +138,24 @@ class ConvertStyle {
     this.fixedSize,
     this.colorOverride,
   });
+
+  /// The look remembered in the settings (see [ConvertStylePrefs]).
+  factory ConvertStyle.fromPrefs(ConvertStylePrefs prefs) => ConvertStyle(
+        font: prefs.font,
+        bold: prefs.bold,
+        italic: prefs.italic,
+        fixedSize: prefs.fixedSize,
+        colorOverride: prefs.colorOverride,
+      );
+
+  /// This look as something that can be remembered.
+  ConvertStylePrefs toPrefs() => ConvertStylePrefs(
+        fontId: font.name,
+        bold: bold,
+        italic: italic,
+        fixedSize: fixedSize,
+        colorOverride: colorOverride,
+      );
 
   final FontKind font;
   final bool bold;

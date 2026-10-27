@@ -78,6 +78,36 @@ abstract final class ConvertConfig {
   /// chunks).
   static const int chunkWords = 24;
 
+  // ---------------------------------------------------------------------------
+  // Auto-convert (like the Freenote app): the handwriting turns into text by
+  // itself a moment after the pen stops.
+
+  /// Quiet time after the pen lifts before auto-convert reads the new
+  /// handwriting (milliseconds). Longer than the pause between the strokes
+  /// of one letter or word, so it never fires mid-word.
+  static const int autoIdleMs = 1000;
+
+  /// Auto-convert only types a line when EVERY word was read with at least
+  /// this confidence (and none was unreadable). Stricter than
+  /// [lowConfidenceThreshold], which only pre-ticks lines in the review
+  /// sheet: here nobody checks the result first. UNCALIBRATED: tune on the
+  /// tablet together with [lowConfidenceThreshold].
+  static const double autoMinConfidence = 0.5;
+
+  /// A pass that has not finished reading after this long is given up as a
+  /// failure, so a stuck recogniser can never leave auto-convert waiting
+  /// forever.
+  static const Duration autoPassTimeout = Duration(minutes: 2);
+
+  /// A new auto-converted line is appended to the previous auto-converted
+  /// box instead of starting a second one when it sits on the same baseline
+  /// (within this many x-heights)...
+  static const double mergeBaselineTol = 0.6;
+
+  /// ...and starts this close (x-heights, but not before it) to where the
+  /// previous handwriting ended.
+  static const double mergeMaxGap = 2.5;
+
   /// Ink colour overrides offered next to "Keep my ink colour".
   static const List<int> colorChoices = [
     0xFF1E1E1E, // near black

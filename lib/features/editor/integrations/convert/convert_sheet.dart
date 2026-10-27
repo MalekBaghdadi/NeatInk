@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../../../document/font_kind.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/word_image.dart';
+import '../../../settings/convert_style_prefs.dart';
 import '../../editor_controller.dart';
 import '../../tools/selection.dart';
 import '../text_images/text_format_bar.dart';
@@ -12,22 +14,37 @@ import 'convert_apply.dart';
 import 'convert_config.dart';
 import 'convert_plan.dart';
 import 'convert_session.dart';
+import 'sample_share.dart';
+import 'user_lexicon.dart';
 import 'word_crop.dart';
 
 /// Opens the "Convert to text" sheet and, when the user converts, shows the
 /// confirmation with an Undo action. Resolves when the sheet is gone.
+///
+/// The sheet starts with [initialStyle] (the look last used) and reports the
+/// look used through [onStyleChosen] when the user converts; corrected words
+/// go to [learner]; [sampleShare] sends the "Share samples" file.
 Future<void> showConvertSheet(
   BuildContext context,
   EditorController controller, {
   required HtrRecognizer recognizer,
   required WordImageRenderer renderer,
   Selection? selection,
+  ConvertStylePrefs initialStyle = const ConvertStylePrefs(),
+  void Function(ConvertStylePrefs style)? onStyleChosen,
+  WordLearner? learner,
+  SampleShareService sampleShare = const DefaultSampleShareService(),
+  String appVersion = 'unknown',
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final session = ConvertSession(
     controller: controller,
     recognizer: recognizer,
     selection: selection,
+    initialStyle: initialStyle,
+    onStyleChosen: onStyleChosen,
+    learner: learner,
+    appVersion: appVersion,
   );
   unawaited(session.start());
   final outcome = await showModalBottomSheet<ConvertOutcome>(
@@ -36,7 +53,8 @@ Future<void> showConvertSheet(
     useSafeArea: true,
     enableDrag: false,
     constraints: const BoxConstraints(maxWidth: 860),
-    builder: (_) => ConvertSheet(session: session, renderer: renderer),
+    builder: (_) => ConvertSheet(
+        session: session, renderer: renderer, sampleShare: sampleShare),
   );
   session.cancel();
   if (outcome == null) return;
@@ -58,10 +76,16 @@ Future<void> showConvertSheet(
 
 /// The full-height sheet: progress, then the review of the recognised lines.
 class ConvertSheet extends StatelessWidget {
-  const ConvertSheet({super.key, required this.session, required this.renderer});
+  const ConvertSheet({
+    super.key,
+    required this.session,
+    required this.renderer,
+    this.sampleShare = const DefaultSampleShareService(),
+  });
 
   final ConvertSession session;
   final WordImageRenderer renderer;
+  final SampleShareService sampleShare;
 
   @override
   Widget build(BuildContext context) {
@@ -99,8 +123,10 @@ class ConvertSheet extends StatelessWidget {
                 ConvertPhase.reading => _Reading(session: session),
                 ConvertPhase.failed => _Failed(session: session),
                 ConvertPhase.empty => _Empty(session: session),
-                ConvertPhase.review =>
-                  _Review(session: session, renderer: renderer),
+                ConvertPhase.review => _Review(
+                    session: session,
+                    renderer: renderer,
+                    sampleShare: sampleShare),
               },
             ),
           ),
@@ -254,10 +280,15 @@ class _LineEntry extends _Entry {
 }
 
 class _Review extends StatefulWidget {
-  const _Review({required this.session, required this.renderer});
+  const _Review({
+    required this.session,
+    required this.renderer,
+    required this.sampleShare,
+  });
 
   final ConvertSession session;
   final WordImageRenderer renderer;
+  final SampleShareService sampleShare;
 
   @override
   State<_Review> createState() => _ReviewState();
@@ -265,8 +296,34 @@ class _Review extends StatefulWidget {
 
 class _ReviewState extends State<_Review> {
   bool _showWords = false;
+  bool _sharing = false;
+  String? _shareStatus;
 
   ConvertSession get _s => widget.session;
+
+  /// Builds the samples file (words, corrected text, pen data, the pictures
+  /// the model saw) and opens the share sheet. The user decides where it goes.
+  Future<void> _shareSamples() async {
+    setState(() {
+      _sharing = true;
+      _shareStatus = null;
+    });
+    String? status;
+    try {
+      final json = await _s.buildSamples(widget.renderer);
+      final shared = await widget.sampleShare
+          .share(fileName: _s.sampleFileName, json: json);
+      if (shared) status = 'Thank you! The samples file was shared.';
+    } catch (e) {
+      debugPrint('NeatInk: could not share samples: $e');
+      status = "Couldn't prepare the samples. Please try again.";
+    }
+    if (!mounted) return;
+    setState(() {
+      _sharing = false;
+      _shareStatus = status;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,10 +337,10 @@ class _ReviewState extends State<_Review> {
         entries.add(_LineEntry(index++, line));
       }
     }
-    final words = <(int, WordResult)>[
+    final words = <(int, PlannedLine, int)>[
       for (final e in entries)
         if (e is _LineEntry)
-          for (final w in e.line.words) (e.index, w),
+          for (var i = 0; i < e.line.words.length; i++) (e.index, e.line, i),
     ];
     final convertCount = _s.includedCount;
     final stay = _s.stayCount;
@@ -341,10 +398,19 @@ class _ReviewState extends State<_Review> {
                     key: ValueKey('convert-word-$i'),
                     index: i,
                     lineIndex: words[i].$1,
-                    word: words[i].$2,
+                    word: words[i].$2.words[words[i].$3],
                     renderer: widget.renderer,
+                    onPick: (alt) =>
+                        _s.replaceWord(words[i].$2, words[i].$3, alt),
                   ),
                 ),
+              SliverToBoxAdapter(
+                child: _ShareSamples(
+                  busy: _sharing,
+                  status: _shareStatus,
+                  onShare: _shareSamples,
+                ),
+              ),
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
             ],
           ),
@@ -547,6 +613,13 @@ class _LineRowState extends State<_LineRow> {
   Widget build(BuildContext context) {
     final s = widget.session;
     final line = widget.line;
+    // The text can change from outside the field (an alternative reading was
+    // picked in "what the recognizer saw").
+    if (_text.text != line.text) {
+      _text.value = TextEditingValue(
+          text: line.text,
+          selection: TextSelection.collapsed(offset: line.text.length));
+    }
     final scheme = Theme.of(context).colorScheme;
     final ink = Color(line.dominantColor);
     final color = s.colorOverride != null
@@ -609,12 +682,16 @@ class _WordRow extends StatefulWidget {
     required this.lineIndex,
     required this.word,
     required this.renderer,
+    required this.onPick,
   });
 
   final int index;
   final int lineIndex;
   final WordResult word;
   final WordImageRenderer renderer;
+
+  /// An alternative reading was tapped: use it in the line's text.
+  final void Function(String alternative) onPick;
 
   @override
   State<_WordRow> createState() => _WordRowState();
@@ -624,6 +701,20 @@ class _WordRowState extends State<_WordRow> {
   late final Future<WordImage> _image =
       renderWordImage(widget.word.group, renderer: widget.renderer);
 
+  /// Up to [maxAlternatives] other readings of the word (best first), without
+  /// the one already used or repeats.
+  List<String> get alternatives {
+    final w = widget.word;
+    final out = <String>[];
+    for (final a in w.alternatives) {
+      final t = a.trim();
+      if (t.isEmpty || t == w.text.trim() || out.contains(t)) continue;
+      out.add(t);
+      if (out.length == maxAlternatives) break;
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final w = widget.word;
@@ -631,31 +722,114 @@ class _WordRowState extends State<_WordRow> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       child: Row(
         children: [
-          Container(
-            width: wordImageWidth * 1.5,
-            height: wordImageHeight * 1.5,
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-            ),
-            child: FutureBuilder<WordImage>(
-              future: _image,
-              builder: (context, snap) {
-                final img = snap.data;
-                if (img == null) return const SizedBox.shrink();
-                return CustomPaint(
+          FutureBuilder<WordImage>(
+            future: _image,
+            builder: (context, snap) {
+              final img = snap.data;
+              if (img == null) {
+                return const SizedBox(width: 96, height: wordImageHeight * 1.5);
+              }
+              // Word images are as wide as the word; wide ones are shown
+              // smaller so a row never gets too wide.
+              final scale = math.min(1.5, 240 / img.width);
+              return Container(
+                width: img.width * scale + 2,
+                height: img.height * scale + 2,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant),
+                ),
+                child: CustomPaint(
                   key: ValueKey('convert-crop-${widget.index}'),
-                  painter: WordCropPainter(img.pixels),
-                );
-              },
-            ),
+                  painter: WordCropPainter.of(img, scale: scale),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 16),
           Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'line ${widget.lineIndex + 1}  raw "${w.raw}"  read "${w.text}"  '
+                  'confidence ${w.confidence.toStringAsFixed(2)}',
+                  key: ValueKey('convert-word-text-${widget.index}'),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (alternatives.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 6,
+                      children: [
+                        for (var a = 0; a < alternatives.length; a++)
+                          ActionChip(
+                            key: ValueKey('convert-alt-${widget.index}-$a'),
+                            label: Text(alternatives[a]),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => widget.onPick(alternatives[a]),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Alternative reading chips shown per word.
+const int maxAlternatives = 4;
+
+/// The unobtrusive "Share samples for improving recognition" button with its
+/// one-line promise and the outcome of the last try.
+class _ShareSamples extends StatelessWidget {
+  const _ShareSamples({
+    required this.busy,
+    required this.status,
+    required this.onShare,
+  });
+
+  final bool busy;
+  final String? status;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton.icon(
+            key: const ValueKey('convert-share-samples'),
+            style: TextButton.styleFrom(
+              textStyle: theme.textTheme.bodySmall,
+              foregroundColor: theme.colorScheme.onSurfaceVariant,
+            ),
+            icon: busy
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.ios_share, size: 16),
+            label: const Text('Share samples for improving recognition'),
+            onPressed: busy ? null : onShare,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
             child: Text(
-              'line ${widget.lineIndex + 1}  raw "${w.raw}"  read "${w.text}"  '
-              'confidence ${w.confidence.toStringAsFixed(2)}',
-              key: ValueKey('convert-word-text-${widget.index}'),
-              style: Theme.of(context).textTheme.bodySmall,
+              status ??
+                  'Makes one file with your handwriting and the text above. '
+                      'Nothing is sent unless you pick where to share it.',
+              key: const ValueKey('convert-share-status'),
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ),
         ],

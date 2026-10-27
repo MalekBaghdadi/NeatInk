@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../settings/convert_style_prefs.dart';
 import '../settings/settings_controller.dart';
 import 'canvas/document_view.dart';
 import 'editor_controller.dart';
 import 'editor_integrations.dart';
 import 'tool_prefs.dart';
+import 'toolbar/auto_convert_toggle.dart';
 import 'toolbar/editor_tool_row.dart';
 
 /// The notebook editor: top bar (title, undo / redo, page actions), the tool
@@ -41,6 +43,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
   StreamSubscription<Object>? _saveErrors;
   bool _closing = false;
   bool _warnedAboutSaveError = false;
+
+  // Read in build() (where watching is allowed) for the app bar.
+  bool _autoConvert = false;
+  String _autoConvertFont = '';
 
   @override
   void initState() {
@@ -181,6 +187,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
   @override
   Widget build(BuildContext context) {
     ref.listen(settingsProvider, (_, next) => _controller.applySettings(next));
+    _autoConvert = ref.watch(settingsProvider.select((s) => s.autoConvert));
+    _autoConvertFont = ref.watch(convertStylePrefsProvider).font.label;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -212,27 +220,36 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
   List<Widget> _readyActions(BuildContext context) {
     final c = _controller;
     final ext = c.extensions;
+    // On phone-width screens the bar would overflow: "Pages" and "Add page"
+    // move into the menu below 480 px, and the "3 / 12" label goes below 400
+    // (the page jump control over the pages still shows it).
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 480;
     return [
-      ValueListenableBuilder<int>(
-        valueListenable: c.currentPage,
-        builder: (context, _, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '${c.currentPageIndex + 1} / ${c.pageCount}',
-              key: const ValueKey('page-indicator'),
+      if (width >= 400)
+        ValueListenableBuilder<int>(
+          valueListenable: c.currentPage,
+          builder: (context, _, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '${c.currentPageIndex + 1} / ${c.pageCount}',
+                key: const ValueKey('page-indicator'),
+              ),
             ),
           ),
         ),
-      ),
-      if (ext.openPageNavigator != null)
+      if (!compact && ext.openPageNavigator != null)
         IconButton(
           key: const ValueKey('open-page-navigator'),
           icon: const Icon(Icons.grid_view),
           tooltip: 'Pages',
           onPressed: () => ext.openPageNavigator!(context, c),
         ),
-      if (ext.convertHandwriting != null) _convertButton(context),
+      if (ext.convertHandwriting != null) ...[
+        _convertButton(context),
+        _autoConvertButton(context),
+      ],
       IconButton(
         key: const ValueKey('undo'),
         icon: const Icon(Icons.undo),
@@ -245,17 +262,22 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
         tooltip: c.redoLabel == null ? 'Redo' : 'Redo ${c.redoLabel}',
         onPressed: c.canRedo ? c.redo : null,
       ),
-      IconButton(
-        key: const ValueKey('add-page'),
-        icon: const Icon(Icons.note_add_outlined),
-        tooltip: 'Add page',
-        onPressed: c.addPageAtEnd,
-      ),
+      if (!compact)
+        IconButton(
+          key: const ValueKey('add-page'),
+          icon: const Icon(Icons.note_add_outlined),
+          tooltip: 'Add page',
+          onPressed: c.addPageAtEnd,
+        ),
       PopupMenuButton<String>(
         key: const ValueKey('editor-menu'),
         tooltip: 'More',
         onSelected: (value) {
           switch (value) {
+            case 'pages':
+              unawaited(ext.openPageNavigator?.call(context, c));
+            case 'add-page':
+              c.addPageAtEnd();
             case 'rename':
               unawaited(_rename());
             case 'delete':
@@ -267,6 +289,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
           }
         },
         itemBuilder: (context) => [
+          if (compact && ext.openPageNavigator != null)
+            const PopupMenuItem(
+                key: ValueKey('menu-pages'), value: 'pages', child: Text('Pages')),
+          if (compact)
+            const PopupMenuItem(
+                key: ValueKey('menu-add-page'),
+                value: 'add-page',
+                child: Text('Add page')),
           const PopupMenuItem(value: 'rename', child: Text('Rename')),
           const PopupMenuItem(value: 'delete', child: Text('Delete page')),
           if (ext.changePagePaper != null)
@@ -301,6 +331,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
       onPressed: onPressed,
     );
   }
+
+  /// The "Auto" switch next to Convert: converts the handwriting by itself
+  /// a moment after the pen stops (the `autoConvert` setting).
+  Widget _autoConvertButton(BuildContext context) => AutoConvertToggle(
+        enabled: _autoConvert,
+        fontLabel: _autoConvertFont,
+        wide: MediaQuery.sizeOf(context).width >= 900,
+        onPressed: () => ref
+            .read(settingsProvider.notifier)
+            .update((s) => s.copyWith(autoConvert: !s.autoConvert)),
+      );
 
   Widget _buildBody(BuildContext context) {
     final c = _controller;

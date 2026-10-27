@@ -4,8 +4,6 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/recognition/lexicon.dart';
 
-import 'ctc_fixtures.dart';
-
 const _words = '''
 the 1000000
 cat 50000
@@ -22,7 +20,6 @@ bad line
 ''';
 
 void main() {
-  final cs = testCharset();
   final lex = Lexicon.parse(_words);
 
   group('edit distance', () {
@@ -105,126 +102,6 @@ void main() {
       expect(real.length, 50000);
       expect(real.contains('hello'), isTrue);
       expect(real.candidates('cot', maxEdits: 1).map((c) => c.word), contains('cat'));
-    });
-  });
-
-  group('LexiconRescorer', () {
-    // Frames spelling c, a/o, t where the vowel is ambiguous.
-    List<Map<String, double>> catOrCot(double pA, double pO) => [
-          {'c': 0.9, '_': 0.05},
-          {'c': 0.9, '_': 0.05},
-          {'_': 0.9},
-          {'a': pA, 'o': pO, '_': 0.02},
-          {'a': pA, 'o': pO, '_': 0.02},
-          {'_': 0.9},
-          {'t': 0.9, '_': 0.05},
-          {'t': 0.9, '_': 0.05},
-        ];
-
-    RescoredWord read(List<Map<String, double>> frames, {Lexicon? lexicon}) =>
-        LexiconRescorer(cs, lexicon ?? lex).rescore(framesOf(cs, frames));
-
-    test('the lexicon decides between cat and cot when the image is unsure', () {
-      final r = read(catOrCot(0.45, 0.5));
-      expect(r.raw, 'cot'); // best path alone is wrong
-      expect(r.text, 'cat'); // cat is 25x more frequent
-      expect(r.alternatives, contains('cot'));
-    });
-
-    test('clear image evidence beats the language prior', () {
-      final r = read(catOrCot(0.01, 0.95));
-      expect(r.raw, 'cot');
-      expect(r.text, 'cot');
-      expect(r.confidence, greaterThan(0.6));
-    });
-
-    test('capitalisation and punctuation are restored from the raw output', () {
-      final upper = read([
-        {'C': 0.9, '_': 0.05},
-        {'C': 0.9, '_': 0.05},
-        {'_': 0.9},
-        {'a': 0.45, 'o': 0.5, '_': 0.02},
-        {'a': 0.45, 'o': 0.5, '_': 0.02},
-        {'_': 0.9},
-        {'t': 0.9, '_': 0.05},
-        {'t': 0.9, '_': 0.05},
-        {'_': 0.9},
-        {'.': 0.9, '_': 0.05},
-        {'.': 0.9, '_': 0.05},
-      ]);
-      expect(upper.raw, 'Cot.');
-      expect(upper.text, 'Cat.');
-    });
-
-    test('all capitals stay all capitals', () {
-      final r = read([
-        {'C': 0.9, '_': 0.05},
-        {'_': 0.9},
-        {'A': 0.45, 'O': 0.5, '_': 0.02},
-        {'_': 0.9},
-        {'T': 0.9, '_': 0.05},
-        {'_': 0.9},
-      ]);
-      expect(r.raw, 'COT');
-      expect(r.text, 'CAT');
-    });
-
-    test('unlisted words keep the raw reading', () {
-      final r = read(spell('Mariam'));
-      expect(r.text, 'Mariam');
-      expect(r.raw, 'Mariam');
-      expect(r.alternatives.length, lessThanOrEqualTo(3));
-    });
-
-    test('numbers and mixed tokens are never corrected', () {
-      expect(read(spell('c4t')).text, 'c4t');
-      expect(read(spell('2025')).text, '2025');
-      expect(read(spell('well-known')).text, 'well-known');
-    });
-
-    test('apostrophes inside words are kept and listed words pass through', () {
-      expect(read(spell("don't")).text, "don't");
-      expect(read(spell('hello')).text, 'hello');
-    });
-
-    test('a one-letter slip in a listed word is repaired', () {
-      // "hallo" read with a weak second letter: hello wins.
-      final r = read([
-        {'h': 0.9, '_': 0.05},
-        {'h': 0.9, '_': 0.05},
-        {'_': 0.9},
-        {'a': 0.4, 'e': 0.55, '_': 0.02},
-        {'a': 0.4, 'e': 0.55, '_': 0.02},
-        {'_': 0.9},
-        {'l': 0.9, '_': 0.05},
-        {'_': 0.9},
-        {'l': 0.9, '_': 0.05},
-        {'_': 0.9},
-        {'o': 0.9, '_': 0.05},
-      ]);
-      expect(r.text, 'hello');
-    });
-
-    test('no lexicon means greedy output', () {
-      final r = LexiconRescorer(cs, null).rescore(framesOf(cs, catOrCot(0.45, 0.5)));
-      expect(r.text, 'cot');
-      expect(r.alternatives, isEmpty);
-    });
-
-    test('an empty reading has zero confidence', () {
-      final r = read([
-        {'_': 0.99},
-        {'_': 0.99},
-      ]);
-      expect(r.text, isEmpty);
-      expect(r.confidence, 0);
-    });
-
-    test('confidence is lower for a doubtful reading than a clear one', () {
-      final clear = read(spell('hello'));
-      final doubtful = read(catOrCot(0.45, 0.5));
-      expect(clear.confidence, greaterThan(doubtful.confidence));
-      expect(clear.confidence, inInclusiveRange(0.0, 1.0));
     });
   });
 }

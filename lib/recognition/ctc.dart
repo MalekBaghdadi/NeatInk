@@ -1,35 +1,57 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-/// Maps the recogniser's class indices to characters (`assets/htr/config.json`).
+/// Probabilities below this are clamped before taking the logarithm, so a
+/// single impossible frame costs a bounded number of nats (about 18) and the
+/// likelihood of a wrong candidate stays finite and comparable.
+const double ctcProbFloor = 1e-8;
+
+/// Maps the recogniser's class indices to characters (`assets/htr/charset.json`).
 ///
-/// The model has `chars.length + 1` classes: one per charset entry, in order,
-/// plus the CTC blank as the **last** class (verified in docs/htr-model-notes.md).
+/// The bundled PP-OCRv5 model has 438 classes: class 0 is the CTC blank,
+/// classes 1..436 are the characters of the model's `character_dict` in file
+/// order, and the last class (437) is the space. [symbols] holds the text of
+/// every class (the empty string for the blank).
 class CtcCharset {
-  CtcCharset(List<String> chars) : chars = List.unmodifiable(chars) {
-    for (var i = 0; i < this.chars.length; i++) {
-      _index[this.chars[i]] = i;
+  CtcCharset(List<String> symbols, {this.blank = 0, this.space})
+      : assert(blank >= 0 && blank < symbols.length),
+        symbols = List.unmodifiable(symbols) {
+    for (var i = 0; i < this.symbols.length; i++) {
+      if (i == blank) continue;
+      _index.putIfAbsent(this.symbols[i], () => i);
     }
   }
 
-  /// Parses the `charset` array of the model's `config.json`.
-  factory CtcCharset.fromConfigJson(String json) {
+  /// Parses `charset.json`: `{"blank": 0, "space": 437, "charset": [...]}`.
+  /// `blank` defaults to 0 and `space` to the class whose text is `" "`.
+  factory CtcCharset.fromJson(String json) {
     final map = jsonDecode(json) as Map<String, dynamic>;
-    final chars = [for (final c in map['charset'] as List<dynamic>) c as String];
-    return CtcCharset(chars);
+    final symbols = [for (final c in map['charset'] as List<dynamic>) c as String];
+    final blank = (map['blank'] as num?)?.toInt() ?? 0;
+    final space = (map['space'] as num?)?.toInt() ?? (symbols.contains(' ') ? symbols.indexOf(' ') : null);
+    return CtcCharset(symbols, blank: blank, space: space);
   }
 
-  final List<String> chars;
+  /// Old name of [CtcCharset.fromJson].
+  factory CtcCharset.fromConfigJson(String json) => CtcCharset.fromJson(json);
+
+  /// Text of each class, indexed by class; the blank is `''`.
+  final List<String> symbols;
+  final int blank;
+
+  /// Class of the space character, if the model has one. Word images never
+  /// contain spaces, so [CtcLogProbs.fromProbabilities] can fold it into the
+  /// blank.
+  final int? space;
   final Map<String, int> _index = {};
 
-  int get blank => chars.length;
-  int get classes => chars.length + 1;
+  int get classes => symbols.length;
 
   /// Class index of [ch], or null when the model cannot emit it.
   int? indexOf(String ch) => _index[ch];
 
-  /// Character of class [i]; empty for the blank.
-  String charAt(int i) => i >= 0 && i < chars.length ? chars[i] : '';
+  /// Character of class [i]; empty for the blank and for unknown indices.
+  String charAt(int i) => i >= 0 && i < symbols.length && i != blank ? symbols[i] : '';
 
   /// Class indices of [text], or null when any character is not in the charset.
   List<int>? encode(String text) {
@@ -43,16 +65,42 @@ class CtcCharset {
   }
 }
 
-/// Per-timestep log-probabilities of one image: row-major `[t][class]`, as
-/// returned by the plugin (`timesteps * classes` values).
+/// Per-timestep log-probabilities of one image: row-major `[t][class]`.
 class CtcLogProbs {
   CtcLogProbs(this.data, {required this.timesteps, required this.classes})
       : assert(data.length == timesteps * classes);
 
-  /// Builds from a flat list whose length is a multiple of [classes].
+  /// Builds from a flat list of log-probabilities whose length is a multiple
+  /// of [classes].
   factory CtcLogProbs.fromFlat(List<num> flat, int classes) {
     final values = flat is List<double> ? flat : [for (final v in flat) v.toDouble()];
     return CtcLogProbs(values, timesteps: values.length ~/ classes, classes: classes);
+  }
+
+  /// Builds from the model's softmax **probabilities** (flat, `[t][class]`).
+  /// Values are clamped to [floor] before the logarithm. When [foldIntoBlank]
+  /// is given (the space class), that class's probability is added to the
+  /// blank's and the class itself is zeroed: a word image holds no spaces, so
+  /// a "space" frame means "no letter here".
+  factory CtcLogProbs.fromProbabilities(
+    List<num> probs,
+    int classes, {
+    int blank = 0,
+    int? foldIntoBlank,
+    double floor = ctcProbFloor,
+  }) {
+    final steps = probs.length ~/ classes;
+    final out = List<double>.filled(steps * classes, 0);
+    final logFloor = math.log(floor);
+    for (var t = 0; t < steps; t++) {
+      final base = t * classes;
+      for (var c = 0; c < classes; c++) {
+        var p = probs[base + c].toDouble();
+        if (c == blank && foldIntoBlank != null) p += probs[base + foldIntoBlank].toDouble();
+        out[base + c] = c == foldIntoBlank ? logFloor : (p <= floor ? logFloor : math.log(p));
+      }
+    }
+    return CtcLogProbs(out, timesteps: steps, classes: classes);
   }
 
   final List<double> data;
@@ -203,3 +251,99 @@ double ctcLogLikelihoodSets(
 /// [ctcLogLikelihoodSets] for an exact class sequence.
 double ctcLogLikelihood(CtcLogProbs lp, List<int> labels, {required int blank}) =>
     ctcLogLikelihoodSets(lp, [for (final l in labels) [l]], blank: blank);
+
+/// One reading found by [ctcBeamSearch].
+class CtcBeamReading {
+  const CtcBeamReading({required this.text, required this.indices, required this.logProb});
+
+  final String text;
+  final List<int> indices;
+
+  /// `ln P(text | image)`: all alignments that collapse to [text], within
+  /// the pruned search.
+  final double logProb;
+}
+
+/// CTC prefix beam search: the [width] most probable distinct readings, best
+/// first. Per frame only the [perFrame] likeliest classes (and none below
+/// [minProb]) are extended, which keeps the search at a few thousand steps
+/// for a word image.
+List<CtcBeamReading> ctcBeamSearch(
+  CtcLogProbs lp,
+  CtcCharset charset, {
+  int width = 5,
+  int perFrame = 6,
+  double minProb = 1e-3,
+}) {
+  final blank = charset.blank;
+  final minLog = math.log(minProb);
+
+  // Beams keyed by their class sequence (as a string of code units).
+  var beams = <String, _Beam>{'': _Beam(const [], 0, double.negativeInfinity)};
+  // For each beam: log P ending in blank (pb) and in a character (pnb).
+  var order = <String>[''];
+  final top = List<int>.filled(perFrame, 0);
+  for (var t = 0; t < lp.timesteps; t++) {
+    // The perFrame best classes of this frame, best first.
+    var count = 0;
+    for (var c = 0; c < lp.classes; c++) {
+      final v = lp.at(t, c);
+      if (count == perFrame && v <= lp.at(t, top[count - 1])) continue;
+      var pos = count < perFrame ? count : perFrame - 1;
+      if (count < perFrame) count++;
+      while (pos > 0 && lp.at(t, top[pos - 1]) < v) {
+        top[pos] = top[pos - 1];
+        pos--;
+      }
+      top[pos] = c;
+    }
+    final next = <String, _Beam>{};
+    _Beam entry(String key, List<int> seq) => next.putIfAbsent(key, () => _Beam(seq, double.negativeInfinity, double.negativeInfinity));
+    for (final key in order) {
+      final beam = beams[key]!;
+      final total = _logSumExp2(beam.pb, beam.pnb);
+      for (var k = 0; k < count; k++) {
+        final c = top[k];
+        final v = lp.at(t, c);
+        if (v < minLog && k > 0) break;
+        if (c == blank) {
+          final e = entry(key, beam.seq);
+          e.pb = _logSumExp2(e.pb, total + v);
+          continue;
+        }
+        final last = beam.seq.isEmpty ? -1 : beam.seq.last;
+        final extKey = '$key${String.fromCharCode(c)}';
+        final ext = entry(extKey, [...beam.seq, c]);
+        if (c == last) {
+          // A repeated class starts a new character only after a blank; a
+          // frame right after the same class stays in the same character.
+          ext.pnb = _logSumExp2(ext.pnb, beam.pb + v);
+          final same = entry(key, beam.seq);
+          same.pnb = _logSumExp2(same.pnb, beam.pnb + v);
+        } else {
+          ext.pnb = _logSumExp2(ext.pnb, total + v);
+        }
+      }
+    }
+    final ranked = next.keys.toList()
+      ..sort((a, b) => _logSumExp2(next[b]!.pb, next[b]!.pnb).compareTo(_logSumExp2(next[a]!.pb, next[a]!.pnb)));
+    order = ranked.length > width ? ranked.sublist(0, width) : ranked;
+    beams = {for (final k in order) k: next[k]!};
+  }
+  return [
+    for (final k in order)
+      CtcBeamReading(
+        text: [for (final c in beams[k]!.seq) charset.charAt(c)].join(),
+        indices: beams[k]!.seq,
+        logProb: _logSumExp2(beams[k]!.pb, beams[k]!.pnb),
+      ),
+  ];
+}
+
+class _Beam {
+  _Beam(this.seq, this.pb, this.pnb);
+
+  final List<int> seq;
+  double pb;
+  double pnb;
+}

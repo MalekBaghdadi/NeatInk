@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,15 +7,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/app/providers.dart';
 import 'package:neatink/document/notebook_meta.dart';
 import 'package:neatink/document/page_content.dart';
+import 'package:neatink/document/commands.dart';
 import 'package:neatink/document/paper.dart';
 import 'package:neatink/features/editor/editor_controller.dart';
 import 'package:neatink/features/editor/editor_integrations.dart';
 import 'package:neatink/features/editor/editor_screen.dart';
 import 'package:neatink/features/editor/editor_tool.dart';
+import 'package:neatink/features/editor/stroke_events.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_integration.dart';
 import 'package:neatink/features/editor/integrations/erase_select/erase_select_integration.dart';
 import 'package:neatink/features/editor/integrations/erase_select/lasso_handler.dart';
+import 'package:neatink/features/editor/integrations/convert/sample_share.dart';
+import 'package:neatink/features/editor/integrations/convert/user_lexicon.dart';
 import 'package:neatink/features/editor/tools/selection.dart';
+import 'package:neatink/features/settings/app_settings.dart';
+import 'package:neatink/features/settings/settings_controller.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/ink/vec2.dart';
 import 'package:neatink/recognition/htr_channel.dart';
@@ -67,6 +74,9 @@ class FakeRecognizer extends Fake implements HtrRecognizer {
   final Map<String, (String, double)> readings;
   final double defaultConfidence;
 
+  /// prefix -> other readings of the word, best first.
+  final Map<String, List<String>> alternatives = {};
+
   /// Throws this instead of reading, when set.
   Object? error;
 
@@ -98,12 +108,31 @@ class FakeRecognizer extends Fake implements HtrRecognizer {
         text: r.$1,
         confidence: r.$2,
         raw: '${r.$1}~',
-        alternatives: const [],
+        alternatives: alternatives[keyOf(w)] ?? const [],
       ));
       onProgress?.call(out.length, words.length);
     }
     wordsRead += words.length;
     return out;
+  }
+}
+
+/// A share service that only records what it was asked to share.
+class FakeShare implements SampleShareService {
+  final List<({String fileName, String json})> shared = [];
+
+  /// What `share` answers (false: the user dismissed the sheet).
+  bool answer = true;
+
+  /// Thrown instead of sharing, when set.
+  Object? error;
+
+  @override
+  Future<bool> share({required String fileName, required String json}) async {
+    final e = error;
+    if (e != null) throw e;
+    shared.add((fileName: fileName, json: json));
+    return answer;
   }
 }
 
@@ -122,11 +151,15 @@ class _FlakyRepository extends InMemoryNotebookRepository {
 /// the pure-Dart word renderer (`Picture.toImage` hangs under
 /// `flutter_tester`).
 class ConvertHarness {
-  ConvertHarness._(this.tester, this.controller, this.recognizer);
+  ConvertHarness._(this.tester, this.controller, this.recognizer,
+      this.container, this.share, this.learner);
 
   final WidgetTester tester;
   final EditorController controller;
   final FakeRecognizer recognizer;
+  final ProviderContainer container;
+  final FakeShare share;
+  final InMemoryWordLearner learner;
 
   static Future<ConvertHarness> open(
     WidgetTester tester, {
@@ -136,8 +169,14 @@ class ConvertHarness {
     Set<int> unreadablePages = const {},
     bool pdf = false,
     Size size = const Size(1000, 1400),
+    bool autoConvert = false,
+    Map<String, Object> prefsValues = const {},
   }) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      if (autoConvert)
+        AppSettings.prefsKey: jsonEncode({'autoConvert': true}),
+      ...prefsValues,
+    });
     final prefs = await SharedPreferences.getInstance();
     final repo = _FlakyRepository();
     final NotebookMeta meta;
@@ -162,8 +201,12 @@ class ConvertHarness {
 
     final fake = recognizer ?? FakeRecognizer(const {});
     EditorController? captured;
+    final share = FakeShare();
+    final learner = InMemoryWordLearner();
     final container = ProviderContainer(overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
+      sampleShareServiceProvider.overrideWithValue(share),
+      userLexiconProvider.overrideWithValue(learner),
       notebookRepositoryProvider.overrideWithValue(repo),
       htrRecognizerProvider.overrideWithValue(fake),
       wordImageRendererProvider
@@ -180,7 +223,7 @@ class ConvertHarness {
       child: MaterialApp(home: EditorScreen(notebookId: meta.id)),
     ));
     await tester.pumpAndSettle();
-    final h = ConvertHarness._(tester, captured!, fake);
+    final h = ConvertHarness._(tester, captured!, fake, container, share, learner);
     expect(h.controller.isReady, isTrue);
     return h;
   }
@@ -198,6 +241,34 @@ class ConvertHarness {
     controller.selectTool(EditorTool.lasso);
     lasso.state.setSelection(Selection.fromPage(pageAt(index),
         pageId: pageIdAt(index), strokeIds: strokeIds));
+  }
+
+  /// Turns the auto-convert setting on or off, like the toggle does.
+  void setAutoConvert(bool value) => container
+      .read(settingsProvider.notifier)
+      .update((s) => s.copyWith(autoConvert: value));
+
+  /// Finishes one pen stroke the way the ink tool does: the stroke is added
+  /// to the page in one undo step, with the started and finished events.
+  Future<void> draw(Stroke stroke, {int pageIndex = 0}) async {
+    final pageId = pageIdAt(pageIndex);
+    controller.strokeEvents.emitStarted(StrokeStartedEvent(
+        pageId: pageId, tool: stroke.tool, startMs: 0));
+    await tester.pump();
+    controller.execute(
+        AddStrokesCommand(pageId, [stroke], label: 'Pen stroke'));
+    controller.strokeEvents.emitFinished(FinishedStroke(
+        pageId: pageId, stroke: stroke, startMs: 0, endMs: 10));
+    await tester.pump();
+  }
+
+  /// [draw]s every stroke, [gapMs] apart (the last gap included).
+  Future<void> write(List<Stroke> strokes,
+      {int gapMs = 100, int pageIndex = 0}) async {
+    for (final s in strokes) {
+      await draw(s, pageIndex: pageIndex);
+      await tester.pump(Duration(milliseconds: gapMs));
+    }
   }
 
   /// Taps the app bar Convert button and lets the reading finish.

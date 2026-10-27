@@ -18,6 +18,12 @@ class GroupingConfig {
     this.overlapTolFactor = 0.08,
     this.wordGapFactor = 0.6,
     this.tinyAttachFactor = 0.35,
+    this.wordGapRatio = 2.5,
+    this.wordGapMaxFactor = 1.4,
+    this.minLetterGaps = 3,
+    this.wordGapJumpRatio = 2.5,
+    this.fragmentWidthFactor = 1.2,
+    this.fragmentMergeFactor = 1.5,
   });
 
   /// Page lines are searched within ±this many degrees of horizontal.
@@ -39,12 +45,42 @@ class GroupingConfig {
   /// Letters closer than this (or overlapping) are the same letter block.
   final double overlapTolFactor;
 
-  /// Default gap that separates two words. A clear gap pattern in the line
-  /// (small letter gaps, large word gaps) overrides it.
+  /// The least gap that separates two words (the split threshold never goes
+  /// below it).
   final double wordGapFactor;
 
   /// A dot or bar further than this from every word stays on its own.
   final double tinyAttachFactor;
+
+  /// Adaptive word gap: a gap splits two words only when it is also at least
+  /// this many times the line's typical letter gap (the median of its gaps
+  /// below [wordGapFactor]). Handwriting is uneven; a letter gap that
+  /// happens to be 0.8 x-heights wide inside one word must not split it.
+  final double wordGapRatio;
+
+  /// The split threshold is at most this many x-heights, so a line written
+  /// with wide letter spacing still splits at its real word gaps.
+  final double wordGapMaxFactor;
+
+  /// The ratio rule needs this many letter gaps in the line to estimate the
+  /// typical one; fewer and the plain [wordGapFactor] applies.
+  final int minLetterGaps;
+
+  /// A line written with wide letter spacing has no letter gap below
+  /// [wordGapFactor]; then the word gaps are told by a jump: the first gap
+  /// at least this many times larger than the one before it (in the sorted
+  /// gaps of a line of five or more).
+  final double wordGapJumpRatio;
+
+  /// A "word" that is a single letter block (one letter, however many
+  /// strokes) narrower than this many x-heights is a fragment of a
+  /// neighbouring word (the last letter of "notebook" written a little away
+  /// from the rest), unless it looks like a digit, bar or full stop.
+  final double fragmentWidthFactor;
+
+  /// A fragment is merged into its nearer neighbour when that neighbour is
+  /// within this many split thresholds.
+  final double fragmentMergeFactor;
 }
 
 /// The strokes of one written word, ready to be rendered and recognised.
@@ -105,8 +141,10 @@ class RecognizedLine {
 ///    each region between cuts is one line.
 /// 4. Fit every line's own baseline with [analyzeWord].
 /// 5. Along each line, merge strokes that overlap horizontally into letter
-///    blocks, then join blocks closer than a word gap; dots and bars attach
-///    to the nearest word.
+///    blocks, then join blocks closer than the line's word-gap threshold
+///    (adaptive: see [GroupingConfig.wordGapRatio]); dots and bars attach to
+///    the nearest word, and a lone narrow letter written a little apart from
+///    its word is merged back into it ([GroupingConfig.fragmentWidthFactor]).
 ///
 /// Highlighter strokes and shapes are ignored. Lines come top to bottom,
 /// words left to right.
@@ -376,6 +414,22 @@ RecognizedLine _buildLine(
   );
 }
 
+/// Strokes of one word while the line is being split.
+class _Acc {
+  _Acc(this.items, this.blocks);
+
+  final List<_Item> items;
+
+  /// Letter blocks (clusters of overlapping strokes) merged into this word.
+  int blocks;
+
+  /// Made only of dots and bars that found no word to attach to.
+  bool dotOnly = false;
+
+  double get xl => items.map((i) => i.xl).reduce(math.min);
+  double get xr => items.map((i) => i.xr).reduce(math.max);
+}
+
 List<WordGroup> _splitWords(
   List<_Item> items,
   double u,
@@ -415,12 +469,14 @@ List<WordGroup> _splitWords(
   ];
   final limit = _wordGapLimit(gaps, u, config);
 
-  final words = <List<_Item>>[];
+  final words = <_Acc>[];
   for (var i = 0; i < blocks.length; i++) {
     if (i > 0 && gaps[i - 1] <= limit) {
-      words.last.addAll(blocks[i]);
+      words.last
+        ..items.addAll(blocks[i])
+        ..blocks += 1;
     } else {
-      words.add([...blocks[i]]);
+      words.add(_Acc([...blocks[i]], 1));
     }
   }
 
@@ -430,30 +486,29 @@ List<WordGroup> _splitWords(
     var bestDist = double.infinity;
     var bestWord = -1;
     for (var i = 0; i < words.length; i++) {
-      final wl = words[i].map((it) => it.xl).reduce(math.min);
-      final wr = words[i].map((it) => it.xr).reduce(math.max);
-      final dist = math.max(0.0, math.max(wl - d.xr, d.xl - wr));
+      final dist = math.max(0.0, math.max(words[i].xl - d.xr, d.xl - words[i].xr));
       if (dist < bestDist) {
         bestDist = dist;
         bestWord = i;
       }
     }
     if (bestWord >= 0 && bestDist <= config.tinyAttachFactor * u) {
-      words[bestWord].add(d);
+      words[bestWord].items.add(d);
     } else {
       loners.add(d);
     }
   }
   for (final group in clusters(loners, limit)) {
-    words.add(group);
+    words.add(_Acc(group, 1)..dotOnly = true);
   }
 
-  final ordered = [...words]
-    ..sort((a, b) => a.map((i) => i.xl).reduce(math.min).compareTo(b.map((i) => i.xl).reduce(math.min)));
+  words.sort((a, b) => a.xl.compareTo(b.xl));
+  _mergeFragments(words, u, limit, config);
+
   return [
-    for (final w in ordered)
+    for (final acc in words)
       () {
-        w.sort((a, b) => a.xl.compareTo(b.xl));
+        final w = acc.items..sort((a, b) => a.xl.compareTo(b.xl));
         InkRect? bounds;
         for (final it in w) {
           bounds = bounds == null ? it.bounds : bounds.union(it.bounds);
@@ -468,21 +523,104 @@ List<WordGroup> _splitWords(
   ];
 }
 
-/// Gap above which two letter blocks belong to different words. A line with
-/// small letter gaps and clearly larger word gaps is cut between the two
-/// groups; otherwise the default fraction of the x-height applies.
+/// Threshold above which two letter blocks belong to different words: the
+/// larger of the default fraction of the x-height and a multiple of the
+/// line's typical letter gap (the median of its gaps below the default), at
+/// most [GroupingConfig.wordGapMaxFactor] x-heights. A gap that is
+/// large only in absolute terms (one wide letter space in an unevenly
+/// spaced word) therefore does not split a word, while single letters
+/// written with clear spaces between them stay separate.
 double _wordGapLimit(List<double> gaps, double u, GroupingConfig config) {
-  final fallback = config.wordGapFactor * u;
-  if (gaps.length < 4) return fallback;
+  final floor = config.wordGapFactor * u;
+  final letterGaps = [
+    for (final g in gaps)
+      if (g <= floor) math.max(g, 0.0),
+  ];
+  if (letterGaps.length < config.minLetterGaps) {
+    return _jumpLimit(gaps, u, floor, config) ?? floor;
+  }
+  final typical = median(letterGaps) ?? 0;
+  final adaptive = config.wordGapRatio * typical;
+  return math.min(math.max(floor, adaptive), math.max(floor, config.wordGapMaxFactor * u));
+}
+
+/// The word-gap threshold of a line whose letter gaps are all wide: halfway
+/// (geometrically) across the largest jump in its sorted gaps, or null when
+/// the gaps show no jump.
+double? _jumpLimit(List<double> gaps, double u, double floor, GroupingConfig config) {
+  if (gaps.length < 5) return null;
   final sorted = [...gaps.map((g) => math.max(g, 0.0))]..sort();
-  var bestJump = 0.0, mid = fallback;
-  for (var i = 1; i < sorted.length; i++) {
-    final jump = sorted[i] - sorted[i - 1];
-    if (jump > bestJump && sorted[i - 1] <= 0.5 * u && sorted[i] >= 0.6 * u) {
-      bestJump = jump;
-      mid = (sorted[i] + sorted[i - 1]) / 2;
+  var bestRatio = 0.0;
+  double? limit;
+  for (var i = 3; i < sorted.length; i++) {
+    final lower = math.max(sorted[i - 1], 0.15 * u);
+    final ratio = sorted[i] / lower;
+    if (ratio >= config.wordGapJumpRatio && ratio > bestRatio && sorted[i] >= floor) {
+      bestRatio = ratio;
+      limit = math.sqrt(lower * sorted[i]);
     }
   }
-  if (bestJump < 0.25 * u) return fallback;
-  return mid.clamp(0.45 * u, 1.0 * u);
+  if (limit == null) return null;
+  return math.min(math.max(floor, limit), math.max(floor, config.wordGapMaxFactor * u));
+}
+
+/// Merges fragments into their nearer neighbour (see
+/// [GroupingConfig.fragmentWidthFactor]). Fragments never merge into each
+/// other, so single letters written apart ("a b c") stay separate.
+void _mergeFragments(List<_Acc> words, double u, double limit, GroupingConfig config) {
+  bool isFragment(_Acc w) {
+    if (w.dotOnly || w.blocks != 1) return false;
+    if (w.xr - w.xl >= config.fragmentWidthFactor * u) return false;
+    if (w.items.length == 1 && (_isBarLike(w.items.first) || _isLoopLike(w.items.first, u))) {
+      return false; // 1, I, l, -, 0, o ...
+    }
+    return true;
+  }
+
+  var i = 0;
+  while (i < words.length) {
+    final w = words[i];
+    if (!isFragment(w)) {
+      i++;
+      continue;
+    }
+    _Acc? left = i > 0 ? words[i - 1] : null;
+    _Acc? right = i + 1 < words.length ? words[i + 1] : null;
+    if (left != null && (left.dotOnly || isFragment(left))) left = null;
+    if (right != null && (right.dotOnly || isFragment(right))) right = null;
+    final gapLeft = left == null ? double.infinity : math.max(0.0, w.xl - left.xr);
+    final gapRight = right == null ? double.infinity : math.max(0.0, right.xl - w.xr);
+    final reach = config.fragmentMergeFactor * limit;
+    final target = gapLeft <= gapRight ? left : right;
+    final gap = math.min(gapLeft, gapRight);
+    if (target == null || gap > reach) {
+      i++;
+      continue;
+    }
+    target
+      ..items.addAll(w.items)
+      ..blocks += 1;
+    words.removeAt(i);
+    if (target == right) words.sort((a, b) => a.xl.compareTo(b.xl));
+  }
+}
+
+/// A single stroke that is nearly straight (a 1, an I, a dash).
+bool _isBarLike(_Item it) {
+  final s = it.samples;
+  if (s.length < 2) return true;
+  var length = 0.0;
+  for (var i = 1; i < s.length; i++) {
+    length += s[i].distanceTo(s[i - 1]);
+  }
+  final chord = s.first.distanceTo(s.last);
+  return chord > 0 && length <= 1.25 * chord;
+}
+
+/// A single stroke that returns to where it began (a 0, an o).
+bool _isLoopLike(_Item it, double u) {
+  final s = it.samples;
+  if (s.length < 3) return false;
+  final diag = it.bounds.diagonal;
+  return diag >= 0.5 * u && s.first.distanceTo(s.last) <= 0.4 * diag;
 }

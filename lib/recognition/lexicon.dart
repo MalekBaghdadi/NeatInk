@@ -1,20 +1,31 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
-
-import 'ctc.dart';
 
 /// Asset with the English word list: one `word count` per line, lowercase,
 /// most frequent first (see docs/htr-model-notes.md for the source).
 const String lexiconAsset = 'assets/htr/word_freq.txt';
+
+// Rows of the edit-distance table, reused across calls: the BK-tree search
+// computes tens of thousands of distances per word.
+Int32List _rowA = Int32List(64);
+Int32List _rowB = Int32List(64);
 
 /// Plain Levenshtein distance (insert, delete, substitute all cost 1).
 int levenshtein(String a, String b) {
   if (a == b) return 0;
   if (a.isEmpty) return b.length;
   if (b.isEmpty) return a.length;
-  var prev = List<int>.generate(b.length + 1, (j) => j);
-  var cur = List<int>.filled(b.length + 1, 0);
+  if (b.length + 1 > _rowA.length) {
+    _rowA = Int32List(b.length + 1);
+    _rowB = Int32List(b.length + 1);
+  }
+  var prev = _rowA;
+  var cur = _rowB;
+  for (var j = 0; j <= b.length; j++) {
+    prev[j] = j;
+  }
   for (var i = 1; i <= a.length; i++) {
     cur[0] = i;
     final ca = a.codeUnitAt(i - 1);
@@ -22,7 +33,7 @@ int levenshtein(String a, String b) {
       final sub = prev[j - 1] + (ca == b.codeUnitAt(j - 1) ? 0 : 1);
       final del = prev[j] + 1;
       final ins = cur[j - 1] + 1;
-      cur[j] = math.min(sub, math.min(del, ins));
+      cur[j] = sub < del ? (sub < ins ? sub : ins) : (del < ins ? del : ins);
     }
     final tmp = prev;
     prev = cur;
@@ -36,7 +47,7 @@ int levenshtein(String a, String b) {
 const List<String> _confusablePairs = [
   'ao', 'ou', 'oe', 'ec', 'ea', 'nu', 'nr', 'nm', 'mw', 'uv', 'vw', 'vy',
   'il', 'lt', 'it', 'fl', 'ft', 'hb', 'hk', 'gq', 'gy', 'pq', 'ij', 'cl',
-  'ds', 'rs', 'sz', 'xz', 'kx',
+  'ds', 'rs', 'sz', 'xz', 'kx', 'lk', 'ck', 'ra', 'rn', 'bd', 'dl', 'sa',
 ];
 
 final Set<int> _confusable = {
@@ -185,7 +196,7 @@ class Lexicon {
   /// Words within [maxEdits] Levenshtein edits of [word] (lowercase), the
   /// [limit] best by weighted distance with a small bonus for frequent words.
   /// Includes [word] itself when it is listed.
-  List<LexiconCandidate> candidates(String word, {int maxEdits = 2, int limit = 40}) {
+  List<LexiconCandidate> candidates(String word, {int maxEdits = 2, int limit = 150}) {
     if (_words.isEmpty) return const [];
     final q = word.toLowerCase();
     final found = <LexiconCandidate>[];
@@ -210,189 +221,4 @@ class Lexicon {
     found.sort((a, b) => rank(a).compareTo(rank(b)));
     return found.length > limit ? found.sublist(0, limit) : found;
   }
-}
-
-/// Tuning numbers for [LexiconRescorer].
-class RescoreConfig {
-  const RescoreConfig({
-    this.lambda = 0.3,
-    this.oovPenalty = 1.0,
-    this.maxCandidates = 40,
-    this.maxAlternatives = 3,
-  });
-
-  /// Weight of the language prior against the image evidence: a candidate's
-  /// score is `ln P(image | word) + lambda * ln P(word)`.
-  final double lambda;
-
-  /// Words that are not listed (names, numbers, abbreviations) get a prior
-  /// this many nats below the rarest listed word.
-  final double oovPenalty;
-
-  /// Dictionary words examined per recognised word.
-  final int maxCandidates;
-
-  /// Other readings returned besides the chosen one.
-  final int maxAlternatives;
-
-  /// The largest number of edits tried for a word of [letters] letters.
-  int maxEditsFor(int letters) => letters <= 2 ? 0 : (letters <= 4 ? 1 : 2);
-}
-
-/// One recognised word.
-class RescoredWord {
-  const RescoredWord({
-    required this.text,
-    required this.raw,
-    required this.confidence,
-    required this.alternatives,
-  });
-
-  /// The chosen reading, with the capitalisation and punctuation of the raw
-  /// output.
-  final String text;
-
-  /// The plain best-path (greedy) CTC output.
-  final String raw;
-
-  /// 0..1: geometric-mean per-character probability of [text] under the
-  /// image model.
-  final double confidence;
-
-  final List<String> alternatives;
-}
-
-/// Picks the final word from CTC log-probabilities: the greedy string
-/// unless a dictionary word explains the image almost as well and is far
-/// more likely English. Unlisted words (names, numbers, mixed tokens) and
-/// anything with digits or odd punctuation inside keep the greedy reading.
-class LexiconRescorer {
-  LexiconRescorer(this.charset, this.lexicon, {this.config = const RescoreConfig()});
-
-  final CtcCharset charset;
-
-  /// Null disables correction (greedy output only).
-  final Lexicon? lexicon;
-  final RescoreConfig config;
-
-  static final RegExp _split = RegExp(r'^([^A-Za-z0-9]*)(.*?)([^A-Za-z0-9]*)$');
-  static final RegExp _letters = RegExp(r"^[A-Za-z]+(?:'[A-Za-z]+)?$");
-
-  RescoredWord rescore(CtcLogProbs lp) {
-    final greedy = greedyDecode(lp, charset);
-    final raw = greedy.text;
-    if (raw.isEmpty) {
-      return const RescoredWord(text: '', raw: '', confidence: 0, alternatives: []);
-    }
-    final lex = lexicon;
-    final m = _split.firstMatch(raw);
-    final lead = m?.group(1) ?? '';
-    final core = m?.group(2) ?? raw;
-    final trail = m?.group(3) ?? '';
-    if (lex == null || core.isEmpty || !_letters.hasMatch(core)) {
-      return RescoredWord(
-        text: raw,
-        raw: raw,
-        confidence: _confidence(lp, [for (final i in greedy.indices) [i]], raw.length, greedy),
-        alternatives: const [],
-      );
-    }
-
-    final leadSets = [for (final i in charset.encode(lead) ?? const <int>[]) [i]];
-    final trailSets = [for (final i in charset.encode(trail) ?? const <int>[]) [i]];
-    final coreLower = core.toLowerCase();
-
-    List<List<int>>? coreSets(String word) {
-      final sets = <List<int>>[];
-      for (final r in word.runes) {
-        final ch = String.fromCharCode(r);
-        final options = <int>{};
-        for (final v in [ch.toLowerCase(), ch.toUpperCase()]) {
-          final i = charset.indexOf(v);
-          if (i != null) options.add(i);
-        }
-        if (options.isEmpty) return null;
-        sets.add(options.toList());
-      }
-      return sets;
-    }
-
-    final oovPrior = lex.minLogProb - config.oovPenalty;
-    final scored = <_Scored>[];
-    final seen = <String>{};
-
-    void add(String word, double? prior) {
-      if (!seen.add(word)) return;
-      final cs = coreSets(word);
-      if (cs == null) return;
-      final sets = [...leadSets, ...cs, ...trailSets];
-      final ll = ctcLogLikelihoodSets(lp, sets, blank: charset.blank);
-      scored.add(_Scored(word, ll, ll + config.lambda * (prior ?? oovPrior), sets.length));
-    }
-
-    // The greedy reading is always a contender, with the unlisted-word prior
-    // unless the dictionary knows it.
-    add(coreLower, lex.logProb(coreLower));
-    final maxEdits = config.maxEditsFor(core.replaceAll("'", '').length);
-    for (final c in lex.candidates(coreLower, maxEdits: maxEdits, limit: config.maxCandidates)) {
-      add(c.word, lex.logProb(c.word));
-    }
-    scored.sort((a, b) => b.score.compareTo(a.score));
-
-    String render(String word) => '$lead${_restoreCase(word, core)}$trail';
-
-    final greedyEntry = scored.firstWhere((s) => s.word == coreLower);
-    var best = scored.first;
-    // Keep the raw string (with its exact capitalisation) unless something
-    // else strictly wins.
-    if (best.word == coreLower || best.score <= greedyEntry.score + 1e-9) best = greedyEntry;
-    final chosen = best.word == coreLower ? raw : render(best.word);
-
-    final alternatives = <String>[];
-    for (final s in scored) {
-      if (s.word == best.word) continue;
-      final text = s.word == coreLower ? raw : render(s.word);
-      if (text == chosen || alternatives.contains(text)) continue;
-      alternatives.add(text);
-      if (alternatives.length >= config.maxAlternatives) break;
-    }
-    final conf = math.exp(best.ll / best.length).clamp(0.0, 1.0);
-    return RescoredWord(
-      text: chosen,
-      raw: raw,
-      confidence: conf.isNaN ? 0 : conf,
-      alternatives: alternatives,
-    );
-  }
-
-  double _confidence(CtcLogProbs lp, List<List<int>> sets, int length, CtcGreedy fallback) {
-    final ll = ctcLogLikelihoodSets(lp, sets, blank: charset.blank);
-    if (ll == double.negativeInfinity || length == 0) return fallback.confidence;
-    return math.exp(ll / length).clamp(0.0, 1.0);
-  }
-
-  /// [word] (lowercase) with the capitalisation pattern of [rawCore]: all
-  /// capitals stay all capitals, an initial capital stays an initial capital.
-  static String _restoreCase(String word, String rawCore) {
-    if (rawCore.length >= 2 && rawCore == rawCore.toUpperCase()) return word.toUpperCase();
-    if (rawCore.isNotEmpty && rawCore[0] != rawCore[0].toLowerCase()) {
-      return word[0].toUpperCase() + word.substring(1);
-    }
-    return word;
-  }
-}
-
-class _Scored {
-  _Scored(this.word, this.ll, this.score, this.length);
-
-  final String word;
-
-  /// Image evidence alone, `ln P(image | word)`.
-  final double ll;
-
-  /// [ll] plus the weighted language prior.
-  final double score;
-
-  /// Number of label positions (including punctuation).
-  final int length;
 }

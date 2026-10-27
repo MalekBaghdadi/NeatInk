@@ -16,6 +16,7 @@ class AppSettings {
     this.stylusButtonErases = true,
     this.shapeSnapEnabled = true,
     this.exportPaperLines = true,
+    this.autoConvert = false,
     this.defaultPaper = const Paper(),
     this.librarySort = LibrarySort.edited,
     this.pinHash,
@@ -30,6 +31,7 @@ class AppSettings {
         stylusButtonErases: j['stylusButtonErases'] as bool? ?? true,
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
+        autoConvert: j['autoConvert'] as bool? ?? false,
         defaultPaper:
             Paper.fromJson(j['defaultPaper'] as Map<String, dynamic>?),
         librarySort:
@@ -55,6 +57,11 @@ class AppSettings {
   /// Draw paper lines/grid when exporting blank notebooks as PDF.
   final bool exportPaperLines;
 
+  /// Auto-convert: about a second after the pen stops, the new handwriting is
+  /// turned into typed text by itself (see `AutoConvertSession`). Off by
+  /// default; the manual Convert button always works.
+  final bool autoConvert;
+
   /// Paper preselected when creating a notebook.
   final Paper defaultPaper;
   final LibrarySort librarySort;
@@ -74,6 +81,7 @@ class AppSettings {
     bool? stylusButtonErases,
     bool? shapeSnapEnabled,
     bool? exportPaperLines,
+    bool? autoConvert,
     Paper? defaultPaper,
     LibrarySort? librarySort,
     String? pinHash,
@@ -87,6 +95,7 @@ class AppSettings {
         stylusButtonErases: stylusButtonErases ?? this.stylusButtonErases,
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
+        autoConvert: autoConvert ?? this.autoConvert,
         defaultPaper: defaultPaper ?? this.defaultPaper,
         librarySort: librarySort ?? this.librarySort,
         pinHash: clearPin ? null : (pinHash ?? this.pinHash),
@@ -100,6 +109,7 @@ class AppSettings {
         'stylusButtonErases': stylusButtonErases,
         'shapeSnapEnabled': shapeSnapEnabled,
         'exportPaperLines': exportPaperLines,
+        'autoConvert': autoConvert,
         'defaultPaper': defaultPaper.toJson(),
         'librarySort': librarySort.name,
         'pinHash': pinHash,

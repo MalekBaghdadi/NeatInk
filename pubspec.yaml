@@ -2,7 +2,7 @@ name: neatink
 description: "NeatInk: handwriting notes for Android tablets. Offline, local, handwriting to typed text."
 publish_to: 'none'
 
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ^3.13.0
@@ -189,7 +189,7 @@ flutter:
   # Handwriting recognition: ONNX model, charset and word frequencies.
   assets:
     - assets/htr/model.onnx
-    - assets/htr/config.json
+    - assets/htr/charset.json
     - assets/htr/word_freq.txt
     - assets/fonts/Roboto/OFL.txt
     - assets/fonts/OpenSans/OFL.txt

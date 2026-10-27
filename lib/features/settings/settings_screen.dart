@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/app_info.dart';
 import '../debug/pointer_debug_screen.dart';
 import 'app_settings.dart';
+import 'my_words_screen.dart';
 import 'settings_controller.dart';
 import 'widgets/paper_defaults_editor.dart';
 import 'widgets/security_settings.dart';
@@ -61,6 +62,26 @@ class SettingsScreen extends ConsumerWidget {
                   value: settings.shapeSnapEnabled,
                   onChanged: (v) =>
                       change((s) => s.copyWith(shapeSnapEnabled: v)),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('settings-auto-convert'),
+                  secondary: const Icon(Icons.auto_awesome_outlined),
+                  title: const Text('Auto-convert handwriting'),
+                  subtitle: const Text(
+                      'About a second after you lift the pen, your writing '
+                      'turns into text by itself.'),
+                  value: settings.autoConvert,
+                  onChanged: (v) => change((s) => s.copyWith(autoConvert: v)),
+                ),
+                ListTile(
+                  key: const ValueKey('settings-my-words'),
+                  leading: const Icon(Icons.spellcheck_outlined),
+                  title: const Text('My words'),
+                  subtitle: const Text(
+                      'Names and words the handwriting reader should know, '
+                      'like your family names.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => MyWordsScreen.open(context),
                 ),
                 SwitchListTile(
                   key: const ValueKey('settings-draw-with-finger'),
