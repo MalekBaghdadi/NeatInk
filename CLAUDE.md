@@ -276,7 +276,7 @@ _Last updated 2026-10-26 by Claude (end of session 1). Keep this section current
 
 ## Session 3 (2026-10-27): wave 2 finished
 
-- Three wave-2 files had been NUL-corrupted by a cut-off (shapes handler + integration, tidy test); they were deleted and redone. **After any cut-off, scan for NUL bytes** (Grep ` ` with multiline over lib/ and test/).
+- Three wave-2 files had been NUL-corrupted by a cut-off (shapes handler + integration, tidy test); they were deleted and redone. **After any cut-off, scan for NUL bytes** (Grep `backslash-x00` with multiline over lib/ and test/).
 - All six integrations exist, are tested in the mirror, and are installed by the real app: `lib/features/editor/default_integrations.dart` lists them and `main.dart` overrides `editorIntegrationsProvider` with it. The provider's own default stays empty on purpose: `pdfIntegration` imports pdfrx, which would stop every editor test from loading in the mirror.
 - Full mirror suite: 739 tests pass (`flutter test --reporter expanded --timeout 30s`, ~20 s). `flutter analyze`: 0 issues. Always pass `--timeout`: a stuck test otherwise hangs the run for 20+ min.
 - Test gotcha: `controller.close()` renders a thumbnail (`picture.toImage`), which hangs under `flutter_tester`; tests call the handlers' `commitPending()` / `beforeSaveHooks` instead.
