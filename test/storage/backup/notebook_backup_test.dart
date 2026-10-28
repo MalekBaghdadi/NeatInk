@@ -89,10 +89,12 @@ void main() {
     ]));
     expect(names.where((n) => n.contains('.tmp-')), isEmpty);
     expect(names.where((n) => n.startsWith('notebooks/${lecture.id}/assets/')), hasLength(1));
-    final manifest = jsonDecode(utf8.decode(await r.readBytes(r.entry(backupManifestName)!)));
+    final manifest = jsonDecode(utf8.decode(await r.readBytes(r.entry(backupManifestName)!)))
+        as Map<String, dynamic>;
     expect(manifest['format'], 'neatink-backup');
     expect(manifest['app'], '1.6.0');
-    expect((manifest['notebooks'] as List).map((n) => n['title']), unorderedEquals(['Neurons', 'Slides']));
+    expect([for (final n in manifest['notebooks'] as List) (n as Map)['title']],
+        unorderedEquals(['Neurons', 'Slides']));
   });
 
   test('restoring on an empty device brings everything back', () async {
@@ -130,7 +132,7 @@ void main() {
   test('on the same device unchanged notebooks are skipped and changed ones copied',
       () async {
     final zip = await backUp();
-    var info = await readBackupInfo(zip);
+    final info = await readBackupInfo(zip);
     var plan = planRestore(info, await repoA.listNotebooks(),
         copyChanged: true, newId: const Uuid().v4);
     expect(plan.map((i) => i.reason), everyElement(RestoreReason.unchanged));

@@ -67,7 +67,12 @@ class LibraryActions {
     if (context.mounted) await refresh();
   }
 
-  Future<void> openSettings() => _nav.openSettings(context);
+  /// A restore in Settings can add notebooks and folders, so refresh when
+  /// it closes too.
+  Future<void> openSettings() async {
+    await _nav.openSettings(context);
+    if (context.mounted) await refresh();
+  }
 
   Future<void> refresh() async {
     await _attempt(_controller.refresh, "Couldn't refresh the library.");

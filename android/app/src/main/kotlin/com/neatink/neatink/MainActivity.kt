@@ -8,5 +8,6 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         flutterEngine.plugins.add(PdfExportPlugin())
         flutterEngine.plugins.add(HtrPlugin())
+        flutterEngine.plugins.add(FileSavePlugin())
     }
 }

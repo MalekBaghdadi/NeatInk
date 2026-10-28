@@ -169,6 +169,28 @@ void main() {
     });
   });
 
+  group('last backup and tips', () {
+    test('default to none and not seen, also for settings saved before them', () {
+      expect(const AppSettings().lastBackupAt, isNull);
+      expect(const AppSettings().tipsSeen, isFalse);
+      final old = AppSettings.fromJson(const {'themeMode': 'dark'});
+      expect(old.lastBackupAt, isNull);
+      expect(old.tipsSeen, isFalse);
+    });
+
+    test('JSON round trip, and copyWith keeps them', () {
+      final at = DateTime.utc(2026, 10, 28, 15, 30);
+      final s = const AppSettings().copyWith(lastBackupAt: at, tipsSeen: true);
+      final back = AppSettings.fromJson(jsonDecode(jsonEncode(s.toJson())) as Map<String, dynamic>);
+      expect(back.lastBackupAt, at);
+      expect(back.tipsSeen, isTrue);
+      final other = back.copyWith(autoConvert: true);
+      expect(other.lastBackupAt, at);
+      expect(other.tipsSeen, isTrue);
+      expect(AppSettings.fromJson(const {'lastBackupAt': 'garbage'}).lastBackupAt, isNull);
+    });
+  });
+
   group('autocorrect', () {
     test('is on by default, also for settings saved before it existed', () async {
       final c = await containerWith({});

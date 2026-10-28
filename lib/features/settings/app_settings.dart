@@ -27,6 +27,8 @@ class AppSettings {
     this.pinHash,
     this.pinSalt,
     this.lockAfterSeconds = 0,
+    this.lastBackupAt,
+    this.tipsSeen = false,
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
@@ -53,6 +55,8 @@ class AppSettings {
         pinHash: j['pinHash'] as String?,
         pinSalt: j['pinSalt'] as String?,
         lockAfterSeconds: (j['lockAfterSeconds'] as num?)?.toInt() ?? 0,
+        lastBackupAt: DateTime.tryParse('${j['lastBackupAt'] ?? ''}'),
+        tipsSeen: j['tipsSeen'] as bool? ?? false,
       );
 
   static const String prefsKey = 'neatink.settings.v1';
@@ -114,6 +118,12 @@ class AppSettings {
   /// Lock again after the app was in the background this long (0 = always).
   final int lockAfterSeconds;
 
+  /// When a backup was last saved (Settings > Backup), or null.
+  final DateTime? lastBackupAt;
+
+  /// The Tips screen has been shown once (it opens by itself until then).
+  final bool tipsSeen;
+
   bool get appLockEnabled => pinHash != null && pinSalt != null;
 
   AppSettings copyWith({
@@ -133,6 +143,8 @@ class AppSettings {
     String? pinSalt,
     bool clearPin = false,
     int? lockAfterSeconds,
+    DateTime? lastBackupAt,
+    bool? tipsSeen,
   }) =>
       AppSettings(
         themeMode: themeMode ?? this.themeMode,
@@ -152,6 +164,8 @@ class AppSettings {
         pinHash: clearPin ? null : (pinHash ?? this.pinHash),
         pinSalt: clearPin ? null : (pinSalt ?? this.pinSalt),
         lockAfterSeconds: lockAfterSeconds ?? this.lockAfterSeconds,
+        lastBackupAt: lastBackupAt ?? this.lastBackupAt,
+        tipsSeen: tipsSeen ?? this.tipsSeen,
       );
 
   Map<String, dynamic> toJson() => {
@@ -170,5 +184,7 @@ class AppSettings {
         'pinHash': pinHash,
         'pinSalt': pinSalt,
         'lockAfterSeconds': lockAfterSeconds,
+        'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
+        'tipsSeen': tipsSeen,
       };
 }

@@ -7,6 +7,7 @@ import '../debug/pointer_debug_screen.dart';
 import 'app_settings.dart';
 import 'my_words_screen.dart';
 import 'settings_controller.dart';
+import 'widgets/backup_settings.dart';
 import 'widgets/paper_defaults_editor.dart';
 import 'widgets/security_settings.dart';
 import 'widgets/settings_section.dart';
@@ -188,6 +189,7 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            const BackupSettings(),
             const SecuritySettings(),
             SettingsSection(
               title: 'Developer',
