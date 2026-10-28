@@ -276,10 +276,14 @@ void main() {
     expect(tester.widget<ChoiceChip>(key('convert-size-even')).selected, isTrue);
     expect(tester.widget<ChoiceChip>(key('convert-size-auto')).selected, isFalse);
     expect(find.text('Match my handwriting'), findsOneWidget);
+    // The slider is dimmed until it is in use, and a touch still picks Custom.
+    expect(tester.widget<AnimatedOpacity>(key('convert-size-slider-fade')).opacity,
+        lessThan(1));
     await tester.tap(key('convert-size-slider'));
     await tester.pump();
     expect(tester.widget<ChoiceChip>(key('convert-size-even')).selected, isFalse);
     expect(tester.widget<ChoiceChip>(key('convert-size-custom')).selected, isTrue);
+    expect(tester.widget<AnimatedOpacity>(key('convert-size-slider-fade')).opacity, 1);
     final label = tester.widget<Text>(key('convert-size-label')).data!;
     expect(label, endsWith(' pt'));
     final pt = int.parse(label.replaceAll(' pt', ''));

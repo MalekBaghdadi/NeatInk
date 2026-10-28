@@ -109,31 +109,38 @@ class ConvertStyleControls extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(
-          width: 320,
-          child: Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  key: const ValueKey('convert-size-slider'),
-                  min: ConvertConfig.minFixedSize,
-                  max: ConvertConfig.maxFixedSize,
-                  divisions: (ConvertConfig.maxFixedSize - ConvertConfig.minFixedSize).round(),
-                  value: (v.fixedSize ?? ConvertConfig.defaultFixedSize)
-                      .clamp(ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize)
-                      .toDouble(),
-                  onChanged: (size) =>
-                      onChange((p) => p.copyWith(sizeMode: ConvertSizeMode.custom, fixedSize: size)),
+        // Dimmed unless Custom is chosen, since only Custom uses it. It still
+        // answers a drag, which switches to Custom.
+        AnimatedOpacity(
+          key: const ValueKey('convert-size-slider-fade'),
+          opacity: custom ? 1 : 0.4,
+          duration: const Duration(milliseconds: 150),
+          child: SizedBox(
+            width: 320,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    key: const ValueKey('convert-size-slider'),
+                    min: ConvertConfig.minFixedSize,
+                    max: ConvertConfig.maxFixedSize,
+                    divisions: (ConvertConfig.maxFixedSize - ConvertConfig.minFixedSize).round(),
+                    value: (v.fixedSize ?? ConvertConfig.defaultFixedSize)
+                        .clamp(ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize)
+                        .toDouble(),
+                    onChanged: (size) =>
+                        onChange((p) => p.copyWith(sizeMode: ConvertSizeMode.custom, fixedSize: size)),
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: 44,
-                child: Text(
-                  custom ? '${(v.fixedSize ?? ConvertConfig.defaultFixedSize).round()} pt' : '',
-                  key: const ValueKey('convert-size-label'),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    custom ? '${(v.fixedSize ?? ConvertConfig.defaultFixedSize).round()} pt' : '',
+                    key: const ValueKey('convert-size-label'),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         Text('Colour', style: label),
