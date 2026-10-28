@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_info.dart';
 import '../debug/pointer_debug_screen.dart';
+import '../tips/tips_screen.dart';
 import 'app_settings.dart';
 import 'my_words_screen.dart';
 import 'settings_controller.dart';
@@ -239,6 +240,14 @@ class _AboutSection extends StatelessWidget {
           ),
           title: const Text(AppInfo.name),
           subtitle: const Text('Version ${AppInfo.displayVersion}'),
+        ),
+        ListTile(
+          key: const ValueKey('settings-tips'),
+          leading: const Icon(Icons.lightbulb_outline_rounded),
+          title: const Text('Tips'),
+          subtitle: const Text('Pen and fingers, typed text, shapes, PDFs and backups.'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => TipsScreen.open(context),
         ),
         const ListTile(
           leading: Icon(Icons.wifi_off_rounded),
