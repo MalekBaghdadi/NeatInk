@@ -32,21 +32,21 @@ void main() {
   group('autoConvertsLine', () {
     test('the line must reach the minimum confidence (that of its least sure word)', () {
       expect(autoConvertsLine(lineWith([('hello', 0.9)])), isTrue);
-      expect(autoConvertsLine(lineWith([('hello', 0.9), ('there', 0.5)])), isTrue,
+      expect(autoConvertsLine(lineWith([('hello', 0.9), ('there', 0.25)])), isTrue,
           reason: 'exactly the minimum is enough');
       expect(
-          autoConvertsLine(lineWith([('hello', 0.9), ('there', 0.499)])), isFalse);
-      expect(autoConvertsLine(lineWith([('hello', 0.2), ('there', 0.99)])), isFalse,
-          reason: 'one doubtful word is enough to keep the line as ink');
-      expect(ConvertConfig.autoMinConfidence, 0.5);
+          autoConvertsLine(lineWith([('hello', 0.9), ('there', 0.249)])), isFalse);
+      expect(autoConvertsLine(lineWith([('hello', 0.1), ('there', 0.99)])), isFalse,
+          reason: 'one unreadable word is enough to keep the line as ink');
+      expect(ConvertConfig.autoMinConfidence, 0.25);
     });
 
     test('it is the confidence of the line that counts, not of its words', () {
       // Every word looks sure, but the recogniser is not sure of the line.
-      final unsure = lineWith([('hello', 0.9), ('there', 0.9)], confidence: 0.4);
-      expect(unsure.confidence, 0.4);
+      final unsure = lineWith([('hello', 0.9), ('there', 0.9)], confidence: 0.2);
+      expect(unsure.confidence, 0.2);
       expect(autoConvertsLine(unsure), isFalse);
-      final sure = lineWith([('hello', 0.9), ('there', 0.9)], confidence: 0.5);
+      final sure = lineWith([('hello', 0.9), ('there', 0.9)], confidence: 0.25);
       expect(autoConvertsLine(sure), isTrue);
     });
 

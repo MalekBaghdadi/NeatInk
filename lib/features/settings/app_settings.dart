@@ -17,6 +17,7 @@ class AppSettings {
     this.shapeSnapEnabled = true,
     this.exportPaperLines = true,
     this.autoConvert = false,
+    this.autoConvertDelayMs = defaultAutoConvertDelayMs,
     this.autoFixSpelling = false,
     this.defaultPaper = const Paper(),
     this.librarySort = LibrarySort.edited,
@@ -33,6 +34,10 @@ class AppSettings {
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
+        autoConvertDelayMs: clampAutoConvertDelay(switch (j['autoConvertDelayMs']) {
+          final num ms => ms.toInt(),
+          _ => defaultAutoConvertDelayMs,
+        }),
         autoFixSpelling: j['autoFixSpelling'] as bool? ?? false,
         defaultPaper:
             Paper.fromJson(j['defaultPaper'] as Map<String, dynamic>?),
@@ -59,10 +64,23 @@ class AppSettings {
   /// Draw paper lines/grid when exporting blank notebooks as PDF.
   final bool exportPaperLines;
 
-  /// Auto-convert: about a second after the pen stops, the new handwriting is
-  /// turned into typed text by itself (see `AutoConvertSession`). Off by
-  /// default; the manual Convert button always works.
+  /// Auto-convert: a moment after the pen stops ([autoConvertDelayMs]), the
+  /// new handwriting is turned into typed text by itself (see
+  /// `AutoConvertSession`). Off by default; the manual Convert button always
+  /// works.
   final bool autoConvert;
+
+  /// How long auto-convert waits after the pen lifts before it reads
+  /// (milliseconds, [minAutoConvertDelayMs] to [maxAutoConvertDelayMs]). A
+  /// longer wait lets a sentence be finished after a pause.
+  final int autoConvertDelayMs;
+
+  static const int defaultAutoConvertDelayMs = 2000;
+  static const int minAutoConvertDelayMs = 1000;
+  static const int maxAutoConvertDelayMs = 10000;
+
+  static int clampAutoConvertDelay(int ms) =>
+      ms.clamp(minAutoConvertDelayMs, maxAutoConvertDelayMs).toInt();
 
   /// Convert: apply the suggested spelling, apostrophe, capital-letter and
   /// grammar fixes by themselves (each one can be undone in the review
@@ -89,6 +107,7 @@ class AppSettings {
     bool? shapeSnapEnabled,
     bool? exportPaperLines,
     bool? autoConvert,
+    int? autoConvertDelayMs,
     bool? autoFixSpelling,
     Paper? defaultPaper,
     LibrarySort? librarySort,
@@ -104,6 +123,9 @@ class AppSettings {
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
+        autoConvertDelayMs: autoConvertDelayMs == null
+            ? this.autoConvertDelayMs
+            : clampAutoConvertDelay(autoConvertDelayMs),
         autoFixSpelling: autoFixSpelling ?? this.autoFixSpelling,
         defaultPaper: defaultPaper ?? this.defaultPaper,
         librarySort: librarySort ?? this.librarySort,
@@ -119,6 +141,7 @@ class AppSettings {
         'shapeSnapEnabled': shapeSnapEnabled,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,
+        'autoConvertDelayMs': autoConvertDelayMs,
         'autoFixSpelling': autoFixSpelling,
         'defaultPaper': defaultPaper.toJson(),
         'librarySort': librarySort.name,

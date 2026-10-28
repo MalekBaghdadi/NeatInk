@@ -149,6 +149,38 @@ void main() {
         isTrue);
   });
 
+  testWidgets('the wait before auto-convert is a slider, 2 s by default, used only when on',
+      (tester) async {
+    final c = await pumpSettings(tester);
+    final tile = find.byKey(const ValueKey('settings-auto-convert-delay'));
+    expect(tile, findsOneWidget);
+    expect(find.text('Wait before converting'), findsOneWidget);
+    expect(find.descendant(of: tile, matching: find.text('2 s')), findsOneWidget);
+    Slider slider() => tester.widget<Slider>(find.descendant(of: tile, matching: find.byType(Slider)));
+    expect(slider().onChanged, isNull, reason: 'auto-convert is off');
+
+    await toggle(tester, 'settings-auto-convert');
+    expect(slider().onChanged, isNotNull);
+    expect(slider().min, 1);
+    expect(slider().max, 10);
+
+    // Drag towards the right end: the value shows while dragging and is
+    // saved when the drag ends.
+    final box = tester.getRect(find.descendant(of: tile, matching: find.byType(Slider)));
+    await tester.dragFrom(box.centerLeft + const Offset(30, 0), Offset(box.width, 0));
+    await tester.pumpAndSettle();
+    expect(settingsOf(c).autoConvertDelayMs, 10000);
+    expect(find.descendant(of: tile, matching: find.text('10 s')), findsOneWidget);
+    expect(prefs.getString(AppSettings.prefsKey), contains('"autoConvertDelayMs":10000'));
+  });
+
+  test('delays are shown in whole and half seconds', () {
+    expect(formatSeconds(2), '2 s');
+    expect(formatSeconds(2.5), '2.5 s');
+    expect(formatSeconds(10), '10 s');
+    expect(formatSeconds(1.26), '1.5 s');
+  });
+
   testWidgets('"Fix spelling automatically" has a switch, off by default',
       (tester) async {
     final c = await pumpSettings(tester);

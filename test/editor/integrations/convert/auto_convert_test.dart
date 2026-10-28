@@ -43,6 +43,34 @@ List<String> texts(ConvertHarness h) => [for (final t in h.page.texts) t.text];
 
 void main() {
   group('when it converts', () {
+    testWidgets('by default 2 s after the last stroke', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true, autoConvertDelayMs: null);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1800); // 1.9 s since the last stroke
+      expect(h.page.texts, isEmpty);
+      await wait(tester, 200);
+      expect(texts(h), ['hello']);
+    });
+
+    testWidgets('as long after the last stroke as the setting says', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true, autoConvertDelayMs: 4500);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 4300);
+      expect(h.page.texts, isEmpty, reason: 'a pause in the middle of a sentence');
+      await wait(tester, 300);
+      expect(texts(h), ['hello']);
+
+      // A new delay applies to the next stroke.
+      h.container
+          .read(settingsProvider.notifier)
+          .update((s) => s.copyWith(autoConvertDelayMs: 1000));
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello', 'second']);
+    });
+
     testWidgets('about a second after the last stroke, not before',
         (tester) async {
       final h = await ConvertHarness.open(tester,
@@ -130,7 +158,7 @@ void main() {
     testWidgets('a low-confidence line stays ink and is not read again',
         (tester) async {
       final h = await ConvertHarness.open(tester,
-          recognizer: reader({'bw0': ('seoond', 0.4)}), autoConvert: true);
+          recognizer: reader({'bw0': ('seoond', 0.2)}), autoConvert: true);
       final b = writeLine('b', ['hello'], y: 156);
       await h.write([...writeLine('a', ['hello'], y: 104), ...b]);
       await wait(tester, 1100);
@@ -151,9 +179,30 @@ void main() {
           {for (final s in b) s.id});
     });
 
+    testWidgets('a doubtful line is read again, whole, when more is written on it',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'bw0': ('helo', 0.1)}), autoConvert: true);
+      final first = writeLine('b', ['hello'], y: 156);
+      await h.write(first);
+      await wait(tester, 1100);
+      expect(h.page.texts, isEmpty);
+      expect(h.recognizer.wordsRead, 1);
+
+      // The sentence goes on after a pause, on the same line; with the rest
+      // of the line the first word reads well.
+      h.recognizer.readings['bw0'] = ('hello', 0.9);
+      h.recognizer.readings['xw0'] = ('online', 0.9);
+      await h.write(writeLine('x', ['online'], y: 156, x: rightOf(first) + 28));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello online']);
+      expect(h.page.strokes, isEmpty);
+      expect(h.recognizer.wordsRead, 3, reason: 'the whole line is read again');
+    });
+
     testWidgets('one doubtful word keeps the whole line as ink', (tester) async {
       final h = await ConvertHarness.open(tester,
-          recognizer: reader({'aw1': ('onlyne', 0.45)}), autoConvert: true);
+          recognizer: reader({'aw1': ('onlyne', 0.2)}), autoConvert: true);
       await h.write(writeLine('a', ['hello', 'online'], y: 104));
       await wait(tester, 1100);
       expect(h.page.texts, isEmpty);
@@ -174,7 +223,7 @@ void main() {
     testWidgets('a confidence of exactly the minimum is good enough',
         (tester) async {
       final h = await ConvertHarness.open(tester,
-          recognizer: reader({'aw0': ('hello', 0.5)}), autoConvert: true);
+          recognizer: reader({'aw0': ('hello', 0.25)}), autoConvert: true);
       await h.write(writeLine('a', ['hello'], y: 104));
       await wait(tester, 1100);
       expect(texts(h), ['hello']);
@@ -345,7 +394,7 @@ void main() {
 
     testWidgets('a fix never makes a doubtful line convert', (tester) async {
       final h = await ConvertHarness.open(tester,
-          recognizer: suggesting()..readings['aw0'] = ('hello', 0.3),
+          recognizer: suggesting()..readings['aw0'] = ('hello', 0.2),
           prefsValues: prefs(fix: true));
       await h.write(writeLine('a', ['hello'], y: 104));
       await wait(tester, 1100);
@@ -491,6 +540,46 @@ void main() {
       await wait(tester, 100);
       expect(find.text('Converting...'), findsNothing);
       expect(texts(h), ['hello']);
+    });
+
+    testWidgets('a kept line shows a chip that opens the review sheet',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'aw0': ('helo', 0.1)}), autoConvert: true);
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(h.page.texts, isEmpty);
+      expect(key('auto-convert-kept'), findsOneWidget);
+      expect(find.text('Not sure about 1 line: kept as handwriting'), findsOneWidget);
+
+      await tester.tap(key('auto-convert-kept'));
+      await wait(tester, 400);
+      await wait(tester, 400);
+      expect(key('convert-sheet'), findsOneWidget);
+      expect(key('auto-convert-kept'), findsNothing);
+    });
+
+    testWidgets('the kept chip goes away by itself and counts each line once',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({'aw0': ('helo', 0.1), 'bw0': ('seoond', 0.1)}),
+          autoConvert: true);
+      final a = writeLine('a', ['hello'], y: 104);
+      await h.write(a);
+      await wait(tester, 1100);
+      expect(find.text('Not sure about 1 line: kept as handwriting'), findsOneWidget);
+      await wait(tester, 6100);
+      expect(key('auto-convert-kept'), findsNothing, reason: 'it must not sit over the page');
+
+      // the same line again (more written on it), still unsure: still one line
+      await h.write(writeLine('y', ['hello'], y: 104, x: rightOf(a) + 28));
+      h.recognizer.readings['yw0'] = ('helo', 0.1);
+      await wait(tester, 1100);
+      expect(find.text('Not sure about 1 line: kept as handwriting'), findsNothing);
+      // a second unsure line
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(find.text('Not sure about 2 lines: kept as handwriting'), findsOneWidget);
     });
 
     testWidgets('strokes written while it reads are not split off',

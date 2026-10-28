@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../document/page_items.dart';
 import '../../../../ink/stroke.dart';
 import '../../../../recognition/htr_channel.dart';
+import '../../../../recognition/stroke_grouping.dart' show RecognizedLine;
 import '../../editor_controller.dart';
 import '../../editor_tool.dart';
 import '../../stroke_events.dart';
@@ -34,15 +35,18 @@ bool autoConvertsLine(PlannedLine line,
 /// Converts handwriting to typed text by itself, like the Freenote app.
 ///
 /// While [enabled], every finished PEN stroke (highlighter strokes and
-/// snapped shapes are ignored) restarts a timer of [idle]
-/// (`ConvertConfig.autoIdleMs`). A new pen-down postpones it. When it fires
-/// with the pen up the *pending* strokes (pen strokes finished since the last
-/// pass that are still on the page) are grouped into lines, each line is read
-/// as a whole, and it is typed only if the line was read confidently (see
-/// [autoConvertsLine]). Lines that are not typed keep their ink exactly as it
-/// is and are never tried again by auto-convert (the manual Convert button
-/// still reads them). With "Fix spelling automatically" on ([readAutoFix]) the
-/// recogniser's spelling and grammar fixes are applied to the typed text too.
+/// snapped shapes are ignored) restarts a timer of [idle] (the user's
+/// "Wait before converting" setting, read each time). A new pen-down
+/// postpones it. When it fires with the pen up the *pending* strokes (pen
+/// strokes finished since the last pass that are still on the page) are
+/// grouped into lines, each line is read as a whole, and it is typed only if
+/// the line was read confidently (see [autoConvertsLine]). A line that is not
+/// typed keeps its ink exactly as it is and is *held*: it is read again, as
+/// a whole, only when more is written on the same line (a sentence finished
+/// after a pause), and [keptLines] lets the user know (the manual Convert
+/// button reads it any time). With "Fix spelling automatically" on
+/// ([readAutoFix]) the recogniser's spelling and grammar fixes are applied to
+/// the typed text too.
 ///
 /// One pass is one undo step ("Auto-convert"). Strokes it converted are
 /// remembered as ignored, so undoing never converts them again. A line that
@@ -61,11 +65,13 @@ class AutoConvertSession with WidgetsBindingObserver {
     bool Function()? readAutoFix,
     this._enabled = false,
     Duration? idle,
+    Duration Function()? readIdle,
     this.minConfidence = ConvertConfig.autoMinConfidence,
     this.metrics = const FlutterTextMetrics(),
     Uuid? uuid,
     bool observeLifecycle = true,
-  })  : idle = idle ?? const Duration(milliseconds: ConvertConfig.autoIdleMs),
+  })  : _readIdle = readIdle ??
+            (() => idle ?? const Duration(milliseconds: ConvertConfig.autoIdleMs)),
         readAutoFix = readAutoFix ?? _noAutoFix,
         _uuid = uuid ?? const Uuid() {
     _startedSub = controller.strokeEvents.started.listen(_onStarted);
@@ -90,8 +96,10 @@ class AutoConvertSession with WidgetsBindingObserver {
 
   static bool _noAutoFix() => false;
 
-  /// Quiet time after the last stroke before a pass starts.
-  final Duration idle;
+  /// Quiet time after the last stroke before a pass starts; read every time
+  /// the timer starts, so a new setting applies to the next stroke.
+  Duration get idle => _readIdle();
+  final Duration Function() _readIdle;
   final double minConfidence;
   final ConvertTextMetrics metrics;
   final Uuid _uuid;
@@ -114,10 +122,19 @@ class AutoConvertSession with WidgetsBindingObserver {
   /// Pen strokes finished since the last pass, per page, oldest first.
   final Map<String, List<String>> _pending = {};
 
-  /// Strokes auto-convert must not look at again: left as ink on purpose,
-  /// converted (so an undo does not convert them again), or written while the
-  /// app was away.
+  /// Strokes auto-convert must not look at again: converted (so an undo does
+  /// not convert them again), or written while the app was away.
   final Set<String> _ignored = {};
+
+  /// Strokes of lines a pass was not sure about, per page: left as ink, and
+  /// read again (with the rest of their line) only when new strokes are
+  /// written on the same line.
+  final Map<String, Set<String>> _held = {};
+
+  /// Lines kept as handwriting because auto-convert was not sure what they
+  /// say, since the user last looked ([clearKept]); a line that is read
+  /// again and kept again counts once. Drives the "Kept as handwriting" chip.
+  final ValueNotifier<int> keptLines = ValueNotifier(0);
 
   /// The boxes auto-convert made, per page (in memory only).
   final Map<String, Map<String, AutoBox>> _boxes = {};
@@ -136,11 +153,19 @@ class AutoConvertSession with WidgetsBindingObserver {
 
   bool get enabled => _enabled;
 
+  /// The user looked at the kept lines (opened the review sheet).
+  void clearKept() {
+    if (!_disposed) keptLines.value = 0;
+  }
+
   @visibleForTesting
   Set<String> get ignoredIds => Set.unmodifiable(_ignored);
 
   @visibleForTesting
   int get pendingCount => _pending.values.fold(0, (n, l) => n + l.length);
+
+  @visibleForTesting
+  int get heldCount => _held.values.fold(0, (n, l) => n + l.length);
 
   @visibleForTesting
   bool get hasTimer => _timer != null;
@@ -164,6 +189,8 @@ class AutoConvertSession with WidgetsBindingObserver {
     _generation++;
     _token?.cancel();
     _pending.clear();
+    _held.clear();
+    keptLines.value = 0;
     _failurePaused = false;
     _lastFailure = null;
   }
@@ -196,6 +223,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     controller.removeListener(_onControllerChanged);
     if (_observing) WidgetsBinding.instance.removeObserver(this);
     working.dispose();
+    keptLines.dispose();
     unawaited(_failures.close());
   }
 
@@ -284,12 +312,16 @@ class AutoConvertSession with WidgetsBindingObserver {
     _failures.add(message);
   }
 
-  /// Puts [taken] back at the front of the waiting strokes.
-  void _restore(Map<String, List<String>> taken) {
+  /// Puts [taken] back at the front of the waiting strokes; those that were
+  /// held before the pass ([reheld]) are held again instead.
+  void _restore(Map<String, List<String>> taken, [Map<String, Set<String>> reheld = const {}]) {
     if (!_enabled || _away) return;
     taken.forEach((pageId, ids) {
-      if (ids.isEmpty) return;
-      _pending[pageId] = [...ids, ...?_pending[pageId]];
+      final back = reheld[pageId] ?? const <String>{};
+      final waiting = [for (final id in ids) if (!back.contains(id)) id];
+      final held = [for (final id in ids) if (back.contains(id)) id];
+      if (held.isNotEmpty) _held.putIfAbsent(pageId, () => <String>{}).addAll(held);
+      if (waiting.isNotEmpty) _pending[pageId] = [...waiting, ...?_pending[pageId]];
     });
   }
 
@@ -301,6 +333,8 @@ class AutoConvertSession with WidgetsBindingObserver {
 
     // 1. Take what is waiting.
     final taken = <String, List<String>>{};
+    // Held strokes that join this pass (their line got new strokes).
+    final reheld = <String, Set<String>>{};
     final scope = <PageStrokes>[];
     for (final entry in _pending.entries) {
       final pageId = entry.key;
@@ -310,15 +344,37 @@ class AutoConvertSession with WidgetsBindingObserver {
         _ignored.addAll(entry.value);
         continue;
       }
-      final byId = {for (final s in doc.page(pageId).strokes) s.id: s};
-      final strokes = <Stroke>[];
-      for (final id in entry.value) {
+      final pageStrokes = doc.page(pageId).strokes;
+      final byId = {for (final s in pageStrokes) s.id: s};
+      bool usable(String id) {
         final s = byId[id];
-        if (s == null || _ignored.contains(id)) continue; // gone, or not ours
-        if (s.tool != StrokeTool.pen || s.shape != null) continue;
-        strokes.add(s);
+        if (s == null || _ignored.contains(id)) return false; // gone, or not ours
+        return s.tool == StrokeTool.pen && s.shape == null;
       }
-      if (strokes.isEmpty) continue;
+
+      final fresh = {for (final id in entry.value) if (usable(id)) id};
+      if (fresh.isEmpty) continue;
+      // A held line that got new strokes is read again as a whole.
+      final held = _held[pageId];
+      final chosen = {...fresh};
+      if (held != null) {
+        held.removeWhere((id) => !usable(id));
+        if (held.isNotEmpty) {
+          final lines = groupPageStrokes([
+            for (final s in pageStrokes)
+              if (held.contains(s.id) || fresh.contains(s.id)) s,
+          ]);
+          for (final RecognizedLine line in lines) {
+            final ids = [for (final s in line.inkStrokes) s.id];
+            if (ids.any(fresh.contains)) chosen.addAll(ids);
+          }
+          final back = chosen.where(held.contains).toSet();
+          if (back.isNotEmpty) reheld[pageId] = back;
+          held.removeAll(back);
+        }
+      }
+      // In writing order.
+      final strokes = [for (final s in pageStrokes) if (chosen.contains(s.id)) s];
       taken[pageId] = [for (final s in strokes) s.id];
       scope.add(PageStrokes(
         pageId: pageId,
@@ -341,7 +397,7 @@ class AutoConvertSession with WidgetsBindingObserver {
       rethrow;
     } catch (_) {
       token.cancel();
-      _restore(taken);
+      _restore(taken, reheld);
       rethrow;
     }
     if (_disposed) return;
@@ -353,7 +409,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     if (generation != _generation ||
         controller.inkTool.active != null ||
         controller.tool != EditorTool.pen) {
-      _restore(taken);
+      _restore(taken, reheld);
       return;
     }
 
@@ -366,6 +422,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     final newBoxes = <String, List<AutoBox>>{};
     final grownBoxes = <String, List<(AutoBox, AutoBoxVersion)>>{};
     final stale = <String, List<String>>{};
+    var kept = keptLines.value;
 
     for (final plan in plans) {
       final pageId = plan.pageId;
@@ -379,6 +436,8 @@ class AutoConvertSession with WidgetsBindingObserver {
       final page = doc.page(pageId);
       final current = {for (final s in page.strokes) s.id: s};
       final typeIt = <String>{};
+      final before = reheld[pageId] ?? const <String>{};
+      bool wasHeld(PlannedLine l) => l.strokeIds.any(before.contains);
       for (final line in plan.lines) {
         // Strokes that moved or vanished while we were reading: not ours to
         // convert now; they wait for the next pass.
@@ -388,8 +447,11 @@ class AutoConvertSession with WidgetsBindingObserver {
           stale.putIfAbsent(pageId, () => []).addAll(line.strokeIds);
         } else if (autoConvertsLine(line, minConfidence: minConfidence)) {
           typeIt.add(line.id);
+          if (wasHeld(line)) kept--; // a kept line came through after all
         } else {
-          _ignored.addAll(line.strokeIds);
+          // Not sure: stays ink, and waits for the rest of its line.
+          _held.putIfAbsent(pageId, () => <String>{}).addAll(line.strokeIds);
+          if (!wasHeld(line)) kept++;
         }
       }
       if (typeIt.isEmpty) continue;
@@ -458,7 +520,8 @@ class AutoConvertSession with WidgetsBindingObserver {
     // Strokes that were converted are ignored from now on, so an undo puts
     // the ink back for good.
     _ignored.addAll(converted);
-    if (stale.isNotEmpty) _restore(stale);
+    if (stale.isNotEmpty) _restore(stale, reheld);
+    keptLines.value = kept < 0 ? 0 : kept;
     if (conversions.isEmpty) return;
 
     final outcome = applyConversion(controller, conversions,

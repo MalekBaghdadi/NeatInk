@@ -749,8 +749,8 @@ void main() {
     });
 
     test('the auto-convert tuning numbers live in the config class', () {
-      expect(ConvertConfig.autoMinConfidence, 0.5);
-      expect(ConvertConfig.autoIdleMs, 1000);
+      expect(ConvertConfig.autoMinConfidence, 0.25);
+      expect(ConvertConfig.autoIdleMs, 2000);
       expect(ConvertConfig.mergeBaselineTol, 0.6);
       expect(ConvertConfig.mergeMaxGap, 2.5);
     });

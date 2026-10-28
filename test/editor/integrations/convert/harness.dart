@@ -252,12 +252,23 @@ class ConvertHarness {
     Size size = const Size(1000, 1400),
     bool autoConvert = false,
     Map<String, Object> prefsValues = const {},
+    int? autoConvertDelayMs = 1000,
   }) async {
-    SharedPreferences.setMockInitialValues({
-      if (autoConvert)
-        AppSettings.prefsKey: jsonEncode({'autoConvert': true}),
+    // Auto-convert waits 1 s in these tests unless a test asks otherwise
+    // (null: the app's default); a settings JSON in [prefsValues] gets the
+    // same delay unless it names one.
+    final values = <String, Object>{
+      if (autoConvert || autoConvertDelayMs != null)
+        AppSettings.prefsKey: jsonEncode({if (autoConvert) 'autoConvert': true}),
       ...prefsValues,
-    });
+    };
+    final json = values[AppSettings.prefsKey];
+    if (json is String && autoConvertDelayMs != null) {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      map.putIfAbsent('autoConvertDelayMs', () => autoConvertDelayMs);
+      values[AppSettings.prefsKey] = jsonEncode(map);
+    }
+    SharedPreferences.setMockInitialValues(values);
     final prefs = await SharedPreferences.getInstance();
     final repo = _FlakyRepository();
     final NotebookMeta meta;

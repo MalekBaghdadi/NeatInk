@@ -35,11 +35,16 @@ export 'user_lexicon.dart' show userLexiconProvider;
 /// (overridden in tests). Only editable pages are converted.
 ///
 /// It also installs an [AutoConvertSession] that follows the `autoConvert`
-/// setting: when on, the handwriting is converted by itself about a second
-/// after the pen stops, in the look remembered by [convertStylePrefsProvider].
+/// setting: when on, the handwriting is converted by itself a moment after
+/// the pen stops (the `autoConvertDelayMs` setting), in the look remembered
+/// by [convertStylePrefsProvider]. Lines it was not sure about stay ink; a
+/// chip says so and opens the review sheet.
 // ignore: prefer_function_declarations_over_variables
 final EditorIntegration convertIntegration = (controller, ref) {
+  late final AutoConvertSession auto;
+
   Future<void> open(BuildContext context, Selection? selection) async {
+    auto.clearKept();
     final pageId = selection?.pageId ??
         (controller.pageCount == 0
             ? null
@@ -76,21 +81,25 @@ final EditorIntegration convertIntegration = (controller, ref) {
     }
     ..convertSelection = (context, c, selection) => open(context, selection);
 
-  // Auto-convert: follows the setting, never runs inside the pen path.
-  final auto = AutoConvertSession(
+  // Auto-convert: follows the settings, never runs inside the pen path.
+  auto = AutoConvertSession(
     controller: controller,
     recognizer: ref.read(htrRecognizerProvider),
     readStyle: () =>
         ConvertStyle.fromPrefs(ref.read(convertStylePrefsProvider)),
     readAutoFix: () => ref.read(settingsProvider).autoFixSpelling,
+    readIdle: () =>
+        Duration(milliseconds: ref.read(settingsProvider).autoConvertDelayMs),
     enabled: ref.read(settingsProvider).autoConvert,
   );
   final subscription = ref.listenManual(
     settingsProvider.select((s) => s.autoConvert),
     (_, enabled) => auto.setEnabled(enabled),
   );
-  controller.extensions.viewportOverlays
-      .add((context, c) => AutoConvertIndicator(session: auto));
+  controller.extensions.viewportOverlays.add((context, c) => AutoConvertIndicator(
+        session: auto,
+        onReview: (context) => open(context, null),
+      ));
   controller.addDisposeCallback(() {
     subscription.close();
     auto.dispose();

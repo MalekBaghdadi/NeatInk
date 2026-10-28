@@ -85,18 +85,24 @@ abstract final class ConvertConfig {
   // itself a moment after the pen stops.
 
   /// Quiet time after the pen lifts before auto-convert reads the new
-  /// handwriting (milliseconds). Longer than the pause between the strokes
-  /// of one letter or word, so it never fires mid-word.
-  static const int autoIdleMs = 1000;
+  /// handwriting (milliseconds), when nothing else is given. The app reads
+  /// the user's choice, `AppSettings.autoConvertDelayMs` (2 s by default);
+  /// it is longer than the pause between the strokes of one letter or word,
+  /// so it never fires mid-word.
+  static const int autoIdleMs = 2000;
 
   /// Auto-convert only types a line whose confidence (the least sure of its
-  /// words) is at least this and which has text. Stricter than
-  /// [lowConfidenceThreshold], which only pre-ticks lines in the review
-  /// sheet: here nobody checks the result first. UNCALIBRATED: tune on the
-  /// tablet together with [lowConfidenceThreshold]. Beware: an unknown word
-  /// that is misread with confidence (a name written like 'Malck') still
-  /// passes; only the personal dictionary can catch those.
-  static const double autoMinConfidence = 0.5;
+  /// words) is at least this and which has text; anything less stays ink
+  /// until more is written on that line (then the whole line is read again),
+  /// and a chip offers the review sheet.
+  ///
+  /// It was 0.5, which on Mariam's first page (v1.3.0) held back every line,
+  /// even the two the recogniser read perfectly (0.45 and 0.57): a word the
+  /// language layer repaired is reported as a gamble, so a correct line with
+  /// one repair scores about 0.2-0.5. The bar now only keeps back what is
+  /// clearly unreadable (scribbles, sketches); a slip is one undo away.
+  /// Still uncalibrated beyond her page.
+  static const double autoMinConfidence = 0.25;
 
   /// A pass that has not finished reading after this long is given up as a
   /// failure, so a stuck recogniser can never leave auto-convert waiting

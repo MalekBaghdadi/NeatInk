@@ -132,3 +132,89 @@ class SettingsChoiceTile<T> extends StatelessWidget {
     );
   }
 }
+
+/// A setting picked on a slider: [title] with the current value's [label]
+/// on the right, [subtitle] under it. The value is shown while dragging and
+/// handed to [onChanged] once, when the drag ends.
+class SettingsSliderTile extends StatefulWidget {
+  const SettingsSliderTile({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.label,
+    required this.onChanged,
+    this.subtitle,
+    this.enabled = true,
+  });
+
+  final String title;
+  final String? subtitle;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+
+  /// Text of a value (e.g. `2.5 s`).
+  final String Function(double value) label;
+  final ValueChanged<double> onChanged;
+  final bool enabled;
+
+  @override
+  State<SettingsSliderTile> createState() => _SettingsSliderTileState();
+}
+
+class _SettingsSliderTileState extends State<SettingsSliderTile> {
+  double? _dragging;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final value = (_dragging ?? widget.value).clamp(widget.min, widget.max).toDouble();
+    final titleColor =
+        widget.enabled ? scheme.onSurface : scheme.onSurface.withValues(alpha: 0.38);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(widget.title,
+                    style: theme.textTheme.bodyLarge?.copyWith(color: titleColor)),
+              ),
+              Text(widget.label(value),
+                  style: theme.textTheme.titleSmall?.copyWith(color: titleColor)),
+            ],
+          ),
+          if (widget.subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              widget.subtitle!,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+          Slider(
+            value: value,
+            min: widget.min,
+            max: widget.max,
+            divisions: widget.divisions,
+            label: widget.label(value),
+            onChanged: widget.enabled ? (v) => setState(() => _dragging = v) : null,
+            onChangeEnd: widget.enabled
+                ? (v) {
+                    setState(() => _dragging = null);
+                    widget.onChanged(v);
+                  }
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}

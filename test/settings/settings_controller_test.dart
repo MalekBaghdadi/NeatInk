@@ -133,6 +133,42 @@ void main() {
     });
   });
 
+  group('autoConvertDelayMs', () {
+    test('is 2 s by default, also for settings saved before it existed', () async {
+      expect(const AppSettings().autoConvertDelayMs, 2000);
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({'autoConvert': true}),
+      });
+      expect(c.read(settingsProvider).autoConvertDelayMs, 2000);
+    });
+
+    test('JSON round trip, and copyWith changes only it', () {
+      const s = AppSettings(autoConvert: true);
+      final changed = s.copyWith(autoConvertDelayMs: 4500);
+      expect(changed.autoConvertDelayMs, 4500);
+      expect(changed.autoConvert, isTrue);
+      expect(AppSettings.fromJson(changed.toJson()).autoConvertDelayMs, 4500);
+    });
+
+    test('is kept between 1 and 10 s, and a wrong type gives the default', () async {
+      expect(const AppSettings().copyWith(autoConvertDelayMs: 50).autoConvertDelayMs, 1000);
+      expect(const AppSettings().copyWith(autoConvertDelayMs: 60000).autoConvertDelayMs, 10000);
+      expect(AppSettings.fromJson({'autoConvertDelayMs': 99999}).autoConvertDelayMs, 10000);
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({'autoConvertDelayMs': 'slow', 'autoConvert': true}),
+      });
+      expect(c.read(settingsProvider).autoConvertDelayMs, 2000);
+      expect(c.read(settingsProvider).autoConvert, isTrue, reason: 'the rest is kept');
+    });
+
+    test('survives a restart', () async {
+      final c = await containerWith({});
+      c.read(settingsProvider.notifier).update((s) => s.copyWith(autoConvertDelayMs: 3000));
+      final again = restart(c.read(sharedPreferencesProvider));
+      expect(again.read(settingsProvider).autoConvertDelayMs, 3000);
+    });
+  });
+
   group('autoFixSpelling', () {
     test('is off by default', () async {
       final c = await containerWith({});

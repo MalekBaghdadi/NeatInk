@@ -68,10 +68,26 @@ class SettingsScreen extends ConsumerWidget {
                   secondary: const Icon(Icons.auto_awesome_outlined),
                   title: const Text('Auto-convert handwriting'),
                   subtitle: const Text(
-                      'About a second after you lift the pen, your writing '
-                      'turns into text by itself.'),
+                      'A moment after you lift the pen, your writing turns '
+                      'into text by itself.'),
                   value: settings.autoConvert,
                   onChanged: (v) => change((s) => s.copyWith(autoConvert: v)),
+                ),
+                SettingsSliderTile(
+                  key: const ValueKey('settings-auto-convert-delay'),
+                  title: 'Wait before converting',
+                  subtitle: 'How long auto-convert waits after you lift the '
+                      'pen. Longer lets you pause in the middle of a sentence.',
+                  value: settings.autoConvertDelayMs / 1000,
+                  min: AppSettings.minAutoConvertDelayMs / 1000,
+                  max: AppSettings.maxAutoConvertDelayMs / 1000,
+                  divisions: (AppSettings.maxAutoConvertDelayMs -
+                          AppSettings.minAutoConvertDelayMs) ~/
+                      500,
+                  label: formatSeconds,
+                  enabled: settings.autoConvert,
+                  onChanged: (v) => change((s) =>
+                      s.copyWith(autoConvertDelayMs: (v * 1000).round())),
                 ),
                 SwitchListTile(
                   key: const ValueKey('settings-auto-fix-spelling'),
@@ -217,4 +233,10 @@ class _AboutSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// `2 s`, `2.5 s`: a delay in seconds as the settings show it.
+String formatSeconds(double seconds) {
+  final halves = (seconds * 2).round();
+  return halves.isEven ? '${halves ~/ 2} s' : '${(halves / 2).toStringAsFixed(1)} s';
 }
