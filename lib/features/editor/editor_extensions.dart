@@ -312,6 +312,11 @@ class EditorExtensions {
   /// Overflow menu "Export PDF". Disabled when null.
   EditorAction? exportPdf;
 
+  /// Overflow menu "Paste" (what Copy / Cut put on the clipboard, in the
+  /// middle of the view), shown while [canPaste] says so.
+  EditorAction? paste;
+  bool Function()? canPaste;
+
   /// App bar button next to Auto: the "Typed text" settings (how converted
   /// handwriting looks), open also when there is nothing to convert.
   EditorAction? convertSettings;

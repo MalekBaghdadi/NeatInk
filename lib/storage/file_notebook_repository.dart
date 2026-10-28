@@ -511,6 +511,14 @@ class FileNotebookRepository implements NotebookRepository {
     });
   }
 
+  @override
+  Future<Uint8List> readAsset(String notebookId, String asset) {
+    if (!isValidAssetName(asset)) {
+      throw ArgumentError.value(asset, 'asset', 'not an asset file name');
+    }
+    return File(assetPath(notebookId, asset)).readAsBytes();
+  }
+
   String _newAssetName(String extension) =>
       '${_uuid.v4()}.${sanitizeExtension(extension)}';
 

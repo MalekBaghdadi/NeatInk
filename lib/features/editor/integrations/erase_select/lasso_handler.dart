@@ -1,18 +1,24 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../../../../document/commands.dart';
 import '../../../../document/notebook_doc.dart';
 import '../../../../document/page_content.dart';
+import '../../../../document/page_items.dart';
 import '../../../../ink/affine2.dart';
 import '../../../../ink/stroke.dart';
 import '../../../../ink/vec2.dart';
 import '../../editor_controller.dart';
 import '../../editor_extensions.dart';
+import '../../editor_tool.dart';
 import '../../tools/lasso.dart';
 import '../../tools/selection_transform.dart';
 import '../../tools/spatial_index.dart';
+import 'clipboard.dart';
 import 'lasso_state.dart';
 import 'live_edit.dart';
 import 'selection_geometry.dart';
@@ -56,9 +62,13 @@ class _Drag {
 /// clears it. Every move, resize and menu action is one undo step; the
 /// selection follows undo / redo and drops ids that no longer exist.
 class LassoHandler extends CanvasToolHandler {
-  LassoHandler(this.controller, {Uuid? uuid})
+  LassoHandler(this.controller, {Uuid? uuid, this.clipboard})
       : _uuid = uuid ?? const Uuid(),
         _live = LiveEdit(controller);
+
+  /// Where Copy and Cut put things and Paste takes them from (app-wide);
+  /// null: no clipboard.
+  final EditorClipboard? clipboard;
 
   /// Pen travel (screen pixels) before a drag inside the selection starts
   /// moving it.
@@ -93,6 +103,9 @@ class LassoHandler extends CanvasToolHandler {
     // Taps on the floating menu belong to its buttons.
     final menu = state.menuRect;
     if (menu != null && menu.contains(e.localPosition)) return false;
+    final paste = state.pasteRect;
+    if (paste != null && paste.contains(e.localPosition)) return false;
+    state.setPasteTarget(null);
 
     _pointer = e.pointer;
     _pageId = hit.pageId;
@@ -214,6 +227,11 @@ class LassoHandler extends CanvasToolHandler {
       tapRadius: tapRadius,
     );
     state.setSelection(selection);
+    // A tap on an empty spot offers to paste there.
+    final isTap = path.every((q) => q.distanceTo(path.first) <= tapRadius);
+    if (selection.isEmpty && isTap && (clipboard?.hasContent ?? false)) {
+      state.setPasteTarget((pageId: pageId, point: path.first));
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -399,6 +417,102 @@ class LassoHandler extends CanvasToolHandler {
         strokeIds: [for (final s in strokes) s.id],
         textIds: [for (final t in texts) t.id],
         imageIds: [for (final i in images) i.id]));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Copy, cut and paste
+
+  /// Puts the selection on the [clipboard] and returns the text of its typed
+  /// boxes (for other apps), or null when there is nothing to copy.
+  String? copySelected() {
+    final sel = state.selection;
+    final page = _content;
+    final board = clipboard;
+    if (sel == null || page == null || board == null) return null;
+    final texts = sel.textsOn(page).toList();
+    board.put(ClipContent(
+      notebookId: controller.notebookId,
+      strokes: sel.strokesOn(page).toList(),
+      texts: texts,
+      images: [
+        for (final i in sel.imagesOn(page))
+          ClipImage(item: i, extension: p.extension(i.asset), bytes: _readAsset(i.asset)),
+      ],
+    ));
+    return plainTextOf(texts);
+  }
+
+  /// Copies the selection, then removes it (one undo step "Cut").
+  String? cutSelected() {
+    final sel = state.selection;
+    final page = _content;
+    if (sel == null || page == null) return null;
+    final text = copySelected();
+    _run(deleteSelection(page, sel), 'Cut');
+    state.setSelection(null);
+    return text;
+  }
+
+  Future<Uint8List?> _readAsset(String asset) async {
+    try {
+      return await controller.repository.readAsset(controller.notebookId, asset);
+    } catch (e) {
+      debugPrint('NeatInk: could not copy picture $asset: $e');
+      return null;
+    }
+  }
+
+  /// Pastes the [clipboard] onto [pageId] with its middle at [center] (kept
+  /// on the page), as one undo step, and selects what was pasted with the
+  /// lasso. False when there was nothing to paste or the page can't change.
+  Future<bool> pasteAt(String pageId, Vec2 center) async {
+    final content = clipboard?.content;
+    if (content == null || content.isEmpty || !controller.isPageEditable(pageId)) return false;
+    final meta = controller.doc.pageMeta(pageId);
+    if (meta == null) return false;
+    final offset = pasteOffset(content.bounds, center, pageWidth: meta.width, pageHeight: meta.height);
+    final ink = pastedInk(content, offset, _uuid.v4);
+    final images = <ImageItem>[];
+    for (final c in content.images) {
+      final asset = await _assetFor(content, c);
+      if (asset == null) continue;
+      images.add(c.item.copyWith(id: _uuid.v4(), x: c.item.x + offset.x, y: c.item.y + offset.y, asset: asset));
+    }
+    // The editor may have closed, or the page gone, while files were copied.
+    if (!controller.isReady || !controller.isPageEditable(pageId)) return false;
+    if (ink.strokes.isEmpty && ink.texts.isEmpty && images.isEmpty) return false;
+    controller.execute(CompositeCommand('Paste', [
+      if (ink.strokes.isNotEmpty) AddStrokesCommand(pageId, ink.strokes, label: 'Paste'),
+      if (ink.texts.isNotEmpty || images.isNotEmpty)
+        PageItemsCommand(pageId,
+            label: 'Paste',
+            textChanges: [for (final t in ink.texts) (null, t)],
+            imageChanges: [for (final i in images) (null, i)]),
+    ]));
+    if (controller.tool != EditorTool.lasso) controller.selectTool(EditorTool.lasso);
+    state.setSelection(Selection.fromPage(controller.doc.page(pageId),
+        pageId: pageId,
+        strokeIds: [for (final s in ink.strokes) s.id],
+        textIds: [for (final t in ink.texts) t.id],
+        imageIds: [for (final i in images) i.id]));
+    return true;
+  }
+
+  /// The picture file [image] uses in this notebook: the same file when it
+  /// was copied here (the repository keeps every file used while the app
+  /// runs, for undo), else a copy of its bytes.
+  Future<String?> _assetFor(ClipContent content, ClipImage image) async {
+    final repo = controller.repository;
+    final here = controller.notebookId;
+    if (content.notebookId == here) return image.item.asset;
+    final bytes = await image.bytes;
+    if (bytes == null) return null;
+    try {
+      return await repo.addAssetBytes(here, bytes, image.extension);
+    } catch (e) {
+      debugPrint('NeatInk: could not paste a picture: $e');
+      return null;
+    }
   }
 
   void _run(SelectionEdit edit, String label) {

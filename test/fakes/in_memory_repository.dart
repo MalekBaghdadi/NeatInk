@@ -273,6 +273,13 @@ class InMemoryNotebookRepository implements NotebookRepository {
   }
 
   @override
+  Future<Uint8List> readAsset(String notebookId, String asset) async {
+    final bytes = _assets[notebookId]?[asset];
+    if (bytes == null) throw StateError('no asset $asset in $notebookId');
+    return Uint8List.fromList(bytes);
+  }
+
+  @override
   String assetPath(String notebookId, String asset) =>
       p.join(_notebookDir(notebookId), 'assets', asset);
 

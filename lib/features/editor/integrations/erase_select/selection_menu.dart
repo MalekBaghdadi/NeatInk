@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../editor_controller.dart';
 import '../convert/convert_scope.dart';
@@ -12,7 +13,7 @@ import 'lasso_state.dart';
 import 'selection_geometry.dart';
 
 /// The floating menu over the selection (screen space): delete, colour,
-/// restore original and duplicate. It sits above the selection, or below it
+/// restore original, cut, copy, duplicate and convert. It sits above the selection, or below it
 /// when there is no room, and hides while the selection is being dragged.
 class SelectionMenu extends StatefulWidget {
   const SelectionMenu({super.key, required this.handler, required this.controller});
@@ -65,6 +66,18 @@ class _SelectionMenuState extends State<SelectionMenu> {
         hasConvertibleStrokes(_controller, sel);
   }
 
+  /// After Copy / Cut: typed text also goes to the system clipboard (for
+  /// other apps), and a note says how to paste.
+  void _copied(String? text) {
+    if (text == null) return;
+    if (text.isNotEmpty) Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(
+        content: Text('Copied. To paste, tap an empty spot with the lasso, or use More › Paste.'),
+      ));
+  }
+
   void _convert() {
     final sel = _handler.state.selection;
     final action = _controller.extensions.convertSelection;
@@ -108,9 +121,23 @@ class _SelectionMenuState extends State<SelectionMenu> {
                   onPressed:
                       _handler.canRestoreOriginal ? _handler.restoreOriginal : null,
                 ),
+                if (_handler.clipboard != null) ...[
+                  _MenuButton(
+                    key: const ValueKey('selection-cut'),
+                    icon: Icons.content_cut,
+                    label: 'Cut',
+                    onPressed: () => _copied(_handler.cutSelected()),
+                  ),
+                  _MenuButton(
+                    key: const ValueKey('selection-copy'),
+                    icon: Icons.content_copy_outlined,
+                    label: 'Copy',
+                    onPressed: () => _copied(_handler.copySelected()),
+                  ),
+                ],
                 _MenuButton(
                   key: const ValueKey('selection-duplicate'),
-                  icon: Icons.copy_outlined,
+                  icon: Icons.control_point_duplicate,
                   label: 'Duplicate',
                   onPressed: _handler.duplicateSelected,
                 ),

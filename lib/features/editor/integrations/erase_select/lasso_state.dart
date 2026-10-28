@@ -28,9 +28,28 @@ class LassoState extends ChangeNotifier {
   /// layout; null when the menu is hidden. Does not notify.
   Rect? menuRect;
 
+  /// Where a lasso tap on an empty spot asked to paste: the "Paste" bubble
+  /// shows there while the clipboard has something. Null: no bubble.
+  ({String pageId, Vec2 point})? get pasteTarget => _pasteTarget;
+  ({String pageId, Vec2 point})? _pasteTarget;
+
+  /// Where the "Paste" bubble is on screen, like [menuRect].
+  Rect? pasteRect;
+
+  void setPasteTarget(({String pageId, Vec2 point})? target) {
+    if (_pasteTarget == target) return;
+    _pasteTarget = target;
+    if (target == null) pasteRect = null;
+    notifyListeners();
+  }
+
   void setSelection(Selection? next) {
     if (next != null && next.isEmpty) next = null;
     _selection = next;
+    if (next != null) {
+      _pasteTarget = null;
+      pasteRect = null;
+    }
     notifyListeners();
   }
 
@@ -52,6 +71,8 @@ class LassoState extends ChangeNotifier {
     _lassoPath = const [];
     _busy = false;
     menuRect = null;
+    _pasteTarget = null;
+    pasteRect = null;
     notifyListeners();
   }
 }

@@ -295,6 +295,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
               unawaited(ext.exportPdf?.call(context, c));
             case 'margins':
               unawaited(ext.pdfMargins?.call(context, c));
+            case 'paste':
+              unawaited(ext.paste?.call(context, c));
           }
         },
         itemBuilder: (context) => [
@@ -306,6 +308,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
                 key: ValueKey('menu-add-page'),
                 value: 'add-page',
                 child: Text('Add page')),
+          if (ext.paste != null && (ext.canPaste?.call() ?? false))
+            const PopupMenuItem(
+                key: ValueKey('menu-paste'), value: 'paste', child: Text('Paste')),
           const PopupMenuItem(value: 'rename', child: Text('Rename')),
           const PopupMenuItem(value: 'delete', child: Text('Delete page')),
           if (ext.changePagePaper != null)

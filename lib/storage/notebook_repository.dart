@@ -106,6 +106,10 @@ abstract class NotebookRepository {
   /// Absolute path of an asset file.
   String assetPath(String notebookId, String asset);
 
+  /// The bytes of an asset file (copying a picture to another notebook).
+  /// Throws when it can't be read.
+  Future<Uint8List> readAsset(String notebookId, String asset);
+
   Future<void> saveThumbnail(String notebookId, Uint8List png);
 
   /// Absolute path of `thumb.png` (may not exist yet).
