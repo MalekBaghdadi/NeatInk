@@ -643,7 +643,7 @@ void main() {
             pages: [threeLines()],
             recognizer: suggesting(),
             prefsValues: {
-              AppSettings.prefsKey: jsonEncode({'autoFixSpelling': true}),
+              AppSettings.prefsKey: jsonEncode({'autocorrect': true}),
             });
         await h.tapConvert();
         expect(fieldText(tester, 0), 'Hello online');
@@ -660,7 +660,7 @@ void main() {
             pages: [threeLines()],
             recognizer: suggesting(),
             prefsValues: {
-              AppSettings.prefsKey: jsonEncode({'autoFixSpelling': true}),
+              AppSettings.prefsKey: jsonEncode({'autocorrect': true}),
             });
         await h.tapConvert();
         await tester.tap(key('convert-undo-0-0'));

@@ -70,11 +70,14 @@ class MergePlan {
 /// line, left aligned, and the joined text must still fit on one line to the
 /// right page margin. [liveItem] finds a box as it is now (null: it is
 /// gone); boxes in [taken] already took a line this pass. The nearest wins.
+/// The joined box keeps the autocorrect marks of both texts ([corrections]
+/// are those of [text]).
 MergePlan? planMerge({
   required Iterable<AutoBox> boxes,
   required TextItem? Function(String id) liveItem,
   required LineGeometry line,
   required String text,
+  List<TextCorrection> corrections = const [],
   required double pageWidth,
   required ConvertTextMetrics metrics,
   Iterable<TextItem> pageTexts = const [],
@@ -112,7 +115,17 @@ MergePlan? planMerge({
     // The old box must be a single line, and so must the joined text.
     const slack = ConvertConfig.lineSlack;
     if (metrics.naturalWidth(live) + slack > live.width + 1e-6) return;
-    final joined = live.copyWith(text: '${live.text.trimRight()} ${text.trimLeft()}');
+    final head = '${live.text.trimRight()} ';
+    final tail = text.trimLeft();
+    final lead = text.length - tail.length;
+    final grown = live.copyWith(text: head + tail);
+    final joined = corrections.isEmpty
+        ? grown
+        : grown.copyWith(corrections: [
+            ...grown.corrections,
+            for (final c in corrections)
+              if (c.start >= lead) c.shifted(head.length - lead),
+          ]);
     final room = pageWidth - ConvertConfig.rightMargin - live.x;
     final natural = metrics.naturalWidth(joined);
     if (natural + slack > room) return;

@@ -44,7 +44,10 @@ void _install(EditorController controller, WidgetRef ref) {
   );
 
   final ext = controller.extensions;
-  ext.textLayer = TextLayerPainter(hiddenId: textEditor.editingIdOn);
+  ext.textLayer = TextLayerPainter(
+    hiddenId: textEditor.editingIdOn,
+    showCorrections: () => controller.settings.autocorrect,
+  );
   ext.imageLayer = imageLayer;
   ext.toolHandlers[EditorTool.text] = TextToolHandler(controller, textEditor);
   ext.toolHandlers[EditorTool.image] = ImageToolHandler(controller, imageEditor);

@@ -82,7 +82,7 @@ class ConvertSession extends ChangeNotifier {
   /// Written into shared sample files.
   final String appVersion;
 
-  /// The setting "Fix spelling automatically": the spelling and grammar fixes
+  /// The setting "Autocorrect": the spelling and grammar fixes
   /// the recogniser suggests are applied to the text as it is read (each can
   /// be taken back in the sheet). Off: they are only offered.
   final bool autoFix;

@@ -69,3 +69,29 @@ TextPainter layoutTextItem(TextItem item) {
     textScaler: textItemScaler,
   )..layout(minWidth: width, maxWidth: width);
 }
+
+/// Where [item]'s autocorrected words ([TextItem.liveCorrections]) are on the
+/// page: one or more rectangles per word (page points; a word broken over two
+/// lines has two). [laidOut] is [item] laid out by [layoutTextItem], if the
+/// caller has it already.
+List<(TextCorrection, List<Rect>)> correctionBoxes(TextItem item,
+    [TextPainter? laidOut]) {
+  final corrections = item.liveCorrections;
+  if (corrections.isEmpty) return const [];
+  final painter = laidOut ?? layoutTextItem(item);
+  try {
+    return [
+      for (final c in corrections)
+        (
+          c,
+          [
+            for (final b in painter.getBoxesForSelection(
+                TextSelection(baseOffset: c.start, extentOffset: c.end)))
+              b.toRect().shift(Offset(item.x, item.y)),
+          ],
+        ),
+    ];
+  } finally {
+    if (laidOut == null) painter.dispose();
+  }
+}

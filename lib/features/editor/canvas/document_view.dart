@@ -60,6 +60,12 @@ class _DocumentViewState extends State<DocumentView>
   final Map<int, _ToolPointer> _toolPointers = {};
   final Set<int> _ignored = {};
 
+  /// A finger that went down alone to navigate: lifted quickly where it
+  /// went down, it is a tap ([EditorExtensions.handleTap]).
+  ({int pointer, Offset at, Duration time})? _tap;
+  static const Duration _tapMaxDuration = Duration(milliseconds: 300);
+  static const double _tapMaxTravelPx = 10;
+
   ClampingScrollSimulation? _flingX;
   ClampingScrollSimulation? _flingY;
   Offset _flingPosition = Offset.zero;
@@ -193,6 +199,7 @@ class _DocumentViewState extends State<DocumentView>
 
   void _onPointerDown(PointerDownEvent e) {
     final router = _controller.inputRouter..observe(e);
+    _tap = null; // Another pointer: no longer a lone finger tap.
     if (!_controller.isReady) {
       _ignored.add(e.pointer);
       return;
@@ -245,6 +252,9 @@ class _DocumentViewState extends State<DocumentView>
   }
 
   void _startNavigation(PointerDownEvent e) {
+    _tap = _isTouch(e.kind) && !_nav.isActive && _toolPointers.isEmpty
+        ? (pointer: e.pointer, at: e.localPosition, time: e.timeStamp)
+        : null;
     if (_isTouch(e.kind)) {
       // A finger joining a finger that draws (drawing with fingers on)
       // turns both into a pinch.
@@ -323,13 +333,24 @@ class _DocumentViewState extends State<DocumentView>
       return;
     }
     if (_nav.contains(e.pointer)) {
+      final tap = _tap;
+      _tap = null;
       final velocity = _nav.removePointer(e.pointer, e.timeStamp);
+      if (tap != null &&
+          tap.pointer == e.pointer &&
+          e.timeStamp - tap.time <= _tapMaxDuration &&
+          (e.localPosition - tap.at).distance <= _tapMaxTravelPx) {
+        final hit = _viewport.hitTestLocal(e.localPosition);
+        if (hit != null) _controller.extensions.handleTap(hit.pageId, hit.point);
+        return;
+      }
       if (velocity != null) _startFling(velocity);
     }
   }
 
   void _onPointerCancel(PointerCancelEvent e) {
     _controller.inputRouter.observe(e);
+    if (_tap?.pointer == e.pointer) _tap = null;
     _ignored.remove(e.pointer);
     final tp = _toolPointers.remove(e.pointer);
     if (tp != null) {

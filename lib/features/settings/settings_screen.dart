@@ -101,15 +101,17 @@ class SettingsScreen extends ConsumerWidget {
                       s.copyWith(autoConvertDelayMs: (v * 1000).round())),
                 ),
                 SwitchListTile(
-                  key: const ValueKey('settings-auto-fix-spelling'),
+                  key: const ValueKey('settings-autocorrect'),
                   secondary: const Icon(Icons.auto_fix_high_outlined),
-                  title: const Text('Fix spelling automatically'),
+                  title: const Text('Autocorrect'),
                   subtitle: const Text(
-                      'Off: corrections are suggested in the review sheet. '
-                      'On: they are applied, and you can undo each one.'),
-                  value: settings.autoFixSpelling,
+                      'Fixes spelling and small grammar slips as handwriting '
+                      'becomes text. Corrected words are underlined: tap one '
+                      'to get your word back. Off: fixes are only suggested '
+                      'in the review sheet.'),
+                  value: settings.autocorrect,
                   onChanged: (v) =>
-                      change((s) => s.copyWith(autoFixSpelling: v)),
+                      change((s) => s.copyWith(autocorrect: v)),
                 ),
                 ListTile(
                   key: const ValueKey('settings-my-words'),

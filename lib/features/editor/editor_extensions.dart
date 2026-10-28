@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../../document/notebook_meta.dart';
 import '../../document/page_content.dart';
 import '../../ink/stroke.dart';
+import '../../ink/vec2.dart';
 import 'canvas/live_ink.dart';
 import 'canvas/viewport_controller.dart';
 import 'editor_controller.dart';
@@ -210,6 +211,11 @@ typedef ToolOptionsBuilder = Widget Function(
 /// same id that keeps its `raw` points (e.g. a tidied highlight).
 typedef StrokeFinisher = Stroke Function(String pageId, Stroke stroke);
 
+/// A tap on a page at [point] (page points): a pen tap with the pen or
+/// highlighter, or a quick finger tap. Returns true when it handled the tap
+/// (a pen tap then leaves no dot).
+typedef PageTapHandler = bool Function(String pageId, Vec2 point);
+
 /// Where the printed text of a page lies (a PDF page's words), in page
 /// points. [wordsOn] answers from a cache and returns null while the words
 /// are not known yet; [prepare] starts loading them (call it early, e.g.
@@ -242,6 +248,17 @@ class EditorExtensions {
 
   /// Observes pen/highlighter strokes while they are drawn.
   LiveStrokeHook? liveStrokeHook;
+
+  /// Asked in order about taps on a page, until one handles it.
+  final List<PageTapHandler> pageTapHandlers = [];
+
+  /// Offers a tap to [pageTapHandlers]; true when one handled it.
+  bool handleTap(String pageId, Vec2 point) {
+    for (final h in pageTapHandlers) {
+      if (h(pageId, point)) return true;
+    }
+    return false;
+  }
 
   /// Run in order on every finished pen/highlighter stroke, after
   /// [liveStrokeHook].

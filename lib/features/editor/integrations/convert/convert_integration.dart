@@ -67,7 +67,7 @@ final EditorIntegration convertIntegration = (controller, ref) {
       learner: ref.read(userLexiconProvider),
       sampleShare: ref.read(sampleShareServiceProvider),
       appVersion: '${AppInfo.version}+${AppInfo.buildNumber}',
-      autoFix: ref.read(settingsProvider).autoFixSpelling,
+      autoFix: ref.read(settingsProvider).autocorrect,
     );
   }
 
@@ -87,7 +87,7 @@ final EditorIntegration convertIntegration = (controller, ref) {
     recognizer: ref.read(htrRecognizerProvider),
     readStyle: () =>
         ConvertStyle.fromPrefs(ref.read(convertStylePrefsProvider)),
-    readAutoFix: () => ref.read(settingsProvider).autoFixSpelling,
+    readAutoFix: () => ref.read(settingsProvider).autocorrect,
     readIdle: () =>
         Duration(milliseconds: ref.read(settingsProvider).autoConvertDelayMs),
     enabled: ref.read(settingsProvider).autoConvert,

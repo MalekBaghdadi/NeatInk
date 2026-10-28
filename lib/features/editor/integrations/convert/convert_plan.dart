@@ -1,3 +1,4 @@
+import '../../../../document/page_items.dart' show TextCorrection;
 import '../../../../ink/stroke.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/stroke_grouping.dart';
@@ -57,7 +58,7 @@ class PlannedLine {
   final List<WordResult> words;
 
   /// The text to type: the recogniser's reading, with the automatic fixes
-  /// when "Fix spelling automatically" is on, until the user edits it.
+  /// when "Autocorrect" is on, until the user edits it.
   String text;
 
   /// The text the recogniser read, before any polishing. The offsets of
@@ -248,6 +249,35 @@ List<PolishSuggestion> applicableSuggestions(
     if (text.substring(s.start, s.end) != s.original) continue;
     out.add(s);
     lastEnd = s.end;
+  }
+  return out;
+}
+
+/// Where the automatic fixes [applied] ended up in [text], the line's final
+/// text (it may have been edited or tidied since): each replacement found as
+/// a whole word, left to right, after the previous one. Fixes that are only
+/// a capital letter are not marked (they are never worth taking back), and
+/// fixes no longer in the text are skipped.
+List<TextCorrection> locateCorrections(
+    String text, Iterable<PolishSuggestion> applied) {
+  final sorted = [
+    for (final s in applied)
+      if (s.kind != PolishKind.capitalization && s.replacement.isNotEmpty) s,
+  ]..sort((a, b) => a.start.compareTo(b.start));
+  final out = <TextCorrection>[];
+  var from = 0;
+  for (final s in sorted) {
+    var i = text.indexOf(s.replacement, from);
+    while (i >= 0) {
+      final c = TextCorrection(
+          start: i, original: s.original, replacement: s.replacement);
+      if (c.holdsIn(text)) {
+        out.add(c);
+        from = c.end;
+        break;
+      }
+      i = text.indexOf(s.replacement, i + 1);
+    }
   }
   return out;
 }

@@ -21,7 +21,7 @@ class AppSettings {
     this.exportPaperLines = true,
     this.autoConvert = false,
     this.autoConvertDelayMs = defaultAutoConvertDelayMs,
-    this.autoFixSpelling = false,
+    this.autocorrect = true,
     this.defaultPaper = const Paper(),
     this.librarySort = LibrarySort.edited,
     this.pinHash,
@@ -43,7 +43,9 @@ class AppSettings {
           final num ms => ms.toInt(),
           _ => defaultAutoConvertDelayMs,
         }),
-        autoFixSpelling: j['autoFixSpelling'] as bool? ?? false,
+        // 1.5.0: replaces 'autoFixSpelling' (off by default), so everyone
+        // starts with autocorrect on.
+        autocorrect: j['autocorrect'] is bool ? j['autocorrect'] as bool : true,
         defaultPaper:
             Paper.fromJson(j['defaultPaper'] as Map<String, dynamic>?),
         librarySort:
@@ -99,7 +101,7 @@ class AppSettings {
   /// Convert: apply the suggested spelling, apostrophe, capital-letter and
   /// grammar fixes by themselves (each one can be undone in the review
   /// sheet). Off by default: the fixes are only suggested there.
-  final bool autoFixSpelling;
+  final bool autocorrect;
 
   /// Paper preselected when creating a notebook.
   final Paper defaultPaper;
@@ -124,7 +126,7 @@ class AppSettings {
     bool? exportPaperLines,
     bool? autoConvert,
     int? autoConvertDelayMs,
-    bool? autoFixSpelling,
+    bool? autocorrect,
     Paper? defaultPaper,
     LibrarySort? librarySort,
     String? pinHash,
@@ -144,7 +146,7 @@ class AppSettings {
         autoConvertDelayMs: autoConvertDelayMs == null
             ? this.autoConvertDelayMs
             : clampAutoConvertDelay(autoConvertDelayMs),
-        autoFixSpelling: autoFixSpelling ?? this.autoFixSpelling,
+        autocorrect: autocorrect ?? this.autocorrect,
         defaultPaper: defaultPaper ?? this.defaultPaper,
         librarySort: librarySort ?? this.librarySort,
         pinHash: clearPin ? null : (pinHash ?? this.pinHash),
@@ -162,7 +164,7 @@ class AppSettings {
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,
         'autoConvertDelayMs': autoConvertDelayMs,
-        'autoFixSpelling': autoFixSpelling,
+        'autocorrect': autocorrect,
         'defaultPaper': defaultPaper.toJson(),
         'librarySort': librarySort.name,
         'pinHash': pinHash,

@@ -331,9 +331,32 @@ void main() {
       expect(polisher().suggest('the. the answer').map((x) => x.replacement), ['The']);
     });
 
+    test('an before a consonant sound becomes a', () {
+      for (final w in ['banana', 'university', 'user']) {
+        final s = only(polisher().suggest('it is an $w'));
+        expect([s.original, s.replacement, s.reason], ['an', 'a', "Use 'a' here"], reason: w);
+      }
+      expect(only(polisher().suggest('An banana is it')).replacement, 'A');
+      // Vowel sounds, silent h, h words in general, x and acronyms stay.
+      expect(polisher().suggest('an apple, an hour, an hotel, an x-ray and an MRI'), isEmpty);
+    });
+
+    test('could of, their is and alot', () {
+      final of = only(polisher().suggest('we could of know'));
+      expect([of.original, of.replacement, of.kind], ['of', 'have', PolishKind.grammar]);
+      expect(applyPolish('we should of gone', polisher().suggest('we should of gone')), 'we should have gone');
+      final their = only(polisher().suggest('so their is a cell'));
+      expect([their.original, their.replacement], ['their', 'there']);
+      expect(only(polisher().suggest('Their are cells')).replacement, 'There');
+      expect(only(polisher().suggest('it helps alot')).replacement, 'a lot');
+      // Real uses stay: "their cells", "most of", "could, of course".
+      expect(polisher().suggest('their cells are most of it, could, of course'), isEmpty);
+    });
+
     test('the grammar rules can be switched off', () {
       final p = polisher(config: const PolishConfig(grammar: false));
       expect(p.suggest('it is a apple the the'), isEmpty);
+      expect(p.suggest('we could of know their is an banana'), isEmpty);
     });
   });
 

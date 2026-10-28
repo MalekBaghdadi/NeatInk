@@ -102,7 +102,7 @@ void main() {
           isTrue);
     });
 
-    test('settings saved before it existed load with it off', () async {
+    test('settings saved before it existed load with it on', () async {
       final c = await containerWith({
         AppSettings.prefsKey: jsonEncode({
           'themeMode': 'dark',
@@ -169,35 +169,39 @@ void main() {
     });
   });
 
-  group('autoFixSpelling', () {
-    test('is off by default', () async {
+  group('autocorrect', () {
+    test('is on by default, also for settings saved before it existed', () async {
       final c = await containerWith({});
-      expect(c.read(settingsProvider).autoFixSpelling, isFalse);
-      expect(const AppSettings().autoFixSpelling, isFalse);
+      expect(c.read(settingsProvider).autocorrect, isTrue);
+      expect(const AppSettings().autocorrect, isTrue);
+      // The old "Fix spelling automatically" (off by default) is not read.
+      expect(AppSettings.fromJson(const {'autoFixSpelling': false}).autocorrect, isTrue);
+      expect(AppSettings.fromJson(const {'autocorrect': false}).autocorrect, isFalse);
     });
 
     test('copyWith changes only it', () {
-      const base = AppSettings(autoConvert: true, lockAfterSeconds: 60);
-      final on = base.copyWith(autoFixSpelling: true);
-      expect(on.autoFixSpelling, isTrue);
+      const base = AppSettings(autoConvert: true, lockAfterSeconds: 60, autocorrect: false);
+      final on = base.copyWith(autocorrect: true);
+      expect(on.autocorrect, isTrue);
       expect(on.autoConvert, isTrue);
       expect(on.lockAfterSeconds, 60);
-      expect(on.copyWith(autoConvert: false).autoFixSpelling, isTrue,
+      expect(on.copyWith(autoConvert: false).autocorrect, isTrue,
           reason: 'other changes keep it');
-      expect(on.copyWith(autoFixSpelling: false).autoFixSpelling, isFalse);
+      expect(on.copyWith(autocorrect: false).autocorrect, isFalse);
     });
 
-    test('JSON round trip under the key autoFixSpelling', () {
-      expect(const AppSettings().toJson()['autoFixSpelling'], isFalse);
-      expect(const AppSettings(autoFixSpelling: true).toJson()['autoFixSpelling'],
+    test('JSON round trip under the key autocorrect', () {
+      expect(const AppSettings(autocorrect: false).toJson()['autocorrect'], isFalse);
+      expect(const AppSettings(autocorrect: true).toJson()['autocorrect'],
           isTrue);
       expect(
           AppSettings.fromJson(
-                  const AppSettings(autoFixSpelling: true).toJson())
-              .autoFixSpelling,
+                  const AppSettings(autocorrect: true).toJson())
+              .autocorrect,
           isTrue);
       expect(
-          AppSettings.fromJson(const AppSettings().toJson()).autoFixSpelling,
+          AppSettings.fromJson(const AppSettings(autocorrect: false).toJson())
+              .autocorrect,
           isFalse);
     });
 
@@ -209,37 +213,37 @@ void main() {
         }),
       });
       final s = c.read(settingsProvider);
-      expect(s.autoFixSpelling, isFalse);
+      expect(s.autocorrect, isTrue);
       expect(s.autoConvert, isTrue);
       expect(s.themeMode, AppThemeMode.dark);
     });
 
-    test('a value of the wrong type falls back to off', () async {
+    test('a value of the wrong type falls back to on', () async {
       final c = await containerWith({
-        AppSettings.prefsKey: jsonEncode({'autoFixSpelling': 'yes'}),
+        AppSettings.prefsKey: jsonEncode({'autocorrect': 'no'}),
       });
-      expect(c.read(settingsProvider).autoFixSpelling, isFalse);
+      expect(c.read(settingsProvider).autocorrect, isTrue);
     });
 
     test('is independent of autoConvert', () async {
       final c = await containerWith({});
       c
           .read(settingsProvider.notifier)
-          .update((s) => s.copyWith(autoFixSpelling: true));
+          .update((s) => s.copyWith(autocorrect: true));
       expect(c.read(settingsProvider).autoConvert, isFalse);
       c
           .read(settingsProvider.notifier)
           .update((s) => s.copyWith(autoConvert: true));
-      expect(c.read(settingsProvider).autoFixSpelling, isTrue);
+      expect(c.read(settingsProvider).autocorrect, isTrue);
     });
 
     test('survives a restart', () async {
       final c = await containerWith({});
       c
           .read(settingsProvider.notifier)
-          .update((s) => s.copyWith(autoFixSpelling: true));
+          .update((s) => s.copyWith(autocorrect: true));
       final again = restart(c.read(sharedPreferencesProvider));
-      expect(again.read(settingsProvider).autoFixSpelling, isTrue);
+      expect(again.read(settingsProvider).autocorrect, isTrue);
     });
   });
 

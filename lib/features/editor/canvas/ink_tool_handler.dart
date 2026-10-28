@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../document/commands.dart';
 import '../../../ink/stroke.dart';
+import '../../../ink/vec2.dart';
 import '../editor_controller.dart';
 import '../editor_extensions.dart';
 import '../editor_tool.dart';
@@ -131,10 +132,38 @@ class InkToolHandler extends CanvasToolHandler {
     return true;
   }
 
+  /// A pen tap rather than a stroke: short, and the pen barely moved
+  /// (in screen pixels, so it does not depend on the zoom).
+  static const Duration tapMaxDuration = Duration(milliseconds: 350);
+  static const double tapMaxTravelPx = 6;
+
+  bool _isTap(ActiveStroke active) {
+    final points = active.builder.points;
+    if (points.isEmpty) return false;
+    if (active.builder.endMs - active.builder.startMs >
+        tapMaxDuration.inMilliseconds) {
+      return false;
+    }
+    final scale = controller.viewport.scale;
+    final reach = tapMaxTravelPx / (scale > 0 ? scale : 1);
+    final first = points.first;
+    return points.every(
+        (p) => (p.x - first.x).abs() <= reach && (p.y - first.y).abs() <= reach);
+  }
+
   void _finish(ActiveStroke active) {
     _active = null;
     final live = _live;
     _live = null;
+    // A tap something on the page wants (e.g. a corrected word) is not ink.
+    if (controller.extensions.pageTapHandlers.isNotEmpty && _isTap(active)) {
+      final p = active.builder.points.first;
+      if (controller.extensions.handleTap(active.pageId, Vec2(p.x, p.y))) {
+        live?.clear();
+        controller.extensions.liveStrokeHook?.onCancel(active);
+        return;
+      }
+    }
     final raw = active.builder.build(
       id: _uuid.v4(),
       tool: active.tool,

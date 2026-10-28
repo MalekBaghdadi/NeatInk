@@ -1,4 +1,5 @@
 import 'editor_integrations.dart';
+import 'integrations/autocorrect/autocorrect_integration.dart';
 import 'integrations/convert/convert_integration.dart';
 import 'integrations/erase_select/erase_select_integration.dart';
 import 'integrations/highlight/highlight_integration.dart';
@@ -19,4 +20,5 @@ final List<EditorIntegration> defaultEditorIntegrations = [
   pagesIntegration,
   pdfIntegration,
   convertIntegration,
+  autocorrectIntegration,
 ];

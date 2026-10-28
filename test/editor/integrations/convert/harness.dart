@@ -262,12 +262,16 @@ class ConvertHarness {
         AppSettings.prefsKey: jsonEncode({if (autoConvert) 'autoConvert': true}),
       ...prefsValues,
     };
-    final json = values[AppSettings.prefsKey];
-    if (json is String && autoConvertDelayMs != null) {
-      final map = jsonDecode(json) as Map<String, dynamic>;
+    // Autocorrect is on in the app; these tests start with it off (fixes
+    // stay suggestions) unless a settings JSON in [prefsValues] names it.
+    final map = values[AppSettings.prefsKey] is String
+        ? jsonDecode(values[AppSettings.prefsKey]! as String) as Map<String, dynamic>
+        : <String, dynamic>{};
+    map.putIfAbsent('autocorrect', () => false);
+    if (autoConvertDelayMs != null) {
       map.putIfAbsent('autoConvertDelayMs', () => autoConvertDelayMs);
-      values[AppSettings.prefsKey] = jsonEncode(map);
     }
+    values[AppSettings.prefsKey] = jsonEncode(map);
     SharedPreferences.setMockInitialValues(values);
     final prefs = await SharedPreferences.getInstance();
     final repo = _FlakyRepository();

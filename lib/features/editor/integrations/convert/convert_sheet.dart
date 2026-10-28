@@ -25,7 +25,7 @@ import '../../../../app/insets.dart';
 /// The sheet starts with [initialStyle] (the look last used) and reports the
 /// look used through [onStyleChosen] when the user converts; corrected words
 /// go to [learner]; [sampleShare] sends the "Share samples" file. With
-/// [autoFix] (the setting "Fix spelling automatically") the suggested spelling
+/// [autoFix] (the setting "Autocorrect") the suggested spelling
 /// and grammar fixes are already in the text, each with an Undo chip; without,
 /// they are offered as chips.
 Future<void> showConvertSheet(

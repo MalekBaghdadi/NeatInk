@@ -5,7 +5,7 @@ import 'user_lexicon.dart';
 enum PolishKind { spelling, contraction, capitalization, grammar }
 
 /// One suggested change to a line of recognised text. Nothing is changed
-/// until the user accepts it (or switches "Fix spelling automatically" on).
+/// until the user accepts it (or "Autocorrect" is on).
 class PolishSuggestion {
   const PolishSuggestion({
     required this.original,
@@ -219,6 +219,17 @@ class TextPolisher {
         cur = cur == 'A' ? 'An' : 'an';
         kind ??= PolishKind.grammar;
         reasons.add("Use 'an' here");
+      } else if (config.grammar && _wantsA(tokens, k, cur)) {
+        cur = cur == 'An' ? 'A' : 'a';
+        kind ??= PolishKind.grammar;
+        reasons.add("Use 'a' here");
+      } else if (config.grammar && kind == null) {
+        final fix = _phraseFix(tokens, k, lower);
+        if (fix != null) {
+          cur = _caseLike(fix.$1, core);
+          kind = fix.$2;
+          reasons.add(fix.$3);
+        }
       }
     }
 
@@ -354,6 +365,46 @@ class TextPolisher {
     // acronyms and initialisms ("a FBI" vs "an FBI") depend on how they are said
     if (next == next.toUpperCase()) return false;
     return _startsWithVowelSound(next.toLowerCase());
+  }
+
+  /// [word] is the article `an` and the next word starts with a consonant
+  /// sound (`an book` -> `a book`, `an university` -> `a university`).
+  /// Words starting with `x` (`an x-ray`) and capitals are left alone.
+  bool _wantsA(List<_Token> tokens, int k, String word) {
+    if (word != 'an' && word != 'An') return false;
+    final t = tokens[k];
+    if (t.trail.isNotEmpty || k + 1 >= tokens.length) return false;
+    final next = tokens[k + 1].core;
+    if (!_plainWord.hasMatch(next) || next.length < 2) return false;
+    if (next == next.toUpperCase()) return false;
+    final lower = next.toLowerCase();
+    if (lower.startsWith('x') || lower.startsWith('h')) return false;
+    return !_startsWithVowelSound(lower);
+  }
+
+  static const Set<String> _modals = {'could', 'should', 'would', 'must', 'might'};
+  static const Set<String> _beForms = {'is', 'are', 'was', 'were'};
+
+  /// Fixed slips of two words, judged by the word next to token [k]
+  /// (`lower` is its lowercase form): `could of` -> `could have`, `their is`
+  /// -> `there is`, and `alot` -> `a lot`. Returns the replacement (lower
+  /// case), its kind and its reason.
+  (String, PolishKind, String)? _phraseFix(List<_Token> tokens, int k, String lower) {
+    final t = tokens[k];
+    if (lower == 'alot') return ('a lot', PolishKind.spelling, 'Spelling');
+    if (lower == 'of' && k > 0 && t.lead.isEmpty) {
+      final before = tokens[k - 1];
+      if (before.trail.isEmpty && _modals.contains(before.core.toLowerCase())) {
+        return ('have', PolishKind.grammar, "Use 'have' here");
+      }
+    }
+    if (lower == 'their' && t.trail.isEmpty && k + 1 < tokens.length) {
+      final after = tokens[k + 1];
+      if (after.lead.isEmpty && _beForms.contains(after.core.toLowerCase())) {
+        return ('there', PolishKind.grammar, "Use 'there' here");
+      }
+    }
+    return null;
   }
 
   static final RegExp _silentH = RegExp(r'^(hour|honest|honor|honour|heir)');

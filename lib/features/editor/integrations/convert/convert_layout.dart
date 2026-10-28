@@ -233,6 +233,15 @@ class LaidOutLine {
   /// True only when even the smallest allowed text still runs into the next
   /// line (extremely tight handwriting).
   final bool collides;
+
+  LaidOutLine withItem(TextItem item) => LaidOutLine(
+        id: id,
+        item: item,
+        baselineY: baselineY,
+        snapped: snapped,
+        fit: fit,
+        collides: collides,
+      );
 }
 
 /// The font size that makes [font] look as big as writing with the given

@@ -44,7 +44,7 @@ bool autoConvertsLine(PlannedLine line,
 /// typed keeps its ink exactly as it is and is *held*: it is read again, as
 /// a whole, only when more is written on the same line (a sentence finished
 /// after a pause), and [keptLines] lets the user know (the manual Convert
-/// button reads it any time). With "Fix spelling automatically" on
+/// button reads it any time). With "Autocorrect" on
 /// ([readAutoFix]) the recogniser's spelling and grammar fixes are applied to
 /// the typed text too.
 ///
@@ -90,7 +90,7 @@ class AutoConvertSession with WidgetsBindingObserver {
   final ConvertStyle Function() readStyle;
 
   /// Whether to apply the recogniser's spelling and grammar fixes, read at the
-  /// start of every pass (the setting "Fix spelling automatically", off by
+  /// start of every pass (the setting "Autocorrect", on by
   /// default).
   final bool Function() readAutoFix;
 
@@ -488,6 +488,7 @@ class AutoConvertSession with WidgetsBindingObserver {
           liveItem: page.textById,
           line: geometry,
           text: out.item.text,
+          corrections: out.item.corrections,
           pageWidth: meta.width,
           metrics: metrics,
           taken: takenBoxes,

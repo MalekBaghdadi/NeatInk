@@ -181,41 +181,38 @@ void main() {
     expect(formatSeconds(1.26), '1.5 s');
   });
 
-  testWidgets('"Fix spelling automatically" has a switch, off by default',
-      (tester) async {
+  testWidgets('"Autocorrect" has a switch, on by default', (tester) async {
     final c = await pumpSettings(tester);
-    const key = ValueKey('settings-auto-fix-spelling');
+    const key = ValueKey('settings-autocorrect');
     expect(find.byKey(key), findsOneWidget);
-    expect(find.text('Fix spelling automatically'), findsOneWidget);
-    expect(find.textContaining('corrections are suggested in the review sheet'),
-        findsOneWidget);
-    expect(find.textContaining('you can undo each one'), findsOneWidget);
-    expect(tester.widget<SwitchListTile>(find.byKey(key)).value, isFalse);
-    expect(settingsOf(c).autoFixSpelling, isFalse);
-
-    await toggle(tester, 'settings-auto-fix-spelling');
-    expect(settingsOf(c).autoFixSpelling, isTrue);
-    expect(settingsOf(c).autoConvert, isFalse, reason: 'a separate setting');
+    expect(find.text('Autocorrect'), findsOneWidget);
+    expect(find.textContaining('tap one to get your word back'), findsOneWidget);
     expect(tester.widget<SwitchListTile>(find.byKey(key)).value, isTrue);
-    expect(prefs.getString(AppSettings.prefsKey)!,
-        contains('"autoFixSpelling":true'));
+    expect(settingsOf(c).autocorrect, isTrue);
 
-    await toggle(tester, 'settings-auto-fix-spelling');
-    expect(settingsOf(c).autoFixSpelling, isFalse);
+    await toggle(tester, 'settings-autocorrect');
+    expect(settingsOf(c).autocorrect, isFalse);
+    expect(settingsOf(c).autoConvert, isFalse, reason: 'a separate setting');
+    expect(tester.widget<SwitchListTile>(find.byKey(key)).value, isFalse);
+    expect(prefs.getString(AppSettings.prefsKey)!,
+        contains('"autocorrect":false'));
+
+    await toggle(tester, 'settings-autocorrect');
+    expect(settingsOf(c).autocorrect, isTrue);
   });
 
-  testWidgets('the fix-spelling switch shows the saved value', (tester) async {
+  testWidgets('the autocorrect switch shows the saved value', (tester) async {
     SharedPreferences.setMockInitialValues({
-      AppSettings.prefsKey: '{"autoFixSpelling": true}',
+      AppSettings.prefsKey: '{"autocorrect": false}',
     });
     prefs = await SharedPreferences.getInstance();
     await pumpSettings(tester);
     expect(
         tester
             .widget<SwitchListTile>(
-                find.byKey(const ValueKey('settings-auto-fix-spelling')))
+                find.byKey(const ValueKey('settings-autocorrect')))
             .value,
-        isTrue);
+        isFalse);
   });
 
   testWidgets('tidy settings are gone', (tester) async {

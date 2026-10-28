@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/document/page_items.dart' show TextCorrection;
 import 'package:neatink/document/font_kind.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_config.dart';
 import 'package:neatink/features/editor/integrations/convert/word_crop.dart';
@@ -146,7 +147,7 @@ LineReader suggestingReader({double confidence = 0.9, int images = 1}) =>
     }, confidence: confidence, images: images);
 
 Map<String, Object> autoFixPrefs() => {
-      AppSettings.prefsKey: jsonEncode({'autoFixSpelling': true}),
+      AppSettings.prefsKey: jsonEncode({'autocorrect': true}),
     };
 
 /// The review list of the open sheet (not the editor behind it).
@@ -685,6 +686,13 @@ void main() {
       await settle(tester);
       expect(h.page.texts.map((t) => t.text),
           ['Nuerons are in the brain', "isn't working", 'well done']);
+      // The kept automatic fix is remembered on its box (for the underline
+      // and tap-to-undo); the one undone in the sheet is not.
+      expect(h.page.texts.map((t) => t.corrections), [
+        isEmpty,
+        [const TextCorrection(start: 0, original: 'isnt', replacement: "isn't")],
+        isEmpty,
+      ]);
       await tester.pump(const Duration(seconds: 6));
     });
 

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/document/page_items.dart' show TextCorrection;
 import 'package:neatink/app/providers.dart';
 import 'package:neatink/document/commands.dart';
 import 'package:neatink/document/font_kind.dart';
@@ -351,7 +352,7 @@ void main() {
     /// Auto-convert on, "Fix spelling automatically" as [fix] says.
     Map<String, Object> prefs({required bool fix}) => {
           AppSettings.prefsKey:
-              jsonEncode({'autoConvert': true, 'autoFixSpelling': fix}),
+              jsonEncode({'autoConvert': true, 'autocorrect': fix}),
         };
 
     FakeRecognizer suggesting() => reader()
@@ -378,6 +379,34 @@ void main() {
       expect(h.page.strokes, isEmpty);
     });
 
+    testWidgets('fixed words are remembered on the box, also when a line joins it',
+        (tester) async {
+      const fixA = PolishSuggestion(
+          original: 'hello', replacement: 'hullo', kind: PolishKind.spelling, reason: 'Spelling', start: 0, end: 5);
+      const fixB = PolishSuggestion(
+          original: 'second', replacement: 'secant', kind: PolishKind.spelling, reason: 'Spelling', start: 0, end: 6);
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader()
+            ..suggestions['aw0'] = [fixA]
+            ..suggestions['bw0'] = [fixB],
+          prefsValues: prefs(fix: true));
+      final first = writeLine('a', ['hello'], y: 104);
+      await h.write(first);
+      await wait(tester, 1100);
+      final box = h.page.texts.single;
+      expect(box.text, 'hullo');
+      expect(box.corrections, [const TextCorrection(start: 0, original: 'hello', replacement: 'hullo')]);
+      final typedEnd = box.x + const FlutterTextMetrics().naturalWidth(box);
+      await h.write(writeLine('b', ['hello'], x: typedEnd + 12, y: 104));
+      await wait(tester, 1100);
+      final joined = h.page.texts.single;
+      expect(joined.text, 'hullo secant');
+      expect(joined.liveCorrections, [
+        const TextCorrection(start: 0, original: 'hello', replacement: 'hullo'),
+        const TextCorrection(start: 6, original: 'second', replacement: 'secant'),
+      ]);
+    });
+
     testWidgets('the setting is read again for every pass', (tester) async {
       final h = await ConvertHarness.open(tester,
           recognizer: suggesting(), prefsValues: prefs(fix: false));
@@ -387,7 +416,7 @@ void main() {
 
       h.container
           .read(settingsProvider.notifier)
-          .update((s) => s.copyWith(autoFixSpelling: true));
+          .update((s) => s.copyWith(autocorrect: true));
       await h.write(writeLine('b', ['hello'], y: 156));
       await wait(tester, 1100);
       expect(texts(h), ['hello online', 'Second']);
