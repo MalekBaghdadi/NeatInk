@@ -28,6 +28,7 @@ and copy it to the tablet.
 
 - Notebooks with blank, lined, grid, dotted, Cornell and music pages, in white, cream or dark.
 - Pen, pencil and fountain styles, highlighter, eraser (whole stroke or partial), lasso, shapes that snap straight when you hold the pen still.
+- **Scribble to delete**, like on an iPad: scribble back and forth over handwriting or typed text with the pen and it disappears (one undo brings it back). Scribbling on empty paper, or shading inside a drawn circle, stays ink. Switch it off in Settings.
 - **Tidy highlighter**: a wobbly highlight over a line of writing, typed text or PDF text becomes a neat straight band over that line (switch it off in Settings; "Restore original" in the lasso menu brings the drawn one back).
 - **Convert to text**: tap Convert and the app reads your handwriting a whole line at a time (on the tablet, nothing is uploaded), shows what it understood so you can fix any word, and retypes it on the lines in a font you choose (18 fonts: school-friendly, handwriting-style, serif, sans and more). One undo gives your handwriting back.
 - **Autocorrect**, like on an iPad: misspellings, missing apostrophes (isnt → isn't), capitals and small grammar slips (a/an, "could of", "their is", repeated words) are fixed as handwriting becomes text. Corrected words get a dotted underline: tap one and tap the bubble to get your word back (it is then learned, so it is not corrected again), or tick to keep it. Switch it off in Settings to only get suggestions in the review sheet. Names you taught it are never changed.
@@ -35,15 +36,18 @@ and copy it to the tablet.
 - **Typed text settings** (the slider button next to Auto, or Settings > Typed text), open any time: font, bold/italic, colour and size. The size is **even** by default: every line the same size, chosen to sit on the page's lines; "Match my handwriting" and a custom size are there too. **Join lines into sentences** (on by default): a sentence that runs over to the next line becomes one line of text that wraps at the page edge.
 - **Knows your subjects**: neuroscience, psychology, biology, physics and chemistry terms and acronyms (OCD, ADHD, GABA) are part of its word list.
 - **My words**: teach it names (like family names); it also learns from the words you correct.
-- Text boxes and pictures on any page.
+- Text boxes and pictures on any page. The page grid shows every page, PDF pages included.
 - Import a PDF, write on it, and export a new PDF with your writing on it. Add lined **margins** beside the PDF pages for notes (when importing, or later from the editor menu); exports keep them, and the PDF's text stays selectable.
 - **Covers**: 16 colours, patterns, science pictures (brain, neuron, DNA, cell, atom, periodic table, planets, galaxy and more) or your own photo.
 - Folders, tags, favourites, search, dark mode and an optional PIN lock.
+- **Backup & restore** (Settings > Backup): all notebooks, folders, settings and My words in one file you save wherever you like (Downloads, a USB stick, a PC). Restoring only adds: notebooks already on the tablet are left alone, changed ones come back as copies.
+- **Tips** open once after installing or updating, and any time from Settings > About.
 
 ## Private by design
 
 It works fully offline. The app has no internet permission, no accounts, no
-tracking and no ads. Your notebooks never leave the tablet.
+tracking and no ads. Your notebooks leave the tablet only when you export or
+back them up yourself.
 
 ## For developers
 
