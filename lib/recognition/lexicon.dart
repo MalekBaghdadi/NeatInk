@@ -96,6 +96,61 @@ double weightedEditDistance(String a, String b) {
   return prev[b.length];
 }
 
+/// Letter groups that look like one letter in handwriting: an `m` read
+/// where `in` was written (the i-dot lost, three humps), `cl` for `d`, ...
+/// Used by [handwritingDistance] only (the decoder keeps its own costs).
+const List<(String, String)> _lookAlikeGroups = [
+  ('m', 'in'), ('m', 'ni'), ('m', 'rn'), ('m', 'nn'), ('m', 'iu'), ('m', 'ui'),
+  ('w', 'uu'), ('w', 'vv'), ('w', 'iu'), ('d', 'cl'), ('h', 'li'), ('h', 'lr'),
+  ('k', 'lc'), ('k', 'ic'), ('u', 'ii'), ('n', 'ri'), ('n', 'ii'), ('a', 'ci'),
+];
+
+/// How different an observed (recognised) word [a] is from a dictionary
+/// word [b], counting what handwriting recognition gets wrong as cheaper:
+/// look-alike letters substitute for 0.6 (`n`/`m`, `e`/`c`, `a`/`o` ...),
+/// look-alike letter groups for 0.5 (`m` for `in`, `cl` for `d`), thin
+/// letters (`i l t j f`) go missing for 0.8, swapping two neighbouring
+/// letters costs 1, anything else 1.
+double handwritingDistance(String a, String b) {
+  if (a == b) return 0;
+  final n = a.length, m = b.length;
+  double indel(int unit) => _narrowLetters.contains(String.fromCharCode(unit)) ? 0.8 : 1.0;
+  final w = m + 1;
+  final d = List<double>.filled((n + 1) * w, 0);
+  for (var i = 1; i <= n; i++) {
+    d[i * w] = d[(i - 1) * w] + indel(a.codeUnitAt(i - 1));
+  }
+  for (var j = 1; j <= m; j++) {
+    d[j] = d[j - 1] + indel(b.codeUnitAt(j - 1));
+  }
+  for (var i = 1; i <= n; i++) {
+    final ca = a.codeUnitAt(i - 1);
+    for (var j = 1; j <= m; j++) {
+      final cb = b.codeUnitAt(j - 1);
+      final sub = ca == cb ? 0.0 : (_confusable.contains(ca * 256 + cb) ? 0.6 : 1.0);
+      var v = math.min(
+        d[(i - 1) * w + j - 1] + sub,
+        math.min(d[(i - 1) * w + j] + indel(ca), d[i * w + j - 1] + indel(cb)),
+      );
+      if (i > 1 && j > 1 && ca == b.codeUnitAt(j - 2) && a.codeUnitAt(i - 2) == cb) {
+        v = math.min(v, d[(i - 2) * w + j - 2] + 1.0);
+      }
+      for (final (one, two) in _lookAlikeGroups) {
+        // One letter of [a] read for two of [b] ...
+        if (j > 1 && a[i - 1] == one && b.substring(j - 2, j) == two) {
+          v = math.min(v, d[(i - 1) * w + j - 2] + 0.5);
+        }
+        // ... or two letters of [a] for one of [b].
+        if (i > 1 && b[j - 1] == one && a.substring(i - 2, i) == two) {
+          v = math.min(v, d[(i - 2) * w + j - 1] + 0.5);
+        }
+      }
+      d[i * w + j] = v;
+    }
+  }
+  return d[n * w + m];
+}
+
 /// Optimal-string-alignment (restricted Damerau-Levenshtein) distance: like
 /// [levenshtein], but swapping two neighbouring letters (`Nuerons` ->
 /// `Neurons`) costs 1 instead of 2.

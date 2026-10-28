@@ -56,6 +56,8 @@ mr 100000000
 its 800000000
 were 2000000000
 well 800000000
+tango 15000000
+tangy 15000000
 ''';
 
 void main() {
@@ -132,9 +134,15 @@ void main() {
     });
 
     test('equally close, equally frequent candidates make no suggestion', () {
-      // "bixe" is one edit from bike and bite (both 15e6)
-      final s = polisher().suggest('i bixe it');
+      // "tangq" is one edit from tango and tangy (both 15e6)
+      final s = polisher().suggest('the tangq is here');
       expect(s.where((x) => x.kind == PolishKind.spelling), isEmpty);
+    });
+
+    test('a look-alike letter is a closer match than any other letter', () {
+      // x and k look alike in handwriting, x and t do not
+      final s = polisher().suggest('i bixe it').where((x) => x.kind == PolishKind.spelling).toList();
+      expect(only(s).replacement, 'bike');
     });
 
     test('a clearly more frequent candidate wins over a rare one', () {
@@ -143,9 +151,10 @@ void main() {
       expect(only(s).replacement, 'storm');
     });
 
-    test('rare corrections are not offered', () {
-      final tiny = Lexicon.parse('filler 330000000000\nzygote 1000000\n');
-      expect(polisher(lexicon: tiny).suggest('the zygotr is here'), isEmpty);
+    test('a rare word is offered only as a close match', () {
+      final tiny = Lexicon.parse('filler 330000000000\nzygote 1000000\nmicroscope 1000000\n');
+      expect(only(polisher(lexicon: tiny).suggest('the zygotr is here')).replacement, 'zygote');
+      expect(polisher(lexicon: tiny).suggest('a micrscopp here'), isEmpty, reason: 'two edits away');
     });
 
     test('long words may be two edits away', () {
@@ -444,6 +453,29 @@ void main() {
         if (v == {'recieve': 'receive', 'seperate': 'separate', 'definately': 'definitely', 'occured': 'occurred', 'wich': 'which', 'becuase': 'because', 'freind': 'friend', 'untill': 'until'}[k]) right++;
       });
       expect(right, greaterThanOrEqualTo(5), reason: '$fixed');
+    });
+
+    // What autocorrect left alone, or got wrong, on the owner's page (v1.5.0).
+    String fixed(TextPolisher p, String text, {bool sentenceStart = false}) =>
+        applyPolish(text, p.suggest(text, sentenceStart: sentenceStart));
+
+    test("the owner's page: look-alike letters, rarer words, glued words", () {
+      if (real == null) return;
+      final p = TextPolisher(real);
+      expect(fixed(p, 'the lines are not auto joming'), 'the lines are not auto joining',
+          reason: 'm read for in');
+      expect(fixed(p, 'crazy hamberger'), 'crazy hamburger', reason: 'hamburger is word 22784');
+      expect(fixed(p, 'okay this time itworked'), 'okay this time it worked');
+      expect(fixed(p, "Whyisn't!", sentenceStart: true), "Why isn't!");
+      expect(fixed(p, 'I a not in danger'), 'I am not in danger');
+    });
+
+    test('an unclear word is left alone rather than turned into another word', () {
+      if (real == null) return;
+      final p = TextPolisher(real);
+      // "onvert" is as close to "overt" as to "convert": no guess.
+      expect(fixed(p, 'why did that not onvert'), 'why did that not onvert');
+      expect(fixed(p, 'hello Skyler'), 'hello Skyler', reason: 'a name');
     });
 
     test('suggesting for a page of text is fast', () {

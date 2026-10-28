@@ -53,10 +53,15 @@ class PolishConfig {
     this.contractions = true,
     this.capitalization = true,
     this.grammar = true,
-    this.minWordLength = 5,
-    this.longWordLength = 7,
+    this.minWordLength = 4,
+    this.channelWeight = 5.0,
+    this.firstLetterPenalty = 0.25,
+    this.closeMatchCost = 1.0,
+    this.closeMatchMinRank = 45000,
     this.minLogProb = -12.5,
-    this.ambiguityRatio = 3.0,
+    this.ambiguityMargin = 1.0,
+    this.splitCost = 0.3,
+    this.splitMinRank = 25000,
     this.candidateLimit = 200,
     this.abbreviations = defaultAbbreviations,
     this.repeatableWords = defaultRepeatableWords,
@@ -69,24 +74,57 @@ class PolishConfig {
   final bool grammar;
 
   /// Words shorter than this are never spell-checked: short words are too
-  /// close to each other (`cot`/`cat`/`cut`) to tell a slip from a word, and
-  /// short unlisted words are mostly jargon (`wifi` is one edit from `wife`,
-  /// `todo` from `too`).
+  /// close to each other (`cot`/`cat`/`cut`) to tell a slip from a word. A
+  /// word of this length only gets a look-alike letter fixed
+  /// ([maxCostFor]).
   final int minWordLength;
 
-  /// A word of at least this many letters may be two edits away from its
-  /// correction; shorter ones only one (a swap of two neighbouring letters
-  /// counts as one edit).
-  final int longWordLength;
+  /// How much one unit of [handwritingDistance] counts against a
+  /// correction, in ln-probability: each correction of an unknown word is
+  /// scored `ln P(word) - channelWeight * distance` (a noisy channel), so a
+  /// correction one plain edit further away must be e^5 ~ 150 times more
+  /// frequent to win. Tuned on the owner's page and the word list: 3 let
+  /// `numerous` beat `neurons` for `nuerons`.
+  final double channelWeight;
 
-  /// The correction must be at least this frequent (ln of its share of the
-  /// word list; -12.5 is about the 15000th word), so an obscure word is not
-  /// offered as the fix of an unknown one.
+  /// Added to the distance when the correction starts with another letter
+  /// (first letters are written carefully, so they are rarely misread).
+  final double firstLetterPenalty;
+
+  /// A correction at most this far ([handwritingDistance]) may be any word
+  /// of the list down to rank [closeMatchMinRank] (`hamberger` ->
+  /// `hamburger`, rank 22784); a farther one must be as frequent as
+  /// [minLogProb].
+  final double closeMatchCost;
+  final int closeMatchMinRank;
+
+  /// ln of the share of the word list a far correction needs (-12.5 is about
+  /// the 15000th word), so an obscure word is not offered as the fix of an
+  /// unknown one.
   final double minLogProb;
 
-  /// When several corrections are equally close, the best must be this many
-  /// times more frequent than the runner-up, or nothing is suggested.
-  final double ambiguityRatio;
+  /// The best correction must score this much (ln) above the runner-up, or
+  /// nothing is suggested: `onvert` is as close to `overt` as to `convert`.
+  final double ambiguityMargin;
+
+  /// What a missing space costs, in [handwritingDistance] units: `itworked`
+  /// -> `it worked` when both words are at least as frequent as rank
+  /// [splitMinRank] and the split scores better than any correction.
+  final double splitCost;
+  final int splitMinRank;
+
+  /// The farthest correction ([handwritingDistance]) allowed for a word of
+  /// [length] letters: one look-alike letter for 4, about one edit for 5-6,
+  /// two for 7-9, a little more for longer words.
+  double maxCostFor(int length) => length <= 3
+      ? 0
+      : length == 4
+          ? 0.6
+          : length <= 6
+              ? 1.2
+              : length <= 9
+                  ? 2.0
+                  : 2.6;
 
   /// Dictionary neighbours examined per word.
   final int candidateLimit;
@@ -120,11 +158,15 @@ class PolishConfig {
 /// spell-checked, but only for a swap of two neighbouring letters
 /// (`Nuerons` -> `Neurons`), the typo that cannot be a different name.
 ///
-/// Spelling: an unknown word of 5+ letters whose best dictionary match within
-/// one edit (two for 7+ letters; Damerau, a swap counts 1) starts with the
-/// same letter, is frequent enough and is clearly better than the runner-up.
-/// Inflected forms of listed words (`brainy`, `neuronal` are not checked
-/// against `brain`, `neuron`; `walkings` is) are left alone.
+/// Spelling (v1.6.0, a noisy channel): an unknown word of 4+ letters gets
+/// the dictionary word that best explains it, scored by how frequent the
+/// word is minus how far it is in handwriting terms ([handwritingDistance]:
+/// `joming` -> `joining` costs one look-alike `m` for `in`), or is split
+/// into two words when a space was lost (`itworked` -> `it worked`). It
+/// must be clearly the best explanation ([PolishConfig.ambiguityMargin]),
+/// so `onvert` stays as it is rather than becoming `overt`. Inflected forms
+/// of listed words (`brainy`, `neuronal` are not checked against `brain`,
+/// `neuron`; `walkings` is) are left alone. `I a` becomes `I am`.
 class TextPolisher {
   TextPolisher(this.lexicon, {this.userLexicon, this.config = const PolishConfig()});
 
@@ -215,7 +257,11 @@ class TextPolisher {
           reasons.add('Spelling');
         }
       }
-      if (config.grammar && _wantsAn(tokens, k, cur)) {
+      if (config.grammar && _iA(tokens, k, cur)) {
+        cur = 'am';
+        kind ??= PolishKind.grammar;
+        reasons.add("Use 'am' here");
+      } else if (config.grammar && _wantsAn(tokens, k, cur)) {
         cur = cur == 'A' ? 'An' : 'an';
         kind ??= PolishKind.grammar;
         reasons.add("Use 'an' here");
@@ -287,11 +333,15 @@ class TextPolisher {
   bool _known(String lower) =>
       (lexicon?.contains(lower) ?? false) || _isUserWord(lower) || contractionLogProb(lower) != null;
 
-  /// The suggested spelling of [core], or null.
+  /// The suggested spelling of [core], or null: the best-scoring
+  /// correction of an unknown word ([PolishConfig.channelWeight]) within
+  /// [PolishConfig.maxCostFor] of it, or the word split in two
+  /// (`itworked` -> `it worked`, `Whyisn't` -> `Why isn't`), when it is
+  /// clearly better than the runner-up ([PolishConfig.ambiguityMargin]).
   String? _spelling(String core, String lower, bool startsSentence) {
     final lex = lexicon;
     if (lex == null) return null;
-    if (core.length < config.minWordLength || core.contains("'") || core.contains('\u2019')) return null;
+    if (core.length < config.minWordLength) return null;
     if (_known(lower)) return null;
     // Words in capitals and camel case are acronyms and brand names.
     if (core.length >= 2 && core == core.toUpperCase()) return null;
@@ -301,28 +351,68 @@ class TextPolisher {
     if (capitalised && !startsSentence) return null;
     if (_looksInflected(lower)) return null;
 
-    final maxEdits = core.length >= config.longWordLength ? 2 : 1;
-    final found = <(String, int, int)>[]; // word, distance, count
-    for (final c in lex.candidates(lower, maxEdits: 2, limit: config.candidateLimit)) {
-      if (c.word == lower || c.word[0] != lower[0] || c.word.contains("'")) continue;
-      final d = damerauLevenshtein(lower, c.word);
-      if (d == 0 || d > maxEdits) continue;
-      if (capitalised && !(d == 1 && _isSwap(lower, c.word))) continue;
-      if (lex.logProb(c.word)! < config.minLogProb) continue;
-      found.add((c.word, d, c.count));
+    // Text, score, and whether it may be chosen (a candidate that only came
+    // close still makes the choice ambiguous: `onvert` could be `convert`,
+    // so it does not become `overt`).
+    final options = <(String, double, bool)>[];
+    final split = _split(lower);
+    if (split != null) options.add((split.$1, split.$2, true));
+    // A word with an apostrophe is only ever split.
+    if (!lower.contains("'") && !lower.contains('\u2019')) {
+      final maxCost = config.maxCostFor(core.length);
+      final closeFloor = lex.logProbAtRank(config.closeMatchMinRank);
+      for (final c in lex.candidates(lower, maxEdits: 2, limit: config.candidateLimit)) {
+        final w = c.word;
+        if (w == lower || w.contains("'")) continue;
+        final distance = handwritingDistance(lower, w);
+        if (distance <= 0 || distance > maxCost + 1e-9) continue;
+        final cost = distance + (w[0] != lower[0] ? config.firstLetterPenalty : 0);
+        final lp = lex.logProb(w)!;
+        if (lp < (distance <= config.closeMatchCost + 1e-9 ? closeFloor : config.minLogProb)) continue;
+        // At the start of a sentence the capital may be a name's: only a
+        // look-alike letter or a swap of two letters is fixed there.
+        final eligible = cost <= maxCost + 1e-9 &&
+            !(capitalised && cost > 0.6 + 1e-9 && !_isSwap(lower, w));
+        options.add((w, lp - config.channelWeight * cost, eligible));
+      }
     }
-    if (found.isEmpty) return null;
-    found.sort((a, b) {
-      final byDistance = a.$2.compareTo(b.$2);
-      return byDistance != 0 ? byDistance : b.$3.compareTo(a.$3);
-    });
-    final best = found.first;
-    if (found.length > 1) {
-      final next = found[1];
-      if (next.$2 == best.$2 && best.$3 < config.ambiguityRatio * next.$3) return null;
-    }
-    return capitalised ? best.$1[0].toUpperCase() + best.$1.substring(1) : best.$1;
+    if (options.isEmpty) return null;
+    options.sort((a, b) => b.$2.compareTo(a.$2));
+    if (!options.first.$3) return null;
+    if (options.length > 1 && options[0].$2 - options[1].$2 < config.ambiguityMargin) return null;
+    final best = options.first.$1;
+    return capitalised ? best[0].toUpperCase() + best.substring(1) : best;
   }
+
+  /// [lower] as two words with the space put back, scored like a correction
+  /// with [PolishConfig.splitCost] for the missing space and the prior of
+  /// the two words together (`ham berger` is far less likely than
+  /// `hamburger`); null when no split gives two words of the list (or
+  /// contractions) at least as frequent as rank [PolishConfig.splitMinRank].
+  (String, double)? _split(String lower) {
+    final lex = lexicon!;
+    final floor = lex.logProbAtRank(config.splitMinRank);
+    (String, double)? best;
+    for (var k = 1; k < lower.length; k++) {
+      final a = lower.substring(0, k), b = lower.substring(k);
+      final la = _partLogProb(a), lb = _partLogProb(b);
+      if (la == null || lb == null || la < floor || lb < floor) continue;
+      final score = la + lb - config.channelWeight * config.splitCost;
+      if (best == null || score > best.$2) best = ('${_partText(a)} ${_partText(b)}', score);
+    }
+    return best;
+  }
+
+  /// ln probability of one part of a split word: a listed word of two or
+  /// more letters, `a` or `i`, or a contraction (`isn't`, `isnt`).
+  double? _partLogProb(String part) {
+    if (part.contains("'") || part.contains('\u2019')) return contractionLogProb(part.replaceAll('\u2019', "'"));
+    if (part.length == 1 && part != 'a' && part != 'i') return null;
+    return lexicon!.logProb(part) ?? contractionLogProb(part);
+  }
+
+  /// How a part of a split word is written: `i` -> `I`, `isnt` -> `isn't`.
+  static String _partText(String part) => part == 'i' ? 'I' : contractionOf(part) ?? part;
 
   /// [b] is [a] with two neighbouring letters swapped.
   static bool _isSwap(String a, String b) {
@@ -353,6 +443,16 @@ class TextPolisher {
   }
 
   // ---- grammar ------------------------------------------------------------------
+
+  /// [word] (the current form of token [k]) is `a` right after `I` and
+  /// before another word: `I a not` was `I am not` (`I a` is never English;
+  /// the m was lost).
+  bool _iA(List<_Token> tokens, int k, String word) {
+    if (word != 'a' || k == 0 || k + 1 >= tokens.length) return false;
+    final before = tokens[k - 1], t = tokens[k];
+    if (before.core != 'I' && before.core != 'i') return false;
+    return before.trail.isEmpty && t.lead.isEmpty && t.trail.isEmpty && tokens[k + 1].lead.isEmpty;
+  }
 
   /// [word] (the current form of token [k]) is the article `a` and the next
   /// word starts with a vowel sound.
