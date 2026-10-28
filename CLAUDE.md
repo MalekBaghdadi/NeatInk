@@ -50,14 +50,16 @@ lib/
       canvas/             # Ink input, page rendering, active stroke painter
       toolbar/            # Pen / highlighter / eraser / lasso / colors / widths
       tools/              # Tool logic (eraser hit-testing, lasso selection & transform)
-    settings/             # Theme, finger-drawing toggle, shape snap, paper defaults, PIN lock
+    settings/             # Theme, finger-drawing toggle, shape snap, paper defaults, PIN lock, backup & restore
+    tips/                 # Tips screen (opens once by itself, then from Settings)
   ink/                    # Pure Dart, no Flutter widgets: Stroke, InkPoint, geometry utils
   document/               # Pure Dart: notebook/page models, paper geometry, undo/redo commands
   render/                 # Flutter painting shared by screen + PDF export (stroke outlines, paper, text styles)
   beautify/               # Pure Dart: handwriting geometry helpers (baseline, x-height, deskew, stats, resampling); the tidy pipeline was removed
   pdf/                    # pdfrx rendering helpers + PdfExport channel wrapper
-  storage/                # Repositories, JSON codecs, atomic file writes, autosave
+  storage/                # Repositories, JSON codecs, atomic file writes, autosave; backup/ = ZIP backups
 android/app/src/main/kotlin/.../PdfExportPlugin.kt   # PdfBox-Android export
+android/app/src/main/kotlin/.../FileSavePlugin.kt    # "Save to" dialog that streams a file (backups)
 test/                     # Unit tests (beautify/ and ink/ must be heavily tested)
 ```
 
@@ -112,6 +114,7 @@ Stroke (in `pages/<pageId>.json`)
 - `raw` = exactly what the pen produced. It's never modified, except by lasso move/resize, which transforms `raw` and `points` together.
 - `points` = what's displayed (equal to `raw` unless snapped to a shape or tidied as a highlight). `rawSize` (optional) is the drawn width of a tidied highlight, for "Restore original". Old files may contain `wordId` / `tidy` keys; they are ignored.
 - Text boxes (`texts` in page JSON) may carry `"corrections": [{"at": 12, "from": "nuerons", "to": "neurons"}]` (v1.5.0): words autocorrect changed, for the underline and tap-to-undo. `TextItem.copyWith(text:)` moves them with edits (`remapCorrections`); stale ones are ignored and not written.
+- **Backups** (v1.6.0, `lib/storage/backup/`): one ZIP with `neatink-backup.json` (manifest: format `neatink-backup`, version 1, app, createdAt, notebooks), `app.json` (settings without the PIN/lock, tool prefs, typed-text look, My words), `library.json` and `notebooks/<id>/**` exactly as on disk (temp files left out). A restore only adds: missing notebooks keep their id, unchanged ones (same `updatedAt` and page count) are skipped, changed ones become copies "<title> (from backup)" with a new id (opt-out), each staged in `<root>/.restore-*` and moved in with one rename; folders the restored notebooks need are merged into `library.json`. A newer manifest version is refused.
 - Include a `version` field and write a migration stub now.
 - **Autosave**: debounce 1.5 s after the last change, plus save on app pause (`AppLifecycleState.paused`). Encode JSON off the UI thread (`compute`/`Isolate.run`) if a page has more than ~2,000 strokes.
 
@@ -171,7 +174,7 @@ The owner asked for a "fully fledged" note app and approved these on top of the 
 
 **Delivery**: public GitHub repo `MalekBaghdadi/NeatInk` with a one-click APK download (GitHub Release) and a GitHub Actions workflow that builds the APK on version tags.
 
-Backup/restore was offered and **not** chosen; it stays in "Later".
+Backup/restore was offered and not chosen at first; the owner approved it on 2026-10-28 (session 8, see "Session 8").
 
 ## PDF export (details)
 
@@ -232,7 +235,7 @@ Signing: for now, the default Flutter template signs release builds with the deb
 - Arabic / French recognition support.
 - Searching handwriting (on-device recognition).
 - Stickers, audio recording.
-- Backup to a file, Wi-Fi transfer to a PC.
+- Wi-Fi transfer to a PC (backup to a file was built in session 8).
 - Low-latency front-buffer rendering via Android `androidx.graphics` (only if ink latency is a problem).
 
 ---
@@ -241,19 +244,22 @@ Signing: for now, the default Flutter template signs release builds with the deb
 
 **Session 4 (2026-10-27): auto-tidy was removed.** After alpha testing, the owner replaced it with a planned "convert handwriting to typed text" feature (v1.1, plan in `~/.claude/plans/shimmering-kindling-thacker.md`). Removed: `integrations/tidy/`, the toolbar `TidyToggle`, the settings `tidyEnabled`/`tidyStrength`/`slantMode`/`debugOverlay`, `Stroke.wordId` and `TidyInfo`, and the tidy pipeline files in `lib/beautify/` (`tidy_pipeline`, `transform`, `smoothing`, `word_segmenter`, `line_context`). Kept: `lib/beautify/{features,stats,resample,tidy_config}.dart` (reused by recognition) and their tests. Old saved prefs and page JSON that contain the removed keys still load (unknown keys are ignored). Sections below that describe tidy are historical.
 
-_Last updated 2026-10-28 by Claude (end of session 7). Keep this section current: update it whenever something here changes._
+_Last updated 2026-10-28 by Claude (end of session 8). Keep this section current: update it whenever something here changes._
 
-## Start here (state at the end of session 7)
+## Start here (state at the end of session 8)
+
+- **Unreleased work (session 8) on branch `claude/backup-tips-thumbnails`, NOT merged into `main` and NOT released**: Backup & restore (Settings > Backup), a Tips screen (opens once, then Settings > About > Tips), the PDF page in the page grid's thumbnails, and the Typed text size slider dimmed unless Custom is chosen. The owner asked for exactly these four; details in "Session 8". To ship them: owner OK -> fast-forward `main` -> release **1.6.0** (bump pubspec to `1.6.0+8` and `AppInfo`) -> give Mariam the session-8 tablet checklist.
 
 - **Released: v1.5.0** (pubspec `1.5.0+7`, `AppInfo`), published 2026-10-28 17:03 UTC. Download: `https://github.com/MalekBaghdadi/NeatInk/releases/latest/download/MariamsNotes.apk` (arm64, 43 MB; `MariamsNotes-armeabi-v7a.apk` and `SHA256SUMS.txt` beside it). `main` = the released code. The app is **Mariam's Notes**, used by the owner's cousin Mariam (neuroscience/psychology student) on the MatePad.
 - **What the app has** (v1.0-1.5): notebooks with 7 paper types, pens/highlighter/erasers/lasso/shapes, text boxes and pictures, folders/tags/search/PIN lock/dark mode, PDF import + margins + export, Convert to text (PP-OCRv5 line recogniser + decoder + My words), Auto-convert (delay setting, held unsure lines, joins sentences), Autocorrect with tap-to-undo, Typed text settings (even size, join lines), tidy highlighter, notebook covers. Details per version in the session sections below.
 - **NOTHING has been verified on the tablet** from v1.0 to v1.5 (the owner had not reported a full test yet). Treat every feature as unverified on the device; the riskiest are PDF export (PdfBox-Android, margins only checked on the JVM with Apache PDFBox), ONNX Runtime speed on the Huawei device, M-Pencil pressure/palm rejection, autocorrect taps and the line-joining thresholds.
-- **Working in a cloud session** (no PC): Flutter 3.47.8 is not preinstalled; unpack it to `/opt/flutter` and call `/opt/flutter/bin/flutter` (`~/.bashrc` edits are blocked). `flutter analyze` and `flutter test --timeout 60s` run in the real project (gcc builds pdfrx's PDFium hook): **1303 pass, 2 skipped** at v1.5.0. There is no Android SDK, so no local APK builds; Kotlin can be checked on the JVM with Gradle + Apache PDFBox (same API as PdfBox-Android, package `org.apache.pdfbox`; see the session-7 margins note). Visual checks: render widgets to PNG in a temporary test with real fonts loaded by `FontLoader` (delete before committing).
+- **Working in a cloud session** (no PC): Flutter 3.47.8 is not preinstalled; unpack it to `/opt/flutter` and call `/opt/flutter/bin/flutter` (`~/.bashrc` edits are blocked). `flutter analyze` and `flutter test --timeout 60s` run in the real project (gcc builds pdfrx's PDFium hook): **1335 pass, 2 skipped** at the end of session 8 (1303 / 2 skipped at v1.5.0). Visual checks: render widgets to PNG in a temporary test with real fonts loaded by `FontLoader` (delete before committing); for PDF pages also fake the `plugins.flutter.io/path_provider` channel and copy `.dart_tool/hooks_runner/shared/pdfium_dart/build/*/linux-x64/libpdfium.so` to `/opt/flutter/bin/cache/artifacts/engine/linux-x64/lib/` (remove it after).
+- **APKs can be built in a cloud session** (session 8): install the Android SDK to `/opt/android-sdk` (command-line tools from `dl.google.com/android/repository/commandlinetools-linux-*_latest.zip`, then `sdkmanager --sdk_root=/opt/android-sdk "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358" "cmake;3.22.1"`, `flutter config --android-sdk /opt/android-sdk`). Maven Central answers **429** to this network's Gradle downloads: add a `~/.gradle/init.d/` script that rewrites `repo.maven.apache.org` to Google's mirror `https://maven-central.storage-download.googleapis.com/maven2/` (session 8 used one). Build in a separate `git worktree` so edits in progress do not leak into the build. Local builds are signed with the debug key (no `key.properties`): fine for checking, never for Mariam (it would not install over the release-signed app).
 - **How to release from a cloud session**: the git proxy answers 403 to tag pushes, so (1) bump `version:` in pubspec.yaml and `AppInfo` (keep the build number increasing), (2) push `main`, (3) start `release.yml` by hand with the GitHub MCP tool `actions_run_trigger` (`run_workflow`, `ref: main`, `inputs: {"version": "vX.Y.Z"}`). The workflow checks the version against pubspec, builds and signs the split APKs, creates the tag with the release. From the PC, pushing a `vX.Y.Z` tag still works. Never move or delete a published tag.
 - Commits from session 7 went to branch `claude/v1.4.0-mariam` first and were fast-forwarded into `main` for each release.
-- **Waiting on**: Mariam's answers to the 1.5 test checklist and her step-15 samples file (see "Next steps" 1). Start there when the owner brings them.
+- **Waiting on**: Mariam's answers to the 1.5 test checklist and her step-15 samples file (see "Next steps" 1), and the owner's OK to merge and release the session-8 branch. Start there when the owner brings them.
 
-## Next steps (suggested to the owner at the end of session 7, in order)
+## Next steps (suggested at the end of session 7; updated in session 8)
 
 1. **Tablet test pass with Mariam: checklist SENT, waiting for her answers.** The 15-step checklist is a page the owner shares with her (https://claude.ai/artifact/FVxnATseRk6FUJcyePQRch, private until shared; read it with the Artifact tool's `read` action) and the same steps are in `docs/tablet-test-1.5.md`, with the answer format and a step -> code table. When the owner pastes her answers ("N. title: ✅ Works / ❌ Problem / ⏭️ Skipped" plus notes) and step 15's samples file:
    - fix every ❌ first, starting with data loss (step 3), PDF export (13) and anything that crashes; ask for screenshots when a note is unclear;
@@ -262,16 +268,16 @@ _Last updated 2026-10-28 by Claude (end of session 7). Keep this section current
    - step 15's file -> recognition calibration (item 3 below);
    - after the fixes, release the next version (see "How to release" above) and give her only the steps that changed.
    Fix what she finds before adding features.
-2. **Backup & restore (recommended; the owner declined it earlier, so ask again).** All notes live only in the app's private storage on one tablet: uninstalling, a broken tablet, or an update signed with another key loses everything, and PDF export cannot be brought back as editable notes. Proposal: Settings > "Back up all notebooks" writes one file (a zip of `notebooks/` + `library.json` + settings) through the Storage Access Framework save dialog; "Restore from backup" reads it back (merge by notebook id, never overwrite silently). Fully offline. Also remind the owner to back up the signing keystore (`~/Documents/MariamNotes-keystore/` on the PC): without it no update can install over the current app.
+2. ~~Backup & restore~~: **built in session 8** (branch, unreleased). Still remind the owner to back up the signing keystore (`~/Documents/MariamNotes-keystore/` on the PC): without it no update can install over the current app.
 3. **Calibrate recognition on Mariam's real writing.** Ask for 2-3 pages she corrects in the review sheet (exactly what she wrote) and shares with "Share samples" (format 2). Measure CER/WER on 100+ lines (desktop pipeline in the session-6 notes), then tune `ConvertConfig.autoMinConfidence`, `lowConfidenceThreshold`, the decoder weights and the join thresholds (`ConvertConfig.join*`); fine-tune the 7.8 MB recogniser on her lines only if accuracy is still short.
 4. **Local diagnostics.** An offline error log (caught exceptions, failed exports, recogniser errors; capped size, in app storage) and a "Share diagnostics" button in Settings that the user sends herself. Nothing leaves the device automatically, so the offline rule holds.
 5. **Run the tests in CI.** `release.yml` runs `flutter analyze` but not `flutter test`; add the test step (with `--timeout`) before the build so a broken version cannot be published.
-6. **A short Tips screen** (shown once, then in Settings): pen writes / finger scrolls, Auto and the Typed text button next to it, tap an underlined word to undo autocorrect, lasso "Restore original", PDF margins in the editor menu.
-7. Smaller: PDF export drops the source PDF's bookmarks and form fields; PDF page thumbnails in the page grid are white (no PDF render); the convert size slider stays active-looking while "Even size" is chosen (could be dimmed).
+6. ~~Tips screen~~: **built in session 8** (branch, unreleased).
+7. Smaller: PDF export drops the source PDF's bookmarks and form fields (still open; wait for Mariam's PDF export result first). ~~White PDF thumbnails in the page grid~~ and ~~the size slider looking active with Even size~~: fixed in session 8.
 
 ## Owner decisions so far
 
-- **Scope**: MVP + everything in "Expanded scope" above. Backup/restore was NOT chosen.
+- **Scope**: MVP + everything in "Expanded scope" above. Backup/restore was not chosen at first, then approved on 2026-10-28 (session 8), together with the Tips screen, PDF page thumbnails and the dimmed size slider (the owner picked these from the next-steps list).
 - **Delivery**: public repo `MalekBaghdadi/NeatInk` (keep the name and `com.neatink.neatink`), a GitHub Release with a one-click APK download (README links to `releases/latest/download/...`), and a GitHub Actions workflow that builds the APK on version tags.
   - The owner's `gh` token has only `gist, read:org, repo` scopes. Before pushing `.github/workflows/*` the owner must run `gh auth refresh -h github.com -s workflow` (it opens a browser). Ask before every push.
 - **How to work**: the main session (Opus) leads: it coordinates, integrates and reviews. Worker agents run on **Sonnet**, **2–3 at a time**. Session 1 ran 7 parallel Opus agents at high effort and hit the account usage limit within ~20 minutes, twice, which cut every agent off mid-work.
@@ -312,6 +318,20 @@ _Last updated 2026-10-28 by Claude (end of session 7). Keep this section current
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
+## Session 8 (2026-10-28, cloud session): backup & restore, tips, PDF thumbnails (unreleased)
+
+Branch `claude/backup-tips-thumbnails` (from `main` at v1.5.0). The owner asked for four of the next steps: backup & restore, the Tips screen, PDF pages in the page grid, and the dimmed size slider.
+- **Backup & restore** (Settings > Backup, between Export and Security):
+  - Engine `lib/storage/backup/`: `zip_archive.dart` is a small ZIP writer/reader on `dart:io` (stored + deflated entries, UTF-8 names, CRC checked on every read, no ZIP64: archives over 4 GB are refused with a message). It was written instead of adding the `archive` package; tests check it against Python's `zipfile` both ways. `notebook_backup.dart` has `writeBackup`, `readBackupInfo`, `planRestore`, `restoreNotebooks`, `mergeRestoredFolders` (format and rules in "Data & storage"). Everything runs in a background isolate (`DefaultBackupService` in `lib/features/settings/backup_service.dart`, progress over a `SendPort`).
+  - Saving goes through the new `FileSavePlugin.kt` (`MethodChannel('neatink/file_save')`, `saveCopy {path, fileName, mimeType}`): `ACTION_CREATE_DOCUMENT`, then the file is streamed to the chosen document on a background thread. file_picker's `saveFile` needs the whole file as bytes over the channel, which a backup with lecture PDFs (hundreds of MB) would not survive. Picking uses file_picker (`FileType.any`; the manifest check says when a file is not a backup).
+  - `app.json` = `BackupAppData` (`lib/features/settings/backup_app_data.dart`): settings minus `pinHash`, `pinSalt`, `lockAfterSeconds`, `lastBackupAt`, `tipsSeen`; tool prefs; typed-text look; My words. On restore My words are always merged (add only); settings, pens and the typed-text look only when "Also restore the settings" is ticked (off by default); the device's PIN and lock stay.
+  - UI `lib/features/settings/widgets/backup_settings.dart`: progress dialogs, the restore summary (`RestoreDialog`: N to add, M unchanged skipped, "Also add K changed notebooks as copies" ticked by default, settings checkbox, words count, unreadable count), a list of notebooks that failed. `AppSettings.lastBackupAt` shows "Last backup: yesterday" under the button. The library now refreshes when Settings closes (`LibraryActions.openSettings`). The About text says notebooks leave the device only when the user exports or backs them up.
+- **Tips** (`lib/features/tips/`): eight tips (`appTips`), `TipsOnce` wraps the library in `NeatInkApp` and opens them once (`AppSettings.tipsSeen`, set when shown); it sits under `LockGate`, so with a PIN the tips appear after unlocking. Existing users see them once after updating. Settings > About > Tips opens them any time.
+- **Page grid**: new hook `EditorExtensions.pageThumbnailBackgroundBuilder`; the PDF integration returns the same `PdfPageBackground` at thumbnail scale (renders a small image off the UI thread, reuses the shared page cache). `PageThumbnail` stacks frame (paper in the margins) -> PDF page -> ink. Checked by rendering a real two-page PDF through PDFium in a temporary test.
+- **Typed text**: the size slider is dimmed (opacity 0.4) unless Custom is chosen; dragging it still switches to Custom.
+- Verified here: `flutter analyze` 0 issues, **1335 tests pass, 2 skipped**, `flutter build apk --release --split-per-abi` OK in this container (arm64 43.1 MB, debug-key signed, versionCode 2007; no INTERNET permission; the `neatink/file_save` channel is in the dex). NOT verified on the tablet: the Save-to dialog and streaming (`FileSavePlugin.kt` is new native code), picking a backup from Huawei's file manager, restore on a real device, backup time and size with many PDFs, the tips text against the real screens.
+- **Tablet checklist for 1.6.0** (give Mariam only these): (1) after updating, the Tips open once; Got it closes them; they do not come back on the next start; Settings > About > Tips opens them. (2) Settings > Back up all notebooks: a progress dialog, then the system Save dialog; save to the tablet's Download folder and note how long it took and the file size; "Last backup: just now" appears. (3) Restore from a backup, pick that file: the summary says all notebooks are already here and Restore is greyed out unless something changed; edit one notebook, restore again: it comes back as "... (from backup)", the edited one is untouched. (4) Delete a test notebook, restore: it comes back in its folder with its pages, pictures and PDF. (5) In a PDF notebook, open Pages: thumbnails show the PDF pages under the ink. (6) Typed text sheet: the size slider is faint with Even size and Match my handwriting, bright with Custom.
+
 ## Session 7 (2026-10-28, cloud session): v1.4.0 and v1.5.0 (details; the summary is in "Start here")
 
 - **v1.3.0 was released** (tag `v1.3.0`, GitHub Release published 2026-10-28 09:43 UTC).
