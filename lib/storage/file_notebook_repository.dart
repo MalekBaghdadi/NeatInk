@@ -185,7 +185,7 @@ class FileNotebookRepository implements NotebookRepository {
 
   /// Reads `notebook.json` (or its backup); null when there is none.
   Future<NotebookMeta?> _readMeta(String notebookId) async {
-    final meta = await _store.read(_metaPath(notebookId), _parseMeta);
+    final meta = await _store.read(_metaPath(notebookId), parseNotebookMeta);
     if (meta == null) return null;
     // The folder name is what every path uses, so it wins over the file.
     return meta.id == notebookId ? meta : meta.copyWith(id: notebookId);
@@ -746,7 +746,7 @@ class FileNotebookRepository implements NotebookRepository {
 
 /// Parses `notebook.json` and rejects page ids that are unsafe as file
 /// names. Top-level so it can be sent to a background isolate.
-NotebookMeta _parseMeta(Map<String, dynamic> json) {
+NotebookMeta parseNotebookMeta(Map<String, dynamic> json) {
   final meta = NotebookMeta.fromJson(json);
   for (final page in meta.pages) {
     if (!isValidStorageId(page.id)) {
