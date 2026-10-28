@@ -15,6 +15,7 @@ import 'package:neatink/features/editor/integrations/convert/convert_layout.dart
 import 'package:neatink/features/settings/app_settings.dart';
 import 'package:neatink/features/settings/convert_style_prefs.dart';
 import 'package:neatink/features/settings/settings_controller.dart';
+import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/recognition/htr_channel.dart';
 import 'package:neatink/recognition/text_polish.dart';
@@ -1070,6 +1071,57 @@ void main() {
       // As the harness set it up (joining off), nothing else.
       expect(h.container.read(convertStylePrefsProvider),
           const ConvertStylePrefs(joinLines: false));
+    });
+  });
+
+  group('late dots', () {
+    // A dot (or short bar) written after auto-convert typed its word.
+    Stroke dot(String id, double x, double y, {double w = 2, double h = 2}) => Stroke(
+          id: id,
+          tool: StrokeTool.pen,
+          color: 0xFF1E1E1E,
+          size: 2,
+          raw: [InkPoint(x, y, 0.5, 0), InkPoint(x + w, y + h, 0.5, 30)],
+        );
+
+    Future<(ConvertHarness, List<Stroke>)> typed(WidgetTester tester) async {
+      final h = await ConvertHarness.open(tester, recognizer: reader(), autoConvert: true);
+      final word = writeLine('a', ['hello'], y: 104);
+      await h.write(word);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+      return (h, word);
+    }
+
+    testWidgets('a full stop after the word is typed with it', (tester) async {
+      final (h, word) = await typed(tester);
+      await h.write([dot('p', rightOf(word) + 4, 102)]);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello.']);
+      expect(h.page.strokes, isEmpty);
+      // One undo brings the dot back and the text as it was.
+      h.controller.undo();
+      await tester.pump();
+      expect(texts(h), ['hello']);
+      expect(h.page.strokes.single.id, 'p');
+    });
+
+    testWidgets('an i-dot or t-bar over the word just goes with it', (tester) async {
+      final (h, word) = await typed(tester);
+      final left = word.map((s) => s.bounds.left).reduce((a, b) => a < b ? a : b);
+      await h.write([dot('i', left + 15, 78), dot('t', left + 30, 88, w: 9, h: 1)]);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+      expect(h.page.strokes, isEmpty);
+      expect(find.byKey(const ValueKey('auto-convert-kept')), findsNothing);
+    });
+
+    testWidgets('a dot away from any text stays ink', (tester) async {
+      final (h, _) = await typed(tester);
+      await h.write([dot('far', 420, 400)]);
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+      expect(h.page.strokes.single.id, 'far');
     });
   });
 }

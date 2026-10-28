@@ -9,9 +9,13 @@ import 'convert_layout.dart';
 /// One state of a text box auto-convert made: the box as it was, and where
 /// the handwriting it replaced ended.
 class AutoBoxVersion {
-  const AutoBoxVersion(this.item, this.inkRight, this.inkBaseline);
+  const AutoBoxVersion(this.item, this.inkRight, this.inkBaseline, {this.inkXHeight});
 
   final TextItem item;
+
+  /// x-height of the handwriting the box replaced (its last line), when
+  /// known: how far above it an i-dot written later may land.
+  final double? inkXHeight;
 
   /// Right edge of the handwriting the box replaced (page points) and the
   /// height of its baseline there. The next line is compared with these, not

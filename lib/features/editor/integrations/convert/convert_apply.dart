@@ -28,8 +28,9 @@ class PageConversion {
   /// (auto-convert appending a line to the previous box): `(before, after)`.
   final List<(TextItem, TextItem)> replacements;
 
-  /// True when applying this changes the page at all.
-  bool get hasChanges => items.isNotEmpty || replacements.isNotEmpty;
+  /// True when applying this changes the page at all (late dots only take
+  /// strokes away).
+  bool get hasChanges => items.isNotEmpty || replacements.isNotEmpty || strokeIds.isNotEmpty;
 }
 
 /// What a finished conversion did.

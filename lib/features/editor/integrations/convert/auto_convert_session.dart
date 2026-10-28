@@ -10,6 +10,7 @@ import '../../../../recognition/stroke_grouping.dart' show RecognizedLine;
 import '../../editor_controller.dart';
 import '../../editor_tool.dart';
 import '../../stroke_events.dart';
+import 'auto_convert_dots.dart';
 import 'auto_convert_merge.dart';
 import 'convert_apply.dart';
 import 'convert_build.dart';
@@ -131,6 +132,10 @@ class AutoConvertSession with WidgetsBindingObserver {
   /// read again (with the rest of their line) only when new strokes are
   /// written on the same line.
   final Map<String, Set<String>> _held = {};
+
+  /// Held strokes that are only dots away from any text: they wait like the
+  /// held lines, but do not count as unsure lines ([keptLines]).
+  final Set<String> _quietHeld = {};
 
   /// Lines kept as handwriting because auto-convert was not sure what they
   /// say, since the user last looked ([clearKept]); a line that is read
@@ -438,14 +443,50 @@ class AutoConvertSession with WidgetsBindingObserver {
       final current = {for (final s in page.strokes) s.id: s};
       final typeIt = <String>{};
       final before = reheld[pageId] ?? const <String>{};
-      bool wasHeld(PlannedLine l) => l.strokeIds.any(before.contains);
+      bool wasHeld(PlannedLine l) =>
+          l.strokeIds.any((id) => before.contains(id) && !_quietHeld.contains(id));
+      final ruling = PageRuling.of(meta.paper, meta.width, meta.height,
+          isPdf: meta.isPdf);
+      // Late dots (an i-dot, a t-bar or a full stop written after the word
+      // was typed) go with the text they finish (auto_convert_dots.dart).
+      final dotStrokes = <String>{};
+      final marks = <String, String>{}; // box id -> punctuation to add
+      AutoBoxVersion? memoryOf(TextItem live) {
+        for (final b in _boxes[pageId]?.values ?? const <AutoBox>[]) {
+          final v = b.versionOf(live);
+          if (v != null) return v;
+        }
+        return null;
+      }
+
       for (final line in plan.lines) {
         // Strokes that moved or vanished while we were reading: not ours to
         // convert now; they wait for the next pass.
         final fresh = line.strokeIds.every((id) =>
             identical(current[id], originals[pageId]![id]));
+        final dotsOnly = fresh &&
+            onlyDots(line.line.inkStrokes,
+                reference: ruling?.spacing ?? ConvertConfig.fallbackRuling);
+        final late = !dotsOnly
+            ? null
+            : lateDotsTarget(
+                strokes: line.line.inkStrokes,
+                boxes: page.texts,
+                memory: memoryOf,
+                metrics: metrics,
+              );
         if (!fresh) {
           stale.putIfAbsent(pageId, () => []).addAll(line.strokeIds);
+        } else if (late != null) {
+          dotStrokes.addAll(line.strokeIds);
+          final mark = late.mark;
+          if (mark != null) marks.putIfAbsent(late.box.id, () => mark);
+          if (wasHeld(line)) kept--;
+        } else if (dotsOnly) {
+          // Dots on their own are never a text box ("." or "?"): they wait,
+          // quietly, for writing next to them (a bullet, then its text).
+          _held.putIfAbsent(pageId, () => <String>{}).addAll(line.strokeIds);
+          _quietHeld.addAll(line.strokeIds);
         } else if (autoConvertsLine(line, minConfidence: minConfidence)) {
           typeIt.add(line.id);
           if (wasHeld(line)) kept--; // a kept line came through after all
@@ -455,17 +496,19 @@ class AutoConvertSession with WidgetsBindingObserver {
           if (!wasHeld(line)) kept++;
         }
       }
-      if (typeIt.isEmpty) continue;
+      if (typeIt.isEmpty && dotStrokes.isEmpty) continue;
 
-      final laid = layoutPlannedPage(
-        plan: plan,
-        meta: meta,
-        style: style,
-        metrics: metrics,
-        uuid: _uuid,
-        convert: (l) => typeIt.contains(l.id),
-      );
-      if (laid.isEmpty) {
+      final laid = typeIt.isEmpty
+          ? const <LaidOutLine>[]
+          : layoutPlannedPage(
+              plan: plan,
+              meta: meta,
+              style: style,
+              metrics: metrics,
+              uuid: _uuid,
+              convert: (l) => typeIt.contains(l.id),
+            );
+      if (laid.isEmpty && dotStrokes.isEmpty) {
         // Nothing came out (a line without text): leave the ink alone.
         for (final l in plan.lines) {
           if (typeIt.contains(l.id)) _ignored.addAll(l.strokeIds);
@@ -478,9 +521,7 @@ class AutoConvertSession with WidgetsBindingObserver {
       final takenBoxes = <String>{};
       final items = <TextItem>[];
       final replacements = <(TextItem, TextItem)>[];
-      final ids = <String>{};
-      final ruling = PageRuling.of(meta.paper, meta.width, meta.height,
-          isPdf: meta.isPdf);
+      final ids = <String>{...dotStrokes};
       // Text boxes as they will be after this pass, so a new or grown box
       // never covers another (convert_overlap.dart).
       final grownIds = <String>{};
@@ -524,7 +565,7 @@ class AutoConvertSession with WidgetsBindingObserver {
           replacements.add((merge.before, merge.after));
           grownBoxes.putIfAbsent(pageId, () => []).add((
             merge.box,
-            AutoBoxVersion(merge.after, inkRight, inkBaseline),
+              AutoBoxVersion(merge.after, inkRight, inkBaseline, inkXHeight: last.xHeight),
           ));
         } else {
           final item = placeClear(out.item, occupied(),
@@ -532,9 +573,45 @@ class AutoConvertSession with WidgetsBindingObserver {
           placed.add(item);
           items.add(item);
           newBoxes.putIfAbsent(pageId, () => []).add(
-              AutoBox(AutoBoxVersion(item, inkRight, inkBaseline)));
+              AutoBox(AutoBoxVersion(item, inkRight, inkBaseline, inkXHeight: last.xHeight)));
         }
       }
+      // A full stop or comma written late joins its box's text.
+      marks.forEach((boxId, mark) {
+        final at = replacements.indexWhere((r) => r.$1.id == boxId);
+        final live = at >= 0 ? replacements[at].$2 : page.textById(boxId);
+        if (live == null) return;
+        final punctuated = live.copyWith(text: '${live.text.trimRight()}$mark');
+        final natural = metrics.naturalWidth(punctuated) + ConvertConfig.lineSlack;
+        final room = meta.width - ConvertConfig.rightMargin - live.x;
+        final wider = natural > live.width && natural <= room
+            ? punctuated.copyWith(width: natural)
+            : punctuated;
+        final after = wider.copyWith(height: metrics.heightOf(wider));
+        if (at >= 0) {
+          replacements[at] = (replacements[at].$1, after);
+          // The box grew this pass too: remember it with the mark.
+          final grown = grownBoxes[pageId] ?? const [];
+          for (var i = 0; i < grown.length; i++) {
+            final (b, v) = grown[i];
+            if (v.item.id == boxId) {
+              grown[i] = (b, AutoBoxVersion(after, v.inkRight, v.inkBaseline, inkXHeight: v.inkXHeight));
+            }
+          }
+          return;
+        }
+        replacements.add((live, after));
+        final memory = memoryOf(live);
+        for (final b in _boxes[pageId]?.values ?? const <AutoBox>[]) {
+          if (b.versionOf(live) != null && memory != null) {
+            grownBoxes.putIfAbsent(pageId, () => []).add((
+              b,
+              AutoBoxVersion(after, memory.inkRight, memory.inkBaseline, inkXHeight: memory.inkXHeight),
+            ));
+            break;
+          }
+        }
+      });
       converted.addAll(ids);
       conversions.add(PageConversion(
         pageId: pageId,
@@ -547,6 +624,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     // Strokes that were converted are ignored from now on, so an undo puts
     // the ink back for good.
     _ignored.addAll(converted);
+    _quietHeld.removeAll(converted);
     if (stale.isNotEmpty) _restore(stale, reheld);
     keptLines.value = kept < 0 ? 0 : kept;
     if (conversions.isEmpty) return;
