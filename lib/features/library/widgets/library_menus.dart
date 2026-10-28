@@ -17,7 +17,7 @@ List<PopupMenuEntry<NotebookAction>> notebookMenuEntries(
         ? _item(NotebookAction.favorite, Icons.star, 'Remove from favourites')
         : _item(NotebookAction.favorite, Icons.star_outline, 'Add to favourites'),
     _item(NotebookAction.tags, Icons.sell_outlined, 'Tags…'),
-    _item(NotebookAction.cover, Icons.palette_outlined, 'Cover colour…'),
+    _item(NotebookAction.cover, Icons.palette_outlined, 'Cover…'),
     _item(NotebookAction.move, Icons.drive_file_move_outlined,
         'Move to folder…'),
     _item(NotebookAction.duplicate, Icons.copy_all_outlined, 'Duplicate'),

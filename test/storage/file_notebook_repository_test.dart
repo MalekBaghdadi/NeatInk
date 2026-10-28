@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/document/cover_design.dart';
 import 'package:neatink/document/notebook_meta.dart';
 import 'package:neatink/document/page_content.dart';
 import 'package:neatink/document/page_items.dart';
@@ -730,6 +731,18 @@ void main() {
       // Next launch: the page is gone for good, so is its picture.
       await relaunch().saveMeta(meta);
       expect(await assetFiles(), isEmpty);
+    });
+
+    test('the cover photo is in use even though no page shows it', () async {
+      final photo = await repo.addAssetBytes(meta.id, Uint8List.fromList([7]), 'jpg');
+      final old = await repo.addAssetBytes(meta.id, Uint8List.fromList([8]), 'jpg');
+      final covered = meta.copyWith(cover: CoverDesign.photo(photo));
+      await relaunch().saveMeta(covered);
+      expect(await assetFiles(), ['assets/$photo'], reason: 'the replaced photo goes');
+      final again = relaunch();
+      expect((await again.loadMeta(meta.id))!.cover, CoverDesign.photo(photo));
+      expect(await File(again.assetPath(meta.id, photo)).readAsBytes(), [7]);
+      expect(old, isNot(photo));
     });
 
     test('saveThumbnail writes thumb.png atomically', () async {

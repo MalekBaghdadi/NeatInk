@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../app/providers.dart';
+import '../../document/cover_design.dart';
 import '../../document/notebook_meta.dart';
 import '../../document/paper.dart';
 import '../../storage/notebook_repository.dart';
@@ -171,10 +172,13 @@ class LibraryController extends AsyncNotifier<LibraryState> {
   /// Creates a blank notebook where the user is looking: in the current
   /// folder, and marked favourite / tagged when a favourites / tag view is
   /// shown, so it appears in that view.
+  ///
+  /// [cover] (from the cover sheet) wins over [coverColor].
   Future<NotebookMeta> createNotebook({
     required String title,
     required Paper paper,
     int? coverColor,
+    CoverChoice? cover,
   }) =>
       _serial(() async {
         final view = state.value;
@@ -182,9 +186,14 @@ class LibraryController extends AsyncNotifier<LibraryState> {
           title: title,
           paper: paper,
           folderId: _targetFolder(view),
-          coverColor: coverColor,
+          coverColor: cover?.color ?? coverColor,
         );
-        final meta = await _adoptIntoView(created, view?.filter);
+        var meta = await _adoptIntoView(created, view?.filter);
+        if (cover != null && cover.design.kind != CoverKind.preview) {
+          // Safe to save: the notebook was created a moment ago by this queue.
+          meta = meta.copyWith(cover: await _storeCover(meta.id, cover));
+          await _repo.saveMeta(meta);
+        }
         _upsert(meta);
         return meta;
       });
@@ -238,6 +247,28 @@ class LibraryController extends AsyncNotifier<LibraryState> {
 
   Future<void> setCoverColor(String notebookId, int color) =>
       _editMeta(notebookId, (m) => m.copyWith(coverColor: color));
+
+  /// Sets the cover colour and design; a newly chosen photo is stored in
+  /// the notebook's assets first.
+  Future<void> setCover(String notebookId, CoverChoice cover) =>
+      _serial(() async {
+        if (await _repo.loadMeta(notebookId) == null) {
+          _removeNotebook(notebookId);
+          return;
+        }
+        final design = await _storeCover(notebookId, cover);
+        await _editMetaNow(notebookId,
+            (m) => m.copyWith(coverColor: cover.color, cover: design));
+      });
+
+  /// The design to save for [cover]: a new photo becomes a notebook asset.
+  Future<CoverDesign> _storeCover(String notebookId, CoverChoice cover) async {
+    final bytes = cover.photoBytes;
+    if (bytes == null) return cover.design;
+    final asset =
+        await _repo.addAssetBytes(notebookId, bytes, cover.photoExtension);
+    return CoverDesign.photo(asset);
+  }
 
   /// Moves a notebook into [folderId] (null = library root). An unknown
   /// folder id moves it to the root rather than hiding it.

@@ -1,26 +1,36 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../../document/cover_design.dart';
 import '../../../document/notebook_meta.dart';
+import '../../../render/cover_painter.dart';
 import '../../../render/paper_painter.dart';
 import 'stamped_file_image.dart';
 
 /// Width / height of a notebook cover in the grid.
 const double notebookCoverAspect = 3 / 4;
 
-/// A notebook cover: the cover colour with a spine on the left and the
-/// first page inset on it. The page shows `thumb.png` when there is one
-/// (refreshed through [thumbnailStamp]), otherwise the page's paper.
+/// A notebook cover with a spine on the left. What it shows follows the
+/// notebook's [CoverDesign]: the cover colour with a pattern or a science
+/// illustration, a photo ([coverPhotoPath]), or (the default, "page
+/// preview") the colour as a frame around the first page, which shows
+/// `thumb.png` when there is one (refreshed through [thumbnailStamp]),
+/// otherwise the page's paper.
 class NotebookCover extends StatelessWidget {
   const NotebookCover({
     super.key,
     required this.notebook,
     this.thumbnailPath,
     this.thumbnailStamp,
+    this.coverPhotoPath,
   });
 
   final NotebookMeta notebook;
+
+  /// The cover photo's file, for a [CoverKind.photo] design.
+  final String? coverPhotoPath;
 
   /// Path of `thumb.png`; only used when [thumbnailStamp] is non-null.
   final String? thumbnailPath;
@@ -31,6 +41,42 @@ class NotebookCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cover = Color(notebook.coverColor);
+    final design = notebook.cover;
+    final Widget face;
+    if (design.kind == CoverKind.preview) {
+      face = Positioned.fill(
+        left: 18,
+        top: 10,
+        right: 10,
+        bottom: 10,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            borderRadius: BorderRadius.all(Radius.circular(3)),
+            boxShadow: [
+              BoxShadow(color: Color(0x40000000), blurRadius: 3),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: _CoverPage(
+              notebook: notebook,
+              thumbnailPath: thumbnailPath,
+              thumbnailStamp: thumbnailStamp,
+            ),
+          ),
+        ),
+      );
+    } else {
+      face = Positioned.fill(
+        child: ClipRRect(
+          borderRadius: const BorderRadius.horizontal(
+            left: Radius.circular(4),
+            right: Radius.circular(10),
+          ),
+          child: CoverFace(design: design, color: cover, photoPath: coverPhotoPath),
+        ),
+      );
+    }
     return DecoratedBox(
       decoration: BoxDecoration(
         color: cover,
@@ -46,6 +92,7 @@ class NotebookCover extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          if (design.kind != CoverKind.preview) face,
           // Spine: a darker band with a highlight line, like a bound edge.
           const Positioned(
             left: 0,
@@ -62,33 +109,47 @@ class NotebookCover extends StatelessWidget {
               ),
             ),
           ),
-          Positioned.fill(
-            left: 18,
-            top: 10,
-            right: 10,
-            bottom: 10,
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                borderRadius: BorderRadius.all(Radius.circular(3)),
-                boxShadow: [
-                  BoxShadow(color: Color(0x40000000), blurRadius: 3),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: _CoverPage(
-                  notebook: notebook,
-                  thumbnailPath: thumbnailPath,
-                  thumbnailStamp: thumbnailStamp,
-                ),
-              ),
-            ),
-          ),
+          if (design.kind == CoverKind.preview) face,
           if (notebook.isPdf)
             const Positioned(left: 24, bottom: 16, child: _PdfBadge()),
         ],
       ),
     );
+  }
+}
+
+/// The face of a designed cover (no frame, no spine): the colour with its
+/// pattern or illustration, or the photo (the colour while it loads or when
+/// the file is gone). Also used by the cover picker's previews.
+class CoverFace extends StatelessWidget {
+  const CoverFace({super.key, required this.design, required this.color, this.photoPath, this.photoBytes});
+
+  final CoverDesign design;
+  final Color color;
+
+  /// The photo of a [CoverKind.photo] design: a file, or bytes not stored
+  /// yet (the picker's preview).
+  final String? photoPath;
+  final Uint8List? photoBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    final painted = CustomPaint(painter: CoverPainter(design: design, color: color), child: const SizedBox.expand());
+    if (design.kind != CoverKind.photo) return painted;
+    final bytes = photoBytes, path = photoPath;
+    final ImageProvider? image = bytes != null ? MemoryImage(bytes) : (path != null ? FileImage(File(path)) : null);
+    if (image == null) return painted;
+    return LayoutBuilder(builder: (context, constraints) {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final w = constraints.maxWidth.isFinite ? (constraints.maxWidth * dpr).round().clamp(1, 2048) : null;
+      return Image(
+        image: ResizeImage.resizeIfNeeded(w, null, image),
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, _, _) => painted,
+      );
+    });
   }
 }
 

@@ -289,7 +289,8 @@ class FileNotebookRepository implements NotebookRepository {
       // Cleanup is best effort: the metadata is already safely written.
       await _bestEffort(() => _removeOrphanPages(id, pageIds));
       await _bestEffort(() => _pruneSearchData(id, pageIds));
-      await _bestEffort(() => _removeUnusedAssets(id, meta.pages));
+      await _bestEffort(
+          () => _removeUnusedAssets(id, meta.pages, cover: meta.cover.photo));
       await _bestEffort(() => AtomicFile.removeStrayTemps(Directory(_dir(id))));
     });
   }
@@ -539,11 +540,12 @@ class FileNotebookRepository implements NotebookRepository {
   /// Deletes asset files that no page references, when that is provably
   /// safe: every page in [pages] must parse (otherwise an unreadable page
   /// might still reference them), and assets used during this session are
-  /// kept for undo/redo.
+  /// kept for undo/redo. The [cover] photo is in use too.
   Future<void> _removeUnusedAssets(
     String notebookId,
-    List<PageMeta> pages,
-  ) async {
+    List<PageMeta> pages, {
+    String? cover,
+  }) async {
     final dir = Directory(_assetsDir(notebookId));
     if (!await dir.exists()) return;
     await AtomicFile.removeStrayTemps(dir);
@@ -558,7 +560,7 @@ class FileNotebookRepository implements NotebookRepository {
     if (candidates.isEmpty) return;
 
     final refsByPage = _assetRefs.putIfAbsent(notebookId, () => {});
-    final referenced = <String>{};
+    final referenced = <String>{?cover};
     for (final page in pages) {
       var refs = refsByPage[page.id];
       if (refs == null) {

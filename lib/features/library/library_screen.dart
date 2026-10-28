@@ -70,6 +70,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       state: s,
       now: now,
       thumbnailPathFor: repo.thumbnailPath,
+      assetPathFor: repo.assetPath,
       callbacks: LibraryContentCallbacks(
         onOpenNotebook: (nb) => _actions.openNotebook(nb.id),
         onToggleFavorite: _actions.toggleFavorite,
@@ -120,7 +121,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 children: [
                   SizedBox(
                     width: librarySidePanelWidth,
-                    child: ColoredBox(
+                    // A Material (not a ColoredBox) so the list tiles' selection
+                    // colour and splashes show.
+                    child: Material(
                       color: scheme.surfaceContainerLow,
                       child: panel(inDrawer: false),
                     ),

@@ -53,6 +53,7 @@ class LibraryContent extends StatelessWidget {
     required this.now,
     required this.thumbnailPathFor,
     required this.callbacks,
+    this.assetPathFor,
   });
 
   final LibraryState state;
@@ -62,6 +63,9 @@ class LibraryContent extends StatelessWidget {
 
   /// Path of a notebook's `thumb.png`.
   final String Function(String notebookId) thumbnailPathFor;
+
+  /// Path of a notebook's asset (the cover photo); null: no photos shown.
+  final String Function(String notebookId, String asset)? assetPathFor;
   final LibraryContentCallbacks callbacks;
 
   static const EdgeInsets _padding = EdgeInsets.fromLTRB(24, 12, 24, 0);
@@ -165,6 +169,7 @@ class LibraryContent extends StatelessWidget {
                   now: now,
                   thumbnailPath: thumbnailPathFor(nb.id),
                   thumbnailStamp: state.thumbnailStamps[nb.id],
+                  coverPhotoPath: nb.cover.photo == null ? null : assetPathFor?.call(nb.id, nb.cover.photo!),
                   onOpen: () => callbacks.onOpenNotebook(nb),
                   onToggleFavorite: () => callbacks.onToggleFavorite(nb),
                   onAction: (a) => callbacks.onNotebookAction(nb, a),

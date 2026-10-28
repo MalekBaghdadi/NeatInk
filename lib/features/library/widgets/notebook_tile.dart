@@ -21,6 +21,7 @@ class NotebookTile extends StatefulWidget {
     required this.onAction,
     this.thumbnailPath,
     this.thumbnailStamp,
+    this.coverPhotoPath,
   });
 
   final NotebookMeta notebook;
@@ -32,6 +33,9 @@ class NotebookTile extends StatefulWidget {
   final ValueChanged<NotebookAction> onAction;
   final String? thumbnailPath;
   final int? thumbnailStamp;
+
+  /// File of the cover photo, when the notebook has one.
+  final String? coverPhotoPath;
 
   @override
   State<NotebookTile> createState() => _NotebookTileState();
@@ -79,6 +83,7 @@ class _NotebookTileState extends State<NotebookTile> {
                     notebook: nb,
                     thumbnailPath: widget.thumbnailPath,
                     thumbnailStamp: widget.thumbnailStamp,
+                    coverPhotoPath: widget.coverPhotoPath,
                   ),
                 ),
               ),

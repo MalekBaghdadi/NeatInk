@@ -1,4 +1,5 @@
 import '../ink/stroke.dart' show colorFromHex, colorToHex, enumByName;
+import 'cover_design.dart';
 import 'paper.dart';
 
 enum NotebookKind { blank, pdf }
@@ -103,6 +104,7 @@ class NotebookMeta {
     this.tags = const [],
     this.favorite = false,
     this.coverColor = defaultCoverColor,
+    this.cover = const CoverDesign.preview(),
     this.lastPageIndex = 0,
   });
 
@@ -125,6 +127,7 @@ class NotebookMeta {
       coverColor: j['coverColor'] == null
           ? defaultCoverColor
           : colorFromHex(j['coverColor'] as String),
+      cover: CoverDesign.fromJson(j['cover']),
       lastPageIndex: (j['lastPageIndex'] as num?)?.toInt() ?? 0,
     );
   }
@@ -136,7 +139,8 @@ class NotebookMeta {
   static const List<int> coverColors = [
     0xFF3F51B5, 0xFF1E88E5, 0xFF00897B, 0xFF43A047, 0xFFF9A825,
     0xFFEF6C00, 0xFFE53935, 0xFFD81B60, 0xFF8E24AA, 0xFF6D4C41,
-    0xFF546E7A, 0xFF263238,
+    0xFF546E7A, 0xFF263238, 0xFF1A237E, 0xFF880E4F, 0xFF00695C,
+    0xFF5E35B1,
   ];
 
   final String id;
@@ -154,6 +158,9 @@ class NotebookMeta {
   final List<String> tags;
   final bool favorite;
   final int coverColor;
+
+  /// What the cover shows (see [CoverDesign]); [coverColor] is its colour.
+  final CoverDesign cover;
 
   /// Page the editor reopens at.
   final int lastPageIndex;
@@ -175,6 +182,7 @@ class NotebookMeta {
     List<String>? tags,
     bool? favorite,
     int? coverColor,
+    CoverDesign? cover,
     int? lastPageIndex,
   }) =>
       NotebookMeta(
@@ -189,6 +197,7 @@ class NotebookMeta {
         tags: tags ?? this.tags,
         favorite: favorite ?? this.favorite,
         coverColor: coverColor ?? this.coverColor,
+        cover: cover ?? this.cover,
         lastPageIndex: lastPageIndex ?? this.lastPageIndex,
       );
 
@@ -205,6 +214,7 @@ class NotebookMeta {
         'tags': tags,
         'favorite': favorite,
         'coverColor': colorToHex(coverColor),
+        if (cover.kind != CoverKind.preview) 'cover': cover.toJson(),
         'lastPageIndex': lastPageIndex,
       };
 }

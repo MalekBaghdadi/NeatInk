@@ -5,8 +5,10 @@ import '../../app/providers.dart';
 import '../../document/notebook_meta.dart';
 import '../../pdf/pdf_import.dart';
 import '../settings/settings_controller.dart';
+import '../editor/integrations/text_images/image_source.dart';
 import 'dialogs/color_dialog.dart';
 import 'dialogs/confirm_dialog.dart';
+import 'dialogs/cover_picker.dart';
 import 'dialogs/folder_picker_dialog.dart';
 import 'dialogs/name_dialog.dart';
 import 'dialogs/new_notebook_sheet.dart';
@@ -86,6 +88,7 @@ class LibraryActions {
       // Rotate through the palette so new notebooks are easy to tell apart.
       defaultCoverColor: NotebookMeta
           .coverColors[notebooks.length % NotebookMeta.coverColors.length],
+      pickImage: ref.read(imagePickerProvider),
     );
     if (request == null || !context.mounted) return;
     final meta = await _attempt(
@@ -93,6 +96,7 @@ class LibraryActions {
         title: request.title,
         paper: request.paper,
         coverColor: request.coverColor,
+        cover: request.cover,
       ),
       "Couldn't create the notebook.",
     );
@@ -186,14 +190,18 @@ class LibraryActions {
             "Couldn't save the tags.");
 
       case NotebookAction.cover:
-        final color = await showColorDialog(
+        final photo = nb.cover.photo;
+        final choice = await showCoverPicker(
           context,
-          title: 'Cover colour',
-          colors: NotebookMeta.coverColors,
-          selected: nb.coverColor,
+          design: nb.cover,
+          color: nb.coverColor,
+          photoPath: photo == null
+              ? null
+              : ref.read(notebookRepositoryProvider).assetPath(nb.id, photo),
+          pickImage: ref.read(imagePickerProvider),
         );
-        if (color == null || !context.mounted) return;
-        await _attempt(() => _controller.setCoverColor(nb.id, color),
+        if (choice == null || !context.mounted) return;
+        await _attempt(() => _controller.setCover(nb.id, choice),
             "Couldn't change the cover.");
 
       case NotebookAction.move:
