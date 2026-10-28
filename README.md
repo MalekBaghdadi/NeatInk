@@ -28,13 +28,15 @@ and copy it to the tablet.
 
 - Notebooks with blank, lined, grid, dotted, Cornell and music pages, in white, cream or dark.
 - Pen, pencil and fountain styles, highlighter, eraser (whole stroke or partial), lasso, shapes that snap straight when you hold the pen still.
+- **Tidy highlighter**: a wobbly highlight over a line of writing, typed text or PDF text becomes a neat straight band over that line (switch it off in Settings; "Restore original" in the lasso menu brings the drawn one back).
 - **Convert to text**: tap Convert and the app reads your handwriting a whole line at a time (on the tablet, nothing is uploaded), shows what it understood so you can fix any word, and retypes it on the lines in a font you choose (18 fonts: school-friendly, handwriting-style, serif, sans and more). One undo gives your handwriting back.
 - **Spelling suggestions**: misspellings, missing apostrophes (isnt → isn't) and capitals are suggested in the review sheet; tap to accept, or switch on "Fix spelling automatically". Names you taught it are never changed.
-- **Auto-convert**: switch it on and your writing turns into text by itself a moment after you lift the pen (you choose how long, 1 to 10 seconds, so you can pause mid-sentence). A line it can't read stays handwriting, and a small note offers to review it.
+- **Auto-convert**: switch it on and your writing turns into text by itself a moment after you lift the pen (you choose how long, 1 to 10 seconds, so you can pause mid-sentence). A line it can't read stays handwriting, and a small note offers to review it. Writing more after the typed text carries on the same sentence, right beside it.
 - **Knows your subjects**: neuroscience, psychology, biology, physics and chemistry terms and acronyms (OCD, ADHD, GABA) are part of its word list.
 - **My words**: teach it names (like family names); it also learns from the words you correct.
 - Text boxes and pictures on any page.
-- Import a PDF, write on it, and export a new PDF with your writing on it.
+- Import a PDF, write on it, and export a new PDF with your writing on it. Add lined **margins** beside the PDF pages for notes (when importing, or later from the editor menu); exports keep them, and the PDF's text stays selectable.
+- **Covers**: 16 colours, patterns, science pictures (brain, neuron, DNA, cell, atom, periodic table, planets, galaxy and more) or your own photo.
 - Folders, tags, favourites, search, dark mode and an optional PIN lock.
 
 ## Private by design

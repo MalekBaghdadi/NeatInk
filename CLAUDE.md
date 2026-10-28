@@ -90,9 +90,12 @@ Key rules:
   "id": "uuid", "title": "Physics", "createdAt": "...", "updatedAt": "...",
   "kind": "blank | pdf",
   "defaultPaper": { "type": "blank | lined | grid", "spacingPt": 26 },
-  "pages": [ { "id": "uuid", "width": 595, "height": 842, "paper": {...}, "pdfPageIndex": null } ]
+  "pages": [ { "id": "uuid", "width": 595, "height": 842, "paper": {...}, "pdfPageIndex": null,
+               "marginLeft": 0, "marginRight": 0 } ],
+  "cover": { "kind": "preview | pattern | art | photo", "pattern": "...", "art": "...", "photo": "<asset file>" }
 }
 ```
+- `marginLeft` / `marginRight` (optional, v1.4.0): writing space beside a PDF page; `width` includes them and the PDF page sits between (`PageMeta.contentLeft/contentWidth`). `cover` (optional) is the library cover design; a `photo` cover is a file in `assets/` that the unused-asset cleanup keeps.
 
 Stroke (in `pages/<pageId>.json`)
 ```json
@@ -107,7 +110,7 @@ Stroke (in `pages/<pageId>.json`)
 }
 ```
 - `raw` = exactly what the pen produced. It's never modified, except by lasso move/resize, which transforms `raw` and `points` together.
-- `points` = what's displayed (equal to `raw` unless snapped to a shape). Old files may contain `wordId` / `tidy` keys; they are ignored.
+- `points` = what's displayed (equal to `raw` unless snapped to a shape or tidied as a highlight). `rawSize` (optional) is the drawn width of a tidied highlight, for "Restore original". Old files may contain `wordId` / `tidy` keys; they are ignored.
 - Include a `version` field and write a migration stub now.
 - **Autosave**: debounce 1.5 s after the last change, plus save on app pause (`AppLifecycleState.paused`). Encode JSON off the UI thread (`compute`/`Isolate.run`) if a page has more than ~2,000 strokes.
 
@@ -290,6 +293,12 @@ _Last updated 2026-10-28 by Claude (session 7). Keep this section current: updat
 - **Auto-convert** "sometimes does not convert": a line below the confidence gate was skipped silently and never read again, and the gate (0.5) held back every one of Mariam's lines, even perfectly read ones. Now: gate 0.25 (`ConvertConfig.autoMinConfidence`), an unsure line is *held* and read again as a whole when more is written on the same line, and a "Not sure about N lines: kept as handwriting · Review" chip (6 s, opens the review sheet). New setting **Wait before converting** (`AppSettings.autoConvertDelayMs`, 1-10 s, default 2 s; Settings > Writing).
 - **System bars**: Android 15+ draws the app edge to edge and `showModalBottomSheet(useSafeArea: true)` does not guard the bottom, so the Convert sheet's button, the new-notebook sheet's Create button, the page pill, the page grid and the "New" menu sat under the navigation bar. `lib/app/insets.dart` (`bottomSafeSpace`, `withBottomSafeSpace`, `menuSafePadding`): use it for anything new at the bottom edge.
 - Version **1.4.0+6** (pubspec + `AppInfo`). Not verified on the tablet: everything above; the wider line images cost the model up to 2.5x more width per line (decode measured 15-125 ms/line in debug JIT on the desktop).
+- **Later in session 7 (owner request, before releasing 1.4.0)**:
+  - *Auto-convert gap*: writing just after already-typed text now joins that text box (gap measured from the typed text's end, `auto_convert_merge.dart`), instead of starting a new box with a big space.
+  - *Tidy highlighter* (Settings > Writing, on by default): a highlight over handwriting, typed text or PDF text becomes a straight band fitted to that line (`tools/highlight_tidy.dart`, `integrations/highlight/`); `raw` and the drawn width (`rawSize`) are kept, lasso "Restore original" undoes it. PDF word boxes come from pdfrx (`PdfEngine.words`).
+  - *Covers*: library menu "Cover…" and the new-notebook sheet open a cover sheet (16 colours, 9 patterns, 16 science pictures in 4 subjects drawn in code in `render/cover_painter.dart`, or a photo normalised to 1200 px).
+  - *PDF margins*: None / Narrow (25% of the PDF page width per side) / Wide (50%), asked at import (last choice remembered in `AppSettings.pdfMargins`) and changeable from the editor menu ("PDF margins…", one undo step, notes move with their page, asks before hiding notes). Export grows the imported page's visible box on the displayed sides (`PdfMargins.kt`, `PdfCoords.withSideMargins`, mirrored and tested in `pdf_coords.dart`) and clips the original content to its old box; verified on the JVM with Apache PDFBox 2.0.32 + PDFium render for 0/90/270 degree pages and an offset CropBox, NOT on the device (PdfBox-Android).
+  - Full suite: 1272 pass, 2 skipped. Not verified on the tablet: all of the above.
 - **Next (owner request)**: grammar/spelling autocorrect like the iPad: corrections applied automatically, the corrected word marked so a tap restores the original, with an on/off setting. Today's pieces: `TextPolisher` suggestions, "Fix spelling automatically" (`autoFixSpelling`), undo chips in the review sheet.
 
 ## Session 6 (2026-10-28): v1.3.0 whole-line recognition
