@@ -11,6 +11,7 @@ import 'settings_controller.dart';
 import 'widgets/backup_settings.dart';
 import 'widgets/paper_defaults_editor.dart';
 import 'widgets/security_settings.dart';
+import 'widgets/diagnostics_tile.dart';
 import 'widgets/kept_corrections_settings.dart';
 import 'widgets/settings_section.dart';
 
@@ -262,6 +263,7 @@ class _AboutSection extends StatelessWidget {
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => TipsScreen.open(context),
         ),
+        const DiagnosticsTile(),
         const ListTile(
           leading: Icon(Icons.wifi_off_rounded),
           title: Text(AppInfo.offlineStatement),

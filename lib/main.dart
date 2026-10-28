@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'app/bootstrap.dart';
+import 'app/diagnostics.dart';
 import 'app/error_views.dart';
 import 'features/editor/default_integrations.dart';
 import 'features/editor/editor_integrations.dart';
@@ -14,6 +15,7 @@ import 'render/font_licenses.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  installDiagnostics();
   installErrorHandlers();
   registerFontLicenses();
   registerRecognitionLicenses();

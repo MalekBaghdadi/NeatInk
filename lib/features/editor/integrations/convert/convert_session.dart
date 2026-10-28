@@ -210,6 +210,7 @@ class ConvertSession extends ChangeNotifier {
       } on ConvertCancelled {
         return;
       } on HtrException catch (e) {
+        debugPrint('NeatInk: reading handwriting failed: $e');
         if (run != _run || _closed) return;
         _fail(e.userMessage);
         return;

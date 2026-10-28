@@ -63,8 +63,10 @@ Future<void> runPdfExportFlow(
   } on PdfExportCancelledException {
     exported = null;
   } on PdfExportException catch (e) {
+    debugPrint('NeatInk: PDF export failed: ${e.code}: ${e.message}');
     failure = e.userMessage;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('NeatInk: PDF export failed: $e\n$st');
     failure = 'The PDF could not be exported.';
   } finally {
     if (navigator.mounted) navigator.pop(); // The progress dialog.

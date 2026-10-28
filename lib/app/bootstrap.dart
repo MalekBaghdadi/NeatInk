@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../storage/file_notebook_repository.dart';
 import '../storage/notebook_repository.dart';
+import 'diagnostics.dart';
 import 'error_views.dart';
 import 'providers.dart';
 
@@ -50,13 +51,18 @@ class AppServices {
       ];
 }
 
-/// Routes uncaught errors to the debug log only. Nothing is reported
-/// anywhere: NeatInk has no crash reporting and nothing leaves the device.
+/// Routes uncaught errors to the debug log and the on-device diagnostics
+/// log ([appDiagnostics]). Nothing is reported anywhere: NeatInk has no
+/// crash reporting and nothing leaves the device unless the user shares it.
 ///
 /// In release builds a widget that fails to build shows a short notice
 /// ([releaseErrorWidget]) instead of a grey box.
 void installErrorHandlers() {
-  FlutterError.onError = FlutterError.dumpErrorToConsole;
+  FlutterError.onError = (details) {
+    FlutterError.dumpErrorToConsole(details);
+    appDiagnostics.record('Flutter error: ${details.exceptionAsString()}'
+        '${details.context == null ? '' : '\n${details.context}'}\n${details.stack ?? ''}');
+  };
   PlatformDispatcher.instance.onError = (error, stack) {
     debugPrint('NeatInk: uncaught error: $error\n$stack');
     // Handled: keep the app running rather than letting the engine treat

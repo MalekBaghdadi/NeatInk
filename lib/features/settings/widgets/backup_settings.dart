@@ -89,8 +89,10 @@ Future<void> runBackup(BuildContext context, WidgetRef ref) async {
     path = await service.create(appData,
         onProgress: (done, total) => progress.value = (done, total));
   } on BackupException catch (e) {
+    debugPrint('NeatInk: backup or restore failed: $e');
     failure = e.message;
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('NeatInk: backup or restore failed: $e\n$st');
     failure = 'The backup could not be made.';
   } finally {
     if (navigator.mounted) navigator.pop();
@@ -112,8 +114,10 @@ Future<void> runBackup(BuildContext context, WidgetRef ref) async {
       tell('The backup was not saved.');
     }
   } on BackupException catch (e) {
+    debugPrint('NeatInk: backup or restore failed: $e');
     tell(e.message);
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('NeatInk: backup or restore failed: $e\n$st');
     tell('The backup could not be saved.');
   } finally {
     await service.discard(path);
@@ -138,7 +142,8 @@ Future<void> runRestore(BuildContext context, WidgetRef ref) async {
   final String? path;
   try {
     path = await service.pick();
-  } catch (_) {
+  } catch (e, st) {
+    debugPrint('NeatInk: backup or restore failed: $e\n$st');
     tell('The file could not be opened.');
     return;
   }
@@ -158,8 +163,10 @@ Future<void> runRestore(BuildContext context, WidgetRef ref) async {
       info = await service.inspect(path);
       local = await repo.listNotebooks();
     } on BackupException catch (e) {
+      debugPrint('NeatInk: backup or restore failed: $e');
       failure = e.message;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('NeatInk: backup or restore failed: $e\n$st');
       failure = 'The backup could not be read.';
     } finally {
       if (navigator.mounted) navigator.pop();
@@ -219,9 +226,11 @@ Future<void> runRestore(BuildContext context, WidgetRef ref) async {
         if (look != null) convertStyle.save(look);
       }
     } on BackupException catch (e) {
+      debugPrint('NeatInk: backup or restore failed: $e');
       tell(e.message);
       return;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('NeatInk: backup or restore failed: $e\n$st');
       tell('The backup could not be restored.');
       return;
     } finally {
