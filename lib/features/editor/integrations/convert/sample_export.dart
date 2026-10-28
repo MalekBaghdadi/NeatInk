@@ -47,9 +47,11 @@ class SampleLineInput {
 ///   (`raw` is what the model alone read there);
 /// * `baselineSlope` and `xHeight` of the line (page points), `bounds`
 ///   `[left, top, right, bottom]` of its ink;
-/// * `images`: `{width, height, scale, strokeWidthPx, originX, angle, png}`,
-///   the grey picture the model was given as base64 PNG (the whole line, a
-///   fixed height of 48 pixels; several only for very wide lines);
+/// * `images`: `{width, height, scale, scaleX, strokeWidthPx, originX, angle,
+///   png}`, the grey picture the model was given as base64 PNG (the whole
+///   line, a fixed height of 48 pixels; several only for very wide lines;
+///   `scaleX` is the horizontal pixels per point, larger than `scale` when the
+///   line was stretched);
 /// * `strokes`: every pen stroke of the line in writing order,
 ///   `{id, color, size, points: [[x, y, pressure, tMs], ...]}` with the raw
 ///   pen points in page points.
@@ -151,6 +153,7 @@ Map<String, dynamic>? _imageJson(WordImage image) {
     'scale': _round(image.scale, 1000),
     'strokeWidthPx': _round(image.strokeWidthPx, 1000),
     if (image is LineImage) ...{
+      'scaleX': _round(image.scaleX, 1000),
       'originX': _round(image.originX, 100),
       'angle': _round(image.angle, 100000),
     },

@@ -11,6 +11,7 @@ Scripts used to choose and verify the handwriting recognition model (see
 | `lines.py` | The model on several crops stitched into one line image. |
 | `check_app_recipe.py` | Re-implements the app's preprocessing (height 48, no padding, `(v/255-0.5)/0.5`, space folded into the blank, greedy CTC) with the bundled `assets/htr/model.onnx` + `charset.json` and fails (exit 1) when fewer than 5 of 9 crops decode. `--thin` approximates the app's thin strokes, `--dump f.json` writes the probability matrices. |
 | `make_charset.py` | Builds `assets/htr/charset.json` from the model's `inference.yml`. |
+| `make_subject_words.py` | Writes `assets/htr/subject_words.txt`, the study vocabulary merged into the word list (edit the word lists in the script, then run it). |
 
 ## The crops are not in the repository
 

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
+import 'package:neatink/recognition/htr_channel.dart' show recognitionLineImageConfig;
 import 'package:neatink/recognition/stroke_grouping.dart';
 import 'package:neatink/recognition/word_image.dart';
 
@@ -14,11 +15,12 @@ import 'package:neatink/recognition/word_image.dart';
 ///
 /// The owner's samples are personal data: this test is skipped unless
 /// `NEATINK_SAMPLES` (the JSON file) and `NEATINK_DUMP_DIR` (an existing or
-/// creatable folder) are set, and it reads only from that path. Optional:
-/// `NEATINK_PAGE` (default 1), `NEATINK_EXPECT_LINES` (fail unless the page
-/// splits into exactly that many lines) and `NEATINK_DUMP_SWEEP=1` (also
-/// dump every pen width x margin combination, to see how robust a reading
-/// is).
+/// creatable folder) are set, and it reads only from that path. Both sample
+/// formats work (1: `words`, 2: `lines`). Optional: `NEATINK_PAGE` (default:
+/// the page of the first entry), `NEATINK_EXPECT_LINES` (fail unless the page
+/// splits into exactly that many lines) and `NEATINK_DUMP_SWEEP`: `1` also
+/// dumps every pen width x margin combination, `stretch` every horizontal
+/// stretch setting, to see how robust a reading is.
 ///
 /// Files: `line<i>_chunk<j>.png` (dots as written) and
 /// `line<i>_chunk<j>_snap.png` (dots moved onto their stems); the sweep adds
@@ -32,12 +34,15 @@ void main() {
 
   test('dump the line images of a samples file', () async {
     final json = jsonDecode(File(samples!).readAsStringSync()) as Map<String, dynamic>;
-    final page = Platform.environment['NEATINK_PAGE'] ?? '1';
+    // Format 1 lists words, format 2 lines; both carry their strokes.
+    final entries = (json['lines'] ?? json['words']) as List<dynamic>;
+    final page = Platform.environment['NEATINK_PAGE'] ??
+        (entries.isEmpty ? '1' : '${(entries.first as Map<String, dynamic>)['page']}');
     final strokes = <Stroke>[];
-    for (final w in json['words'] as List<dynamic>) {
-      final word = w as Map<String, dynamic>;
-      if ('${word['page']}' != page) continue;
-      for (final s in word['strokes'] as List<dynamic>) {
+    for (final e in entries) {
+      final entry = e as Map<String, dynamic>;
+      if ('${entry['page']}' != page) continue;
+      for (final s in entry['strokes'] as List<dynamic>) {
         strokes.add(_strokeFromSample(s as Map<String, dynamic>));
       }
     }
@@ -62,12 +67,30 @@ void main() {
 
     final dir = Directory(dumpDir!)..createSync(recursive: true);
     const renderer = PolylineWordImageRenderer();
-    final sweep = Platform.environment['NEATINK_DUMP_SWEEP'] == '1';
-    final variants = <({String tag, double px, double margin})>[
-      (tag: '', px: const LineImageConfig().strokePx, margin: const LineImageConfig().marginFrac),
-      if (sweep)
+    final sweep = Platform.environment['NEATINK_DUMP_SWEEP'] ?? '';
+    const base = recognitionLineImageConfig;
+    LineImageConfig variant({double? px, double? margin, double? stretch, double? xhPx, double? maxStretch}) =>
+        LineImageConfig(
+          strokePx: px ?? base.strokePx,
+          marginFrac: margin ?? base.marginFrac,
+          stretchX: stretch ?? base.stretchX,
+          xHeightWidthPx: xhPx ?? base.xHeightWidthPx,
+          maxStretchX: maxStretch ?? base.maxStretchX,
+        );
+    final variants = <({String tag, LineImageConfig config})>[
+      (tag: '', config: variant()),
+      if (sweep == '1')
         for (final px in [1.6, 1.8, 2.0, 2.2, 2.4])
-          for (final m in [0.10, 0.15, 0.20]) (tag: '_px${px}_m${m.toStringAsFixed(2)}', px: px, margin: m),
+          for (final m in [0.10, 0.15, 0.20])
+            (tag: '_px${px}_m${m.toStringAsFixed(2)}', config: variant(px: px, margin: m)),
+      // Horizontal stretch: fixed factors, then x-height targets.
+      if (sweep == 'stretch') ...[
+        for (final f in [1.0, 1.25, 1.5, 1.75, 2.0])
+          (tag: '_fx$f', config: variant(stretch: f, xhPx: 0, maxStretch: 1)),
+        for (final t in [8.0, 10.0, 12.0, 14.0, 16.0])
+          for (final m in [0.15, 0.10])
+            (tag: '_xh${t.round()}_m$m', config: variant(stretch: 1, xhPx: t, maxStretch: 3, margin: m)),
+      ],
     ];
     for (final v in variants) {
       for (final snap in [false, true]) {
@@ -75,7 +98,14 @@ void main() {
           final images = await renderLineImages(
             lines[i],
             renderer: renderer,
-            config: LineImageConfig(snapDots: snap, strokePx: v.px, marginFrac: v.margin),
+            config: LineImageConfig(
+              snapDots: snap,
+              strokePx: v.config.strokePx,
+              marginFrac: v.config.marginFrac,
+              stretchX: v.config.stretchX,
+              xHeightWidthPx: v.config.xHeightWidthPx,
+              maxStretchX: v.config.maxStretchX,
+            ),
           );
           for (var j = 0; j < images.length; j++) {
             final img = images[j];
@@ -84,7 +114,9 @@ void main() {
             if (v.tag.isEmpty) {
               // ignore: avoid_print
               print('$name: ${img.width}x${img.height}, scale ${img.scale.toStringAsFixed(3)}, '
-                  '${img.strokes.length} strokes, moved dots ${img.shifts.where((s) => s != 0).length}');
+                  'x ${(img.scaleX / img.scale).toStringAsFixed(2)}, '
+                  '${img.strokes.length} strokes, moved dots ${img.shifts.where((s) => s != 0).length} '
+                  '(x-heights: ${[for (final s in img.shifts) if (s != 0) (s / lines[i].xHeight).toStringAsFixed(2)]})');
             }
           }
         }

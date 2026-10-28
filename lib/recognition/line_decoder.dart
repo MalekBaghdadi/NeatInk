@@ -101,11 +101,14 @@ class LineDecodeConfig {
     this.unknownBonus = 1.25,
     this.wordBonus = 0.0,
     this.splitBonus = 5.0,
+    this.oovLetterLogProb = -3.0,
+    this.oovFreeLetters = 8,
     this.confusionMass = 0.1,
     this.evidenceMass = 0.3,
     this.confusablePairs = RescoreConfig.defaultConfusablePairs,
     this.acronyms = RescoreConfig.defaultAcronyms,
-    this.cutPeak = 0.85,
+    this.upperAcronyms = defaultUpperAcronyms,
+    this.cutPeak = 0.6,
     this.cutRunProb = 0.3,
     this.maxStretchFrames = 56,
     this.minStretchFrames = 6,
@@ -120,6 +123,7 @@ class LineDecodeConfig {
     this.bonusFloor = 0.5,
     this.firmProb = 0.9,
     this.maxSweeps = 3,
+    this.ascentStarts = 3,
     this.maxAlternatives = 4,
     this.alternativeGap = 6.0,
     this.confidenceLengthExponent = 0.5,
@@ -178,13 +182,29 @@ class LineDecodeConfig {
 
   /// Added per extra word when an UNKNOWN token is split into known words
   /// (`arein` -> `are in`, `thecatandthe` -> `the cat and the`). The prior of an
-  /// unknown string is a single rare-word figure (see [oovRank]) that exists to
-  /// protect clear names; if it were modelled letter by letter it would be far
-  /// lower, and several known words, each paying its own (negative)
-  /// log-probability, would not lose to it. This is the compensation. The
-  /// image still has to show a gap there (the space class costs what the model
-  /// gives it) and every piece must be a known word.
+  /// unknown string is a single rare-word figure (see [oovRank]; up to
+  /// [oovFreeLetters] letters) that exists to protect clear names; if it were
+  /// modelled letter by letter it would be far lower, and several known words,
+  /// each paying its own (negative) log-probability, would not lose to it.
+  /// This is the compensation. The image still has to show a gap there (the
+  /// space class costs what the model gives it) and every piece must be a
+  /// known word.
   final double splitBonus;
+
+  /// An unknown string longer than [oovFreeLetters] letters (and digits) pays
+  /// this many nats per extra letter on top of [oovRank]'s prior: about what
+  /// a random letter costs (ln 1/26 = -3.3).
+  ///
+  /// With one flat figure for every unknown string, ONE long unknown token
+  /// cost half of what the same letters cost as two unknown words, so the
+  /// decoder dropped the model's own spaces between unknown words whenever
+  /// they were not near certain (Mariam's `Nerous systen` -> `Neroussysten`,
+  /// even `ocd, depression` -> `ocd,depression`). Now gluing words into one
+  /// long token gains about nothing and the image decides. Words of up to 8
+  /// letters (nearly every name) keep exactly the protection they had: an
+  /// unknown string is never likelier than a rare real word.
+  final double oovLetterLogProb;
+  final int oovFreeLetters;
 
   /// Look-alike leniency: every frame lends this fraction of the probability
   /// of one letter of a pair (`e`/`c`, `n`/`u`, `n`/`h`, `u`/`o`, `r`/`v` ...)
@@ -205,6 +225,18 @@ class LineDecodeConfig {
 
   /// Lowercase acronyms that stay in capitals when read in capitals.
   final Set<String> acronyms;
+
+  /// Lowercase acronyms that are written in capitals however they were
+  /// written (`ocd` -> `OCD`, plural `ssris` -> `SSRIs`): they are never
+  /// ordinary words. The same ones are known words through
+  /// `assets/htr/subject_words.txt`.
+  final Set<String> upperAcronyms;
+
+  static const Set<String> defaultUpperAcronyms = {
+    'adhd', 'ocd', 'ptsd', 'gaba', 'dna', 'rna', 'mrna', 'trna', 'atp', 'adp', 'eeg', 'ecg', 'ekg', 'emg', //
+    'mri', 'fmri', 'cns', 'pns', 'iq', 'ssri', 'snri', 'maoi', 'dsm', 'icd', 'bmi', 'hiv', 'copd', 'cpr', //
+    'icu', 'bpm', 'acth', 'tsh', 'lsd', 'mdma', 'nmda', 'ampa', 'ltp',
+  };
 
   /// A run of frames where the space class is likely (at least
   /// [cutRunProb]) whose strongest frame reaches this probability is a
@@ -262,6 +294,14 @@ class LineDecodeConfig {
   /// Coordinate-ascent sweeps over the words of a stretch.
   final int maxSweeps;
 
+  /// The coordinate ascent starts from up to this many beam readings, the
+  /// best one of each word count, and keeps the best outcome. From the single
+  /// best start, a reading that only wins after a substitution was out of
+  /// reach: `Nerous systen` lost to the merged `Neroussysten` before
+  /// `systen` could become `system`, and nothing splits two unknown words
+  /// again.
+  final int ascentStarts;
+
   /// Alternatives kept per word.
   final int maxAlternatives;
 
@@ -293,7 +333,9 @@ class LineDecodeConfig {
   final double gapSplit;
 
   /// Largest number of dictionary edits tried for a word of [letters] letters.
-  int maxEditsFor(int letters) => letters <= 5 ? 1 : 2;
+  /// Long words have few neighbours, so three edits are affordable from ten
+  /// letters on (Mariam's `Neuraratony` is three from `neuroanatomy`).
+  int maxEditsFor(int letters) => letters <= 5 ? 1 : (letters < 10 ? 2 : 3);
 
   /// Same for personal-dictionary words and contractions, which are trusted
   /// more.
@@ -359,6 +401,21 @@ class LineDecoder {
   LineReading decode(CtcLogProbs lp) {
     if (lp.timesteps == 0) return LineReading.empty;
     return _Decode(this, lp).run();
+  }
+
+  // Word-list neighbours of a reading, kept across lines and calls (the word
+  // list never changes; auto-convert reads the same lines again and again).
+  final Map<String, List<String>> _neighbourMemo = {};
+
+  List<String> _lexiconNeighbours(String core, int maxEdits) {
+    final lexicon = this.lexicon;
+    if (lexicon == null) return const [];
+    final hit = _neighbourMemo[core];
+    if (hit != null) return hit;
+    if (_neighbourMemo.length >= 20000) _neighbourMemo.clear();
+    return _neighbourMemo[core] = [
+      for (final c in lexicon.candidates(core, maxEdits: maxEdits, limit: config.maxCandidates)) c.word,
+    ];
   }
 
   /// The objective [decode] maximises (without the head start of the model's
@@ -470,6 +527,12 @@ class _Decode {
 
   late final double oovPrior = (lex?.logProbAtRank(cfg.oovRank) ?? cfg.fallbackOovLogProb) - cfg.oovPenalty;
 
+  /// The prior of an unknown string of [letters] letters and digits (see
+  /// [LineDecodeConfig.oovLetterLogProb]).
+  double oovPriorFor(int letters) => oovPrior + cfg.oovLetterLogProb * math.max(0, letters - cfg.oovFreeLetters);
+
+  static final RegExp _letterOrDigit = RegExp(r'[A-Za-z0-9]');
+
   final Map<String, _Info> _infos = {};
   final Map<String, List<String>> _neighbourCache = {};
 
@@ -481,7 +544,7 @@ class _Decode {
       contractionLogProb(lower) != null;
 
   double _priorOf(String lower) {
-    var best = oovPrior;
+    var best = oovPriorFor(lower.replaceAll("'", '').length);
     final base = lex?.logProb(lower);
     if (base != null) best = math.max(best, base);
     final contraction = contractionLogProb(lower);
@@ -518,7 +581,7 @@ class _Decode {
           trail: trail,
           letters: letters,
           known: known,
-          prior: letters ? _priorOf(core) : oovPrior,
+          prior: letters ? _priorOf(core) : oovPriorFor(_letterOrDigit.allMatches(text).length),
           sets: _setsOf(text),
         );
       });
@@ -654,15 +717,18 @@ class _Decode {
     }
 
     // A lone punctuation mark belongs to the word before it.
-    final merged = <_Placed>[];
+    final attached = <_Placed>[];
     for (final w in tight) {
       final core = info(w.tok.text);
-      if (merged.isNotEmpty && !core.letters && _closing.hasMatch(w.tok.text)) {
-        merged.last.attach(w);
+      if (attached.isNotEmpty && !core.letters && _closing.hasMatch(w.tok.text)) {
+        attached.last.attach(w);
       } else {
-        merged.add(w);
+        attached.add(w);
       }
     }
+    // The model often reads no space after a full stop or a comma
+    // (`cord.Seizure,`); such a word is two words, cut after the mark.
+    final merged = [for (final w in attached) ...w.splitAfterMarks(glyphs, cs)];
 
     // Tile the line: boundaries inside the gaps.
     final steps = lp.timesteps;
@@ -721,6 +787,10 @@ class _Decode {
   String applyCase(String lower, String rawCore) {
     final form = user?.formOf(lower);
     if (form != null) return form;
+    if (cfg.upperAcronyms.contains(lower)) return lower.toUpperCase();
+    if (lower.length > 2 && lower.endsWith('s') && cfg.upperAcronyms.contains(lower.substring(0, lower.length - 1))) {
+      return '${lower.substring(0, lower.length - 1).toUpperCase()}s';
+    }
     if (lower.isEmpty || rawCore.isEmpty) return lower;
     final same = lower == rawCore.toLowerCase();
     if (same && !_known(lower)) return rawCore;
@@ -751,6 +821,45 @@ class _Placed {
     _suffix += punctuation.tok.raw;
     last = punctuation.last;
   }
+
+  /// A word, then `, ; : ! ?` or a full stop, then a word, all without a space
+  /// (`cord.Seizure,`, `ocd,depression`): split after the mark. At least two
+  /// letters must come before the mark, and after a full stop a capital, so
+  /// `e.g.`, `U.S.`, `3.5` and `file.txt` stay whole. The frames are cut after
+  /// the model's own glyph of the mark ([glyphs]); the word is left whole
+  /// when that glyph is not found.
+  List<_Placed> splitAfterMarks(List<_Glyph> glyphs, CtcCharset cs) {
+    final raw = tok.raw;
+    final text = tok.text;
+    final m = _markInside.firstMatch(raw);
+    if (m == null || text.length != raw.length || text.toLowerCase() != text) return [this];
+    final mark = m.group(1)!;
+    final at = m.end; // first letter of the second word
+    if (mark == '.' && raw[at] == raw[at].toLowerCase()) return [this];
+    if (text.substring(0, at).toLowerCase() != raw.substring(0, at).toLowerCase()) return [this];
+    _Glyph? markGlyph;
+    for (final g in glyphs) {
+      if (g.first >= first && g.first <= last && cs.charAt(g.cls) == mark) {
+        markGlyph = g;
+        break;
+      }
+    }
+    if (markGlyph == null || markGlyph.last >= last) return [this];
+    var nextFirst = markGlyph.last + 1;
+    for (final g in glyphs) {
+      if (g.first > markGlyph.last && g.first <= last && cs.charAt(g.cls).trim().isNotEmpty) {
+        nextFirst = g.first;
+        break;
+      }
+    }
+    final left = _Placed(_Tok(text.substring(0, at), raw.substring(0, at)), first, markGlyph.last, confidence, const []);
+    // The alternatives were readings of the whole token: they fit neither half.
+    final right = _Placed(_Tok(text.substring(at), raw.substring(at)), nextFirst, last, confidence, const [])
+      .._suffix = _suffix;
+    return [left, ...right.splitAfterMarks(glyphs, cs)];
+  }
+
+  static final RegExp _markInside = RegExp(r'[A-Za-z]{2}([.,;:!?])(?=[A-Za-z])');
 
   /// The word as shown: the raw text when nothing was replaced and it is not a
   /// plain word, else [dec]'s case rules.
@@ -825,22 +934,43 @@ class _Stretch {
     if (starts.isEmpty) return const [];
     _own = _headStarts(starts.first);
 
-    var best = starts.first;
-    var bestScore = score(best);
-    for (final s in starts.skip(1)) {
-      final v = score(s);
-      if (v > bestScore) {
-        bestScore = v;
-        best = s;
-      }
+    // A few starts, each improved on its own; the best outcome wins. One
+    // start per word count: readings that differ only in a letter are the
+    // ascent's job, readings that differ in where the spaces are it cannot
+    // reach from each other.
+    final ranked = [for (final s in starts) (s, score(s))]..sort((a, b) => b.$2.compareTo(a.$2));
+    final limit = math.max(1, cfg.ascentStarts);
+    final seeds = <List<_Tok>>[];
+    final counts = <int>{};
+    for (final (s, v) in ranked) {
+      if (seeds.length >= limit || (v == double.negativeInfinity && seeds.isNotEmpty)) break;
+      if (counts.add(s.length)) seeds.add(s);
     }
-    if (bestScore == double.negativeInfinity) {
+    if (ranked.first.$2 == double.negativeInfinity) {
       // The beam's reading does not even fit the frames (cannot happen for a
       // reading the search itself produced, but never throw on odd input).
-      best = starts.first;
+      seeds
+        ..clear()
+        ..add(starts.first);
     }
+    List<_Tok>? best;
+    var bestScore = double.negativeInfinity;
+    for (final seed in seeds) {
+      final improved = _ascend(seed);
+      final v = score(improved);
+      if (best == null || v > bestScore) {
+        best = improved;
+        bestScore = v;
+      }
+    }
+    final tokens = best!;
+    return _finish(tokens, _firmness(tokens));
+  }
 
-    var tokens = best;
+  /// Coordinate ascent from [start]: each word in turn is replaced by its best
+  /// variant (see [variantsAt]) while that raises the score.
+  List<_Tok> _ascend(List<_Tok> start) {
+    var tokens = start;
     var firm = _firmness(tokens);
     for (var sweep = 0; sweep < cfg.maxSweeps; sweep++) {
       var changed = false;
@@ -868,7 +998,7 @@ class _Stretch {
       }
       if (!changed) break;
     }
-    return _finish(tokens, firm);
+    return tokens;
   }
 
   // ---- scoring ---------------------------------------------------------------
@@ -981,12 +1111,7 @@ class _Stretch {
   List<String> neighbours(String core) => dec._neighbourCache.putIfAbsent(core, () {
         final out = <String>{};
         final letters = core.replaceAll("'", '').length;
-        final lexicon = dec.lex;
-        if (lexicon != null) {
-          for (final c in lexicon.candidates(core, maxEdits: cfg.maxEditsFor(letters), limit: cfg.maxCandidates)) {
-            out.add(c.word);
-          }
-        }
+        out.addAll(dec.d._lexiconNeighbours(core, cfg.maxEditsFor(letters)));
         final user = dec.user;
         if (user != null) {
           for (final form in user.nearby(core, cfg.maxUserEditsFor(letters))) {

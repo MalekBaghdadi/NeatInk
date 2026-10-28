@@ -191,6 +191,7 @@ flutter:
     - assets/htr/model.onnx
     - assets/htr/charset.json
     - assets/htr/word_freq.txt
+    - assets/htr/subject_words.txt
     - assets/fonts/Roboto/OFL.txt
     - assets/fonts/OpenSans/OFL.txt
     - assets/fonts/Lato/OFL.txt

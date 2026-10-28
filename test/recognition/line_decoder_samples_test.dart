@@ -43,7 +43,9 @@ void main() {
 
   test('decoded lines are not worse than the greedy reading', () {
     final charset = CtcCharset.fromJson(charsetFile!.readAsStringSync());
-    final lexicon = Lexicon.parse(wordsFile!.readAsStringSync());
+    // The bundled lexicon: the general list and the study vocabulary.
+    final subject = _asset('subject_words.txt');
+    final lexicon = Lexicon.parse([wordsFile!.readAsStringSync(), if (subject != null) subject.readAsStringSync()].join('\n'));
     final data = jsonDecode(File(path!).readAsStringSync()) as Map<String, dynamic>;
 
     final personal = UserLexicon()

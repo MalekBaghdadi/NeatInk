@@ -48,6 +48,27 @@ void main() {
       expect(lex.minLogProb, lex.logProb('cot'));
     });
 
+    test('a word listed twice keeps its larger count (lists can be joined)', () {
+      final joined = Lexicon.parse('alpha 10\nbeta 5\n# a comment line\nalpha 30\nbeta 1\ngamma 7\n');
+      expect(joined.length, 3);
+      expect(joined.countOf('alpha'), 30);
+      expect(joined.countOf('beta'), 5);
+      expect(joined.logProb('alpha'), closeTo(log(30 / 42), 1e-12));
+    });
+
+    test('the bundled study vocabulary makes subject words known', () {
+      final general = File('assets/htr/word_freq.txt');
+      final subject = File('assets/htr/subject_words.txt');
+      if (!general.existsSync() || !subject.existsSync()) return;
+      final both = Lexicon.parse('${general.readAsStringSync()}\n${subject.readAsStringSync()}');
+      for (final w in ['neuroanatomy', 'myelin', 'forebrain', 'limbic', 'adhd', 'ocd', 'gaba']) {
+        expect(both.contains(w), isTrue, reason: w);
+      }
+      // a frequent word keeps its own, larger count
+      final plain = Lexicon.parse(general.readAsStringSync());
+      expect(both.countOf('pressure'), plain.countOf('pressure'));
+    });
+
     test('candidates equal a brute-force search', () {
       for (final q in ['cat', 'hel', 'wrld', 'cxt', 'zzzzzz']) {
         final expected = {

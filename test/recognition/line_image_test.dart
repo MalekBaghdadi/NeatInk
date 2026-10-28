@@ -409,6 +409,117 @@ void main() {
     });
   });
 
+  group('horizontal stretch', () {
+    const stretch = LineImageConfig(xHeightWidthPx: 10, maxStretchX: 2.5);
+
+    // hello (x-height 10) and a stroke 140 pt tall: the ink's height, not
+    // the letters, sets the vertical scale, so the x-height comes out small.
+    RecognizedLine tallLine() => lineFrom([
+          ...textAt('hello', 0),
+          densify([const Vec2(50, -100), const Vec2(50, 40)]),
+        ]);
+
+    test('writing of ordinary proportions is drawn as before', () async {
+      final line = wordsLine(['hello', 'online'], [0, 52]);
+      final plain = (await renderLineImages(line, renderer: renderer)).single;
+      final img = (await renderLineImages(line, renderer: renderer, config: stretch)).single;
+      expect(line.xHeight * img.scale, greaterThan(10));
+      expect(img.scaleX, img.scale);
+      expect(img.width, plain.width);
+      expect(img.pixels, plain.pixels);
+    });
+
+    test('a small x-height is stretched until it spans the target width', () async {
+      final line = tallLine();
+      final plain = (await renderLineImages(line, renderer: renderer)).single;
+      final img = (await renderLineImages(line, renderer: renderer, config: stretch)).single;
+      final xhPx = line.xHeight * img.scale;
+      expect(xhPx, lessThan(10));
+      expect(img.scale, plain.scale); // the height is fitted as before
+      expect(img.scaleX / img.scale, closeTo(math.min(2.5, 10 / xhPx), 1e-9));
+      expect(img.width, greaterThan(plain.width * 1.3));
+      // pixel columns and levelled x map onto each other
+      for (final px in [0.0, 10.0, img.width / 2, img.width - 1.0]) {
+        expect(img.pixelOf(img.levelledX(px)), closeTo(px, 1e-9));
+      }
+      // the ink sits where pixelOf puts it
+      final box = inkBox(img);
+      var l = double.infinity, r = double.negativeInfinity;
+      for (final s in line.inkStrokes) {
+        final range = levelledRange(s, img.angle);
+        l = math.min(l, range.left);
+        r = math.max(r, range.right);
+      }
+      expect(box.left, closeTo(img.pixelOf(l), 2.5));
+      expect(box.right, closeTo(img.pixelOf(r), 2.5));
+    });
+
+    test('the stretch is capped', () async {
+      final img = (await renderLineImages(tallLine(),
+              renderer: renderer, config: const LineImageConfig(xHeightWidthPx: 40, maxStretchX: 1.5)))
+          .single;
+      expect(img.scaleX / img.scale, closeTo(1.5, 1e-9));
+    });
+
+    test('stroke groups follow the stretched columns', () async {
+      final line = wordsLine(['hello', 'online'], [0, 52]);
+      final img = (await renderLineImages(line,
+              renderer: renderer, config: const LineImageConfig(stretchX: 2)))
+          .single;
+      expect(img.scaleX, closeTo(2 * img.scale, 1e-9));
+      final mid = img.pixelOf(149); // between the words (page x = font x + 100)
+      final groups = assignStrokesToSpans(line, img, [
+        (start: 0, end: mid),
+        (start: mid, end: img.width.toDouble()),
+      ]);
+      final first = groups[0]!.strokes.map((s) => s.bounds.right).reduce(math.max);
+      final second = groups[1]!.strokes.map((s) => s.bounds.left).reduce(math.min);
+      expect(first, lessThan(149));
+      expect(second, greaterThan(149));
+    });
+  });
+
+  group('snapDots on short i-stems and t-bars', () {
+    const snap = LineImageConfig(snapDots: true);
+
+    test('a dot over a short i-stem stays, though a round letter is next to it', () async {
+      // "he", an i whose stem is a short tick (0.35 x-height) with its dot
+      // right above, then an o: the o must not take the dot.
+      final line = lineFrom([
+        ...textAt('he', 0),
+        densify([const Vec2(30, -3.5), const Vec2(30, 0)]),
+        densify([const Vec2(29.8, -12), const Vec2(30.2, -12)]),
+        ...textAt('o', 34),
+      ]);
+      final img = (await renderLineImages(line, renderer: renderer, config: snap)).single;
+      expect(img.shifts.every((s) => s.abs() < 1.0), isTrue, reason: '${img.shifts}');
+    });
+
+    test('a dot high over a short stem goes to it, not to an upright stem beside it', () async {
+      final line = lineFrom([
+        ...textAt('he', 0),
+        densify([const Vec2(30, -3.5), const Vec2(30, 0)]), // short i-stem
+        densify([const Vec2(29.8, -16), const Vec2(30.2, -16)]), // its dot, 1.2 x-heights up
+        densify([const Vec2(37.5, -14), const Vec2(37.5, 8)]), // a p's stem beside it
+        ...textAt('n', 42),
+      ]);
+      final img = (await renderLineImages(line, renderer: renderer, config: snap)).single;
+      expect(img.shifts.every((s) => s.abs() < 1.0), isTrue, reason: '${img.shifts}');
+    });
+
+    test('a short high t-bar is not a dot', () async {
+      final line = lineFrom([
+        ...textAt('he', 0),
+        densify([const Vec2(30, -15), const Vec2(30, 0)]), // t stem
+        densify([const Vec2(32, -9), const Vec2(36.5, -9)]), // a short bar on its right
+        densify([const Vec2(40, -7), const Vec2(40, 0)]), // an i-stem after it, under the bar's height
+        ...textAt('n', 44),
+      ]);
+      final img = (await renderLineImages(line, renderer: renderer, config: snap)).single;
+      expect(img.shifts.every((s) => s == 0), isTrue, reason: '${img.shifts}');
+    });
+  });
+
   group('assignStrokesToSpans', () {
     ({double start, double end}) spanOf(LineImage img, Iterable<Stroke> strokes, {double pad = 2}) {
       var l = double.infinity, r = double.negativeInfinity;

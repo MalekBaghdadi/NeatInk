@@ -246,6 +246,49 @@ void main() {
     });
   });
 
+  // From Mariam's first sample page (v1.3.0, neuroscience notes).
+  group('spaces between unknown words and after marks', () {
+    test('two long unknown words keep the hesitant space the model reads between them', () {
+      // One flat prior per unknown string made one long token cheaper than
+      // two words, so the model's space was dropped.
+      final frames = [...crisp('Kortalaxi'), softGap, ...crisp('Mendravol')];
+      expect(decode(frames).text, 'Kortalaxi Mendravol');
+    });
+
+    test('a space the model reads with 0.7 is never removed', () {
+      final frames = [...crisp('Nerous'), {' ': 0.7, '_': 0.25}, ...crisp('systen')];
+      expect(decode(frames).words, hasLength(2));
+    });
+
+    test('a comma or full stop read without a space gets one', () {
+      expect(decode(crisp('the brain,and')).text, 'the brain, and');
+      final r = decode(crisp('cord.Seizure,'));
+      expect(r.text, 'cord. Seizure,');
+      expect(r.words.map((w) => w.text), ['cord.', 'Seizure,']);
+      for (final w in r.words) {
+        expect(w.alternatives.where((a) => a.contains('.') && a.contains('S')), isEmpty,
+            reason: 'no reading of the whole token is offered for a half');
+      }
+      // the two words still tile the frames in order
+      expect(r.words.first.startFrame, 0);
+      expect(r.words.first.endFrame, r.words.last.startFrame);
+      expect(r.words.last.endFrame, r.timesteps);
+    });
+
+    test('abbreviations, decimals and file names are not cut', () {
+      expect(decode(crisp('e.g.')).text, 'e.g.');
+      expect(decode(crisp('file.txt')).text, 'file.txt');
+      expect(decode(crisp('3.5')).text, '3.5');
+      expect(decode(crisp('cord.seizure')).text, 'cord.seizure'); // no capital after the stop
+    });
+
+    test('acronyms are written in capitals, plurals with a small s', () {
+      expect(decode(crisp('dementia, ocd, depression')).text, 'dementia, OCD, depression');
+      expect(decode(crisp('Adhd')).text, 'ADHD');
+      expect(decode(crisp('ssris')).text, 'SSRIs');
+    });
+  });
+
   group('case', () {
     test('the model\'s case is kept for unknown words and known words', () {
       expect(decode(crisp('Hello World')).text, 'Hello World');

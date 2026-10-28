@@ -29,7 +29,19 @@ const int htrMaxImageWidth = 2400;
 /// the page): this writer puts the dot 3 to 8 points left of the stem, which
 /// made the model read "are in" as "aren". On the owner's sample page it
 /// lowered the character error from 10.2% to 7.5% and was never worse.
-const LineImageConfig recognitionLineImageConfig = LineImageConfig(snapDots: true);
+///
+/// `xHeightWidthPx` stretches a line horizontally when its x-height is
+/// small in the 48 px picture: Mariam writes small letters with tall
+/// capitals and long descenders, so her x-height came out at 5-9 px and the
+/// model (one output frame per 8 px) had about one frame per letter and
+/// dropped whole words ("Neurophysiology" -> "Ne"). With the stretch its own
+/// reading of her first page went from 26% to 12% character error. Writing
+/// whose x-height is already 10 px or more is drawn exactly as before.
+const LineImageConfig recognitionLineImageConfig = LineImageConfig(
+  snapDots: true,
+  xHeightWidthPx: 10,
+  maxStretchX: 2.5,
+);
 
 /// A failed recognition call. [userMessage] is safe to show.
 class HtrException implements Exception {

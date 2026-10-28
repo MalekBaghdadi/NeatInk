@@ -291,16 +291,40 @@ class LineImageConfig {
     this.minExtentFactor = 0.3,
     this.dotMaxFactor = 0.6,
     this.dotFloatFactor = 0.7,
-    this.stemMinFactor = 0.4,
+    this.barMinWidthFactor = 0.35,
+    this.barFlatness = 0.35,
+    this.stemMinFactor = 0.25,
     this.stemMaxWidthFactor = 1.2,
+    this.stemMaxAspect = 0.6,
     this.stemTopFraction = 0.2,
     this.markFactor = 0.6,
     this.reachX = 1.2,
     this.reachY = 2.0,
+    this.snapReachY = 3.0,
+    this.stretchX = 1.0,
+    this.xHeightWidthPx = 0,
+    this.maxStretchX = 1.0,
   });
 
   /// Pen width in image pixels (at 48 px of image height).
   final double strokePx;
+
+  /// Horizontal stretch: the image is drawn this many times wider than its
+  /// vertical scale asks for. The model emits one output frame per 8 px of
+  /// width and needs at least one frame per letter; a compact hand with tall
+  /// ascenders and descenders gets so small a scale (fitting the line's
+  /// height into 48 px) that whole words fell through (see
+  /// [xHeightWidthPx]).
+  final double stretchX;
+
+  /// Adaptive stretch: when the line's x-height is fewer than this many
+  /// pixels at the vertical scale, the image is stretched horizontally until
+  /// one x-height spans this many pixels, at most [maxStretchX] times (and
+  /// never less than [stretchX]). 0 switches it off.
+  final double xHeightWidthPx;
+
+  /// Upper limit of the adaptive stretch.
+  final double maxStretchX;
 
   /// White margin on every side of the ink, as a fraction of the image
   /// height. The recogniser reads a line with some air around it better
@@ -338,11 +362,25 @@ class LineImageConfig {
   /// there is no room for one).
   final double dotFloatFactor;
 
-  /// A stem under a dot is at least this many x-heights tall ...
+  /// A mark at least this many x-heights wide ...
+  final double barMinWidthFactor;
+
+  /// ... and at most this many times as high as it is wide is a bar (the
+  /// cross stroke of a `t`), not a dot: snapping moved Mariam's high t-bars
+  /// onto the i next to them.
+  final double barFlatness;
+
+  /// A stem under a dot is at least this many x-heights tall (some writers
+  /// make the i a short tick: Mariam's are about a third of an x-height) ...
   final double stemMinFactor;
 
-  /// ... and at most this many x-heights wide (not a whole letter blob).
+  /// ... at most this many x-heights wide (not a whole letter blob) ...
   final double stemMaxWidthFactor;
+
+  /// ... and upright: at most this wide for its height. Without it a round
+  /// letter next to a short i (the `o` of "depression") passed for the stem
+  /// and took the i's dot, which the model then read as a full stop.
+  final double stemMaxAspect;
 
   /// The stem's x is the mean x of the samples in this top fraction of its
   /// height (the top of an i, whatever its tail does).
@@ -357,6 +395,11 @@ class LineImageConfig {
   /// x-heights sideways and [reachY] vertically (see [nearestSupport]).
   final double reachX;
   final double reachY;
+
+  /// The vertical reach of [snapDots] (the sideways one is [reachX]). Longer
+  /// than [reachY]: a short i-stem can sit well over an x-height under its
+  /// dot, and the dot must still go to it rather than to a stem beside it.
+  final double snapReachY;
 }
 
 /// A line rendered for the recogniser: the whole line (or, for very wide
@@ -379,8 +422,14 @@ class LineImage extends WordImage {
     required this.strokes,
     required this.angle,
     required this.originX,
+    double? scaleX,
     List<double>? shifts,
-  }) : shifts = shifts ?? List.filled(strokes.length, 0.0);
+  })  : scaleX = scaleX ?? scale,
+        shifts = shifts ?? List.filled(strokes.length, 0.0);
+
+  /// Pixels per levelled point horizontally: [scale] times the stretch of
+  /// [LineImageConfig.stretchX] / [LineImageConfig.xHeightWidthPx].
+  final double scaleX;
 
   /// The strokes drawn in this image (the original page strokes), in input
   /// order. A stroke cut by a forced chunk boundary is in both chunks.
@@ -396,12 +445,11 @@ class LineImage extends WordImage {
   /// was moved in this image by `LineImageConfig.snapDots`; mostly zero.
   final List<double> shifts;
 
-  /// Levelled x (page points) at pixel column [px]. Horizontal and vertical
-  /// scales are equal, so this is `originX + px / scale`.
-  double levelledX(double px) => originX + px / scale;
+  /// Levelled x (page points) at pixel column [px].
+  double levelledX(double px) => originX + px / scaleX;
 
   /// Pixel column of levelled x [x]; the inverse of [levelledX].
-  double pixelOf(double x) => (x - originX) * scale;
+  double pixelOf(double x) => (x - originX) * scaleX;
 }
 
 /// A stroke in the levelled frame.
@@ -460,7 +508,8 @@ List<_Levelled> _levelStrokes(Iterable<Stroke> strokes, double angle) {
 /// height (at most [LineImageConfig.maxScale] pixels per point) and sits in
 /// the middle of the image, so there is a white margin of
 /// `marginFrac * 48` pixels on every side. The width follows the aspect
-/// ratio. A line wider than [LineImageConfig.maxWidth] is cut into chunks at
+/// ratio, stretched by [lineStretchX] for small x-heights. A line wider than
+/// [LineImageConfig.maxWidth] is cut into chunks at
 /// its widest horizontal gaps (between words, as a rule), left to right,
 /// each at the same scale and height: the letters are never squeezed.
 ///
@@ -500,6 +549,7 @@ Future<List<LineImage>> renderLineImages(
   final inkHeight = math.max(maxY - minY, config.minExtentFactor * line.xHeight);
   final margin = config.marginFrac * height;
   final scale = math.min(config.maxScale, (height - 2 * margin) / inkHeight);
+  final scaleX = scale * lineStretchX(line.xHeight * scale, config);
   final midY = (minY + maxY) / 2;
 
   // Merge the horizontal extents of the strokes; the gaps between them are
@@ -515,7 +565,7 @@ Future<List<LineImage>> renderLineImages(
       merged.add(e);
     }
   }
-  final ranges = _chunkRanges(merged, scale, margin, config.maxWidth);
+  final ranges = _chunkRanges(merged, scaleX, margin, config.maxWidth);
 
   final images = <LineImage>[];
   for (final range in ranges) {
@@ -523,10 +573,10 @@ Future<List<LineImage>> renderLineImages(
       for (final p in pieces)
         if (p.shiftedRight >= range.start - 1e-9 && p.shiftedLeft <= range.end + 1e-9) p,
     ];
-    final inkWidthPx = (range.end - range.start) * scale;
+    final inkWidthPx = (range.end - range.start) * scaleX;
     final width = (inkWidthPx + 2 * margin).round().clamp(config.minWidth, config.maxWidth);
     // Ink centred horizontally (matters when the minimum width pads it).
-    final originX = (range.start + range.end) / 2 - width / (2 * scale);
+    final originX = (range.start + range.end) / 2 - width / (2 * scaleX);
     final placed = <Stroke>[
       for (final p in inside)
         Stroke(
@@ -537,7 +587,7 @@ Future<List<LineImage>> renderLineImages(
           raw: [
             for (var i = 0; i < p.xs.length; i++)
               InkPoint(
-                (p.xs[i] + p.shift - originX) * scale,
+                (p.xs[i] + p.shift - originX) * scaleX,
                 height / 2 + (p.ys[i] - midY) * scale,
                 0.5,
                 0,
@@ -550,6 +600,7 @@ Future<List<LineImage>> renderLineImages(
         pixels: await renderer.rasterize(placed, width: width, height: height),
         width: width,
         scale: scale,
+        scaleX: scaleX,
         strokeWidthPx: config.strokePx,
         strokes: [for (final p in inside) p.stroke],
         angle: angle,
@@ -559,6 +610,18 @@ Future<List<LineImage>> renderLineImages(
     );
   }
   return images;
+}
+
+/// How many times wider than tall a line image is drawn, for a line whose
+/// x-height is [xHeightPx] pixels at the vertical scale (see
+/// [LineImageConfig.stretchX] and [LineImageConfig.xHeightWidthPx]).
+double lineStretchX(double xHeightPx, LineImageConfig config) {
+  var f = config.stretchX;
+  if (config.xHeightWidthPx > 0 && xHeightPx > 0) {
+    final adaptive = math.min(config.maxStretchX, config.xHeightWidthPx / xHeightPx);
+    if (adaptive > f) f = adaptive;
+  }
+  return f;
 }
 
 /// Cuts the merged ink [extents] (sorted, with gaps between them) into
@@ -608,16 +671,19 @@ void _snapDots(RecognizedLine line, List<_Levelled> pieces, double angle, LineIm
   final stems = <_Levelled>[];
   final dots = <_Levelled>[];
   for (final p in pieces) {
+    final bar = p.width >= config.barMinWidthFactor * xh && p.height <= config.barFlatness * p.width;
     if (p.diagonal <= config.dotMaxFactor * xh && p.bottom <= baseline - config.dotFloatFactor * xh) {
-      dots.add(p);
-    } else if (p.height >= config.stemMinFactor * xh && p.width <= config.stemMaxWidthFactor * xh) {
+      if (!bar) dots.add(p);
+    } else if (p.height >= config.stemMinFactor * xh &&
+        p.width <= config.stemMaxWidthFactor * xh &&
+        p.width <= config.stemMaxAspect * p.height) {
       stems.add(p);
     }
   }
   if (dots.isEmpty || stems.isEmpty) return;
   final boxes = [for (final st in stems) st.box];
   for (final d in dots) {
-    final k = nearestSupport(d.box, boxes, u: xh, reachX: config.reachX, reachY: config.reachY, underOnly: true);
+    final k = nearestSupport(d.box, boxes, u: xh, reachX: config.reachX, reachY: config.snapReachY, underOnly: true);
     if (k == null) continue;
     final stem = stems[k];
     // x of the stem's top: where the i's dot belongs.
