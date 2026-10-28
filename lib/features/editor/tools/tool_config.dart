@@ -90,6 +90,22 @@ class ToolConfig {
     // Shape tool.
     this.shapeToolSquareSnapFraction = 0.06,
     this.shapeToolMinDragPt = 4,
+    // Scribble to delete.
+    this.scribbleMinPoints = 8,
+    this.scribbleMinWidthPt = 8,
+    this.scribbleMinSwingPt = 3,
+    this.scribbleMinReversals = 4,
+    this.scribbleSwingFraction = 0.3,
+    this.scribbleMinPathRatio = 2.5,
+    this.scribbleZigzagMinReversals = 5,
+    this.scribbleZigzagSwingFraction = 0.6,
+    this.scribbleZigzagMinPathRatio = 1.8,
+    this.scribbleMarginPt = 2,
+    this.scribbleStrokeInsideFraction = 0.6,
+    this.scribbleAcrossFraction = 0.6,
+    this.scribbleDownFraction = 0.35,
+    this.scribbleMinContentFraction = 0.3,
+    this.scribbleClosedGapFraction = 0.2,
   });
 
   /// The values the app ships with.
@@ -333,4 +349,49 @@ class ToolConfig {
 
   /// A shape-tool drag shorter than this draws nothing (an accidental tap).
   final double shapeToolMinDragPt;
+
+  // ------------------------------------------------------ scribble to delete
+
+  /// A scribble (a scratch-out over writing or typed text) has at least this
+  /// many points and is at least this long along its main direction, and
+  /// every swing counted below is at least [scribbleMinSwingPt].
+  final int scribbleMinPoints;
+  final double scribbleMinWidthPt;
+  final double scribbleMinSwingPt;
+
+  /// It goes back and forth along its main direction at least this many
+  /// times, each swing at least this fraction of its length, with a path at
+  /// least this many times its length...
+  final int scribbleMinReversals;
+  final double scribbleSwingFraction;
+  final double scribbleMinPathRatio;
+
+  /// ...or it zig-zags across that direction ("\/\/\/"): at least this many
+  /// turns, each at least this fraction of its height, with a path at least
+  /// this many times its length.
+  final int scribbleZigzagMinReversals;
+  final double scribbleZigzagSwingFraction;
+  final double scribbleZigzagMinPathRatio;
+
+  /// The scribble's area is its bounds grown by this much.
+  final double scribbleMarginPt;
+
+  /// A stroke is scribbled out when at least [scribbleStrokeInsideFraction]
+  /// of its points lie in the area, or when the area covers at least
+  /// [scribbleAcrossFraction] of its width and [scribbleDownFraction] of its
+  /// height (a tall `l` crossed out through the middle). A word of typed
+  /// text by the second rule.
+  final double scribbleStrokeInsideFraction;
+  final double scribbleAcrossFraction;
+  final double scribbleDownFraction;
+
+  /// What it covers must fill at least this fraction of the scribble's area,
+  /// or the scribble is a drawing (or writing) that happens to cross
+  /// something, and stays.
+  final double scribbleMinContentFraction;
+
+  /// A stroke whose ends are closer than this fraction of its size is a
+  /// closed outline (a circle, a box, a cell drawn by hand). One around the
+  /// whole scribble stays: that is shading inside a drawing.
+  final double scribbleClosedGapFraction;
 }

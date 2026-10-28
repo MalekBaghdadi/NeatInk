@@ -218,6 +218,12 @@ typedef ToolOptionsBuilder = Widget Function(
 /// same id that keeps its `raw` points (e.g. a tidied highlight).
 typedef StrokeFinisher = Stroke Function(String pageId, Stroke stroke);
 
+/// A pen stroke that may be a gesture rather than ink (a scribble over
+/// writing deletes it). Asked before [LiveStrokeHook.onFinish] and the
+/// [StrokeFinisher]s; returns true when it acted on [stroke], which is then
+/// not added to the page.
+typedef StrokeGesture = bool Function(String pageId, Stroke stroke);
+
 /// A tap on a page at [point] (page points): a pen tap with the pen or
 /// highlighter, or a quick finger tap. Returns true when it handled the tap
 /// (a pen tap then leaves no dot).
@@ -266,6 +272,10 @@ class EditorExtensions {
     }
     return false;
   }
+
+  /// Asked in order about every finished pen stroke (not highlighter),
+  /// until one takes it as a gesture.
+  final List<StrokeGesture> strokeGestures = [];
 
   /// Run in order on every finished pen/highlighter stroke, after
   /// [liveStrokeHook].

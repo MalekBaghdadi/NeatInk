@@ -78,6 +78,17 @@ class SettingsScreen extends ConsumerWidget {
                       change((s) => s.copyWith(tidyHighlighter: v)),
                 ),
                 SwitchListTile(
+                  key: const ValueKey('settings-scribble-delete'),
+                  secondary: const Icon(Icons.gesture),
+                  title: const Text('Scribble to delete'),
+                  subtitle: const Text(
+                      'Scribble over handwriting or typed text with the pen '
+                      'to delete it.'),
+                  value: settings.scribbleToDelete,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(scribbleToDelete: v)),
+                ),
+                SwitchListTile(
                   key: const ValueKey('settings-auto-convert'),
                   secondary: const Icon(Icons.auto_awesome_outlined),
                   title: const Text('Auto-convert handwriting'),

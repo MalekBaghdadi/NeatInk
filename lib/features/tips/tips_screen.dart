@@ -24,6 +24,9 @@ const List<Tip> appTips = [
       'Convert turns your handwriting into typed text. Turn on Auto and it '
           'happens by itself a moment after you stop writing. The button next '
           'to Auto sets the font, size and colour.'),
+  Tip(Icons.gesture, 'Scribble to delete',
+      'Scribble back and forth over handwriting or typed text with the pen to '
+          'delete it. Undo brings it back.'),
   Tip(Icons.spellcheck, 'Undo an autocorrect',
       'Words that autocorrect changed have a dotted blue underline. Tap one '
           'to get back what you wrote.'),

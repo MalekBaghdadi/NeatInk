@@ -5,6 +5,7 @@ import 'integrations/erase_select/erase_select_integration.dart';
 import 'integrations/highlight/highlight_integration.dart';
 import 'integrations/pages/pages_integration.dart';
 import 'integrations/pdf/pdf_integration.dart';
+import 'integrations/scribble/scribble_integration.dart';
 import 'integrations/shapes/shapes_integration.dart';
 import 'integrations/text_images/text_images_integration.dart';
 
@@ -21,4 +22,5 @@ final List<EditorIntegration> defaultEditorIntegrations = [
   pdfIntegration,
   convertIntegration,
   autocorrectIntegration,
+  scribbleIntegration,
 ];

@@ -17,6 +17,7 @@ class AppSettings {
     this.stylusButtonErases = true,
     this.shapeSnapEnabled = true,
     this.tidyHighlighter = true,
+    this.scribbleToDelete = true,
     this.pdfMargins = PdfMargins.none,
     this.exportPaperLines = true,
     this.autoConvert = false,
@@ -38,6 +39,7 @@ class AppSettings {
         stylusButtonErases: j['stylusButtonErases'] as bool? ?? true,
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
         tidyHighlighter: j['tidyHighlighter'] is bool ? j['tidyHighlighter'] as bool : true,
+        scribbleToDelete: j['scribbleToDelete'] is bool ? j['scribbleToDelete'] as bool : true,
         pdfMargins: PdfMargins.byName(j['pdfMargins']),
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
@@ -76,6 +78,10 @@ class AppSettings {
   /// becomes a straight band that fits the line (the drawn one is kept for
   /// "Restore original"). On by default.
   final bool tidyHighlighter;
+
+  /// Scribble over handwriting or typed text with the pen to delete it (see
+  /// `scribbleIntegration`). On by default.
+  final bool scribbleToDelete;
 
   /// Writing margins last chosen when importing a PDF (the next import
   /// offers the same).
@@ -132,6 +138,7 @@ class AppSettings {
     bool? stylusButtonErases,
     bool? shapeSnapEnabled,
     bool? tidyHighlighter,
+    bool? scribbleToDelete,
     PdfMargins? pdfMargins,
     bool? exportPaperLines,
     bool? autoConvert,
@@ -152,6 +159,7 @@ class AppSettings {
         stylusButtonErases: stylusButtonErases ?? this.stylusButtonErases,
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
         tidyHighlighter: tidyHighlighter ?? this.tidyHighlighter,
+        scribbleToDelete: scribbleToDelete ?? this.scribbleToDelete,
         pdfMargins: pdfMargins ?? this.pdfMargins,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
@@ -174,6 +182,7 @@ class AppSettings {
         'stylusButtonErases': stylusButtonErases,
         'shapeSnapEnabled': shapeSnapEnabled,
         'tidyHighlighter': tidyHighlighter,
+        'scribbleToDelete': scribbleToDelete,
         'pdfMargins': pdfMargins.name,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,

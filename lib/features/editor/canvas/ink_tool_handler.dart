@@ -172,6 +172,15 @@ class InkToolHandler extends CanvasToolHandler {
       size: active.size,
     );
     final hook = controller.extensions.liveStrokeHook;
+    if (active.tool == StrokeTool.pen && controller.isPageEditable(active.pageId)) {
+      for (final gesture in controller.extensions.strokeGestures) {
+        if (gesture(active.pageId, raw)) {
+          hook?.onCancel(active);
+          live?.clear();
+          return;
+        }
+      }
+    }
     var stroke = hook == null ? raw : hook.onFinish(active, raw);
     for (final finish in controller.extensions.strokeFinishers) {
       stroke = finish(active.pageId, stroke);
