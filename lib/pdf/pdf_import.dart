@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../document/notebook_meta.dart';
+import '../document/pdf_margins.dart';
 import '../storage/notebook_repository.dart';
 import 'pdf_engine.dart';
 import 'pdfrx_engine.dart';
@@ -31,6 +32,7 @@ const String defaultPdfNotebookTitle = 'Imported PDF';
 ///   text for search. Text extraction is best effort: a page whose text
 ///   cannot be read is skipped and never fails the import.
 /// * [onProgress] reports text extraction progress (pages done / total).
+/// * [margins] adds lined writing space beside every page.
 ///
 /// Throws [PdfImportException] with a user-facing message when the file is
 /// missing, password-protected, damaged, empty, or cannot be stored.
@@ -41,6 +43,7 @@ Future<NotebookMeta> importPdfNotebook(
   String? folderId,
   PdfEngine engine = const PdfrxEngine(),
   void Function(int done, int total)? onProgress,
+  PdfMargins margins = PdfMargins.none,
 }) async {
   if (!File(pdfPath).existsSync()) {
     throw const PdfImportException(
@@ -66,7 +69,7 @@ Future<NotebookMeta> importPdfNotebook(
       throw const PdfImportException('This PDF has no pages.');
     }
 
-    final NotebookMeta meta;
+    NotebookMeta meta;
     try {
       meta = await repo.createPdfNotebook(
         title: pdfNotebookTitle(pdfPath, title),
@@ -79,6 +82,18 @@ Future<NotebookMeta> importPdfNotebook(
       throw const PdfImportException(
           'The PDF could not be copied into your library. Check that the '
           'device has enough free storage and try again.');
+    }
+
+    if (margins != PdfMargins.none) {
+      final widened = meta.copyWith(
+          pages: [for (final p in meta.pages) withPdfMargins(p, margins)]);
+      try {
+        await repo.saveMeta(widened);
+        meta = widened;
+      } catch (e) {
+        // The notebook works without margins; they can be added later.
+        debugPrint('NeatInk: saving PDF margins failed: $e');
+      }
     }
 
     await _storePdfText(repo, meta, doc, onProgress);

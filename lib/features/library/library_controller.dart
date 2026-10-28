@@ -9,6 +9,7 @@ import '../../app/providers.dart';
 import '../../document/cover_design.dart';
 import '../../document/notebook_meta.dart';
 import '../../document/paper.dart';
+import '../../document/pdf_margins.dart';
 import '../../storage/notebook_repository.dart';
 import '../settings/app_settings.dart';
 import '../settings/settings_controller.dart';
@@ -201,11 +202,13 @@ class LibraryController extends AsyncNotifier<LibraryState> {
   /// Imports [pdf] as a new notebook (see [createNotebook] for placement).
   /// Throws the import service's errors (a `PdfImportException` carries a
   /// user-facing message).
-  Future<NotebookMeta> importPdf(PickedPdf pdf) => _serial(() async {
+  Future<NotebookMeta> importPdf(PickedPdf pdf,
+          {PdfMargins margins = PdfMargins.none}) =>
+      _serial(() async {
         final view = state.value;
-        final imported = await ref
-            .read(pdfImportServiceProvider)
-            .importPdf(_repo, pdf, folderId: _targetFolder(view));
+        final imported = await ref.read(pdfImportServiceProvider).importPdf(
+            _repo, pdf,
+            folderId: _targetFolder(view), margins: margins);
         final meta = await _adoptIntoView(imported, view?.filter);
         _upsert(meta);
         return meta;

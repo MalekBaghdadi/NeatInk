@@ -330,6 +330,46 @@ class PageItemsCommand extends EditCommand {
   }
 }
 
+/// Replaces everything on one page with [after] (e.g. all of it moved);
+/// undo puts [before] back. The page object stays the same, so views and
+/// caches keep following it.
+class ReplacePageContentCommand extends EditCommand {
+  ReplacePageContentCommand(this.pageId, PageContent before, PageContent after,
+      {required this.label})
+      : _before = _snapshot(before),
+        _after = _snapshot(after);
+
+  final String pageId;
+  @override
+  final String label;
+  final PageContent _before;
+  final PageContent _after;
+
+  static PageContent _snapshot(PageContent c) => PageContent(
+      strokes: List.of(c.strokes), texts: List.of(c.texts), images: List.of(c.images));
+
+  @override
+  DocChange apply(NotebookDoc doc) => _set(doc, _after);
+
+  @override
+  DocChange revert(NotebookDoc doc) => _set(doc, _before);
+
+  DocChange _set(NotebookDoc doc, PageContent from) {
+    final page = doc.page(pageId);
+    page.strokes
+      ..clear()
+      ..addAll(from.strokes);
+    page.texts
+      ..clear()
+      ..addAll(from.texts);
+    page.images
+      ..clear()
+      ..addAll(from.images);
+    page.touch();
+    return DocChange(pageIds: {pageId});
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Pages
 

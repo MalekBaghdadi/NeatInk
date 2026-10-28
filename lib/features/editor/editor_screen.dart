@@ -286,6 +286,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
               unawaited(ext.changePagePaper?.call(context, c));
             case 'export':
               unawaited(ext.exportPdf?.call(context, c));
+            case 'margins':
+              unawaited(ext.pdfMargins?.call(context, c));
           }
         },
         itemBuilder: (context) => [
@@ -301,6 +303,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
           const PopupMenuItem(value: 'delete', child: Text('Delete page')),
           if (ext.changePagePaper != null)
             const PopupMenuItem(value: 'paper', child: Text('Page paper')),
+          if (ext.pdfMargins != null &&
+              c.isReady &&
+              c.doc.meta.pages.any((p) => p.isPdf))
+            const PopupMenuItem(
+                key: ValueKey('menu-pdf-margins'),
+                value: 'margins',
+                child: Text('PDF margins…')),
           if (ext.exportPdf != null)
             const PopupMenuItem(value: 'export', child: Text('Export PDF')),
         ],

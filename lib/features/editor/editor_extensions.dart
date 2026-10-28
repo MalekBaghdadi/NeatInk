@@ -275,6 +275,9 @@ class EditorExtensions {
   /// Overflow menu "Export PDF". Disabled when null.
   EditorAction? exportPdf;
 
+  /// Overflow menu "PDF margins…" (shown for notebooks with PDF pages).
+  EditorAction? pdfMargins;
+
   /// Overflow menu "Page paper". Disabled when null.
   EditorAction? changePagePaper;
 

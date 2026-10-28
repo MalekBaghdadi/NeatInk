@@ -127,3 +127,28 @@ Affine2 appToPdfMatrix({
       return Affine2(0, -sx, -sy, 0, box.right, box.top);
   }
 }
+
+/// [box] grown by [left] and [right] PDF units beside the page *as
+/// displayed* (turned clockwise by [quarterTurns] × 90°): the visible box of
+/// a PDF page given writing margins. Which side of the unrotated box is the
+/// displayed left follows the table of [appToPdfMatrix] (where X = 0 lands):
+///
+/// | turns | displayed left | displayed right |
+/// |-------|----------------|-----------------|
+/// | 0     | left           | right           |
+/// | 1     | bottom         | top             |
+/// | 2     | right          | left            |
+/// | 3     | top            | bottom          |
+PdfBox pdfBoxWithSideMargins(
+    PdfBox box, int quarterTurns, double left, double right) {
+  switch (quarterTurns % 4) {
+    case 0:
+      return PdfBox(box.left - left, box.bottom, box.right + right, box.top);
+    case 1:
+      return PdfBox(box.left, box.bottom - left, box.right, box.top + right);
+    case 2:
+      return PdfBox(box.left - right, box.bottom, box.right + left, box.top);
+    default:
+      return PdfBox(box.left, box.bottom - right, box.right, box.top + left);
+  }
+}

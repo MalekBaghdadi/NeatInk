@@ -11,6 +11,7 @@ import 'dialogs/confirm_dialog.dart';
 import 'dialogs/cover_picker.dart';
 import 'dialogs/folder_picker_dialog.dart';
 import 'dialogs/name_dialog.dart';
+import 'dialogs/pdf_margins_dialog.dart';
 import 'dialogs/new_notebook_sheet.dart';
 import 'dialogs/progress_dialog.dart';
 import 'dialogs/tags_dialog.dart';
@@ -107,11 +108,21 @@ class LibraryActions {
   Future<void> importPdf() async {
     final pdf = await _pickPdf();
     if (pdf == null || !context.mounted) return;
+    final margins = await showPdfMarginsDialog(context,
+        initial: ref.read(settingsProvider).pdfMargins, confirmLabel: 'Import');
+    if (margins == null || !context.mounted) {
+      await ref.read(pdfImportServiceProvider).discard(pdf);
+      return;
+    }
+    // The next import offers the same margins.
+    ref
+        .read(settingsProvider.notifier)
+        .update((s) => s.copyWith(pdfMargins: margins));
 
     final NotebookMeta meta;
     try {
-      meta = await runWithProgress(
-          context, 'Importing “${pdf.name}”…', () => _controller.importPdf(pdf));
+      meta = await runWithProgress(context, 'Importing “${pdf.name}”…',
+          () => _controller.importPdf(pdf, margins: margins));
     } on PdfImportException catch (e) {
       _snack(e.message);
       return;

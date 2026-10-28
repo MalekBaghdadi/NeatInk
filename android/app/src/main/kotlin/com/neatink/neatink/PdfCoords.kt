@@ -98,4 +98,25 @@ object PdfCoords {
             else -> doubleArrayOf(0.0, -sx, -sy, 0.0, box.right, box.top)
         }
     }
+
+    /**
+     * [box] grown by [left] and [right] PDF units beside the page *as
+     * displayed* (turned clockwise by [quarterTurns] x 90 degrees): the
+     * visible box of a PDF page given writing margins. Mirrors
+     * `pdfBoxWithSideMargins` in `pdf_coords.dart`:
+     *
+     * | turns | displayed left | displayed right |
+     * |-------|----------------|-----------------|
+     * | 0     | left           | right           |
+     * | 1     | bottom         | top             |
+     * | 2     | right          | left            |
+     * | 3     | top            | bottom          |
+     */
+    fun withSideMargins(box: Box, quarterTurns: Int, left: Double, right: Double): Box =
+        when (Math.floorMod(quarterTurns, 4)) {
+            0 -> Box(box.left - left, box.bottom, box.right + right, box.top)
+            1 -> Box(box.left, box.bottom - left, box.right, box.top + right)
+            2 -> Box(box.left - right, box.bottom, box.right + left, box.top)
+            else -> Box(box.left, box.bottom - right, box.right, box.top + left)
+        }
 }

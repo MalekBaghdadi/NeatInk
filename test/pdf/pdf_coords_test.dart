@@ -172,4 +172,29 @@ void main() {
       }
     });
   });
+
+  group('pdfBoxWithSideMargins', () {
+    // A 200 x 100 pt page whose CropBox starts at (10, 20); margins 30 / 50.
+    const box = PdfBox(10, 20, 210, 120);
+
+    for (final turns in [0, 1, 2, 3]) {
+      test('$turns quarter turns: the PDF page keeps its place between the margins', () {
+        final shown = displayedPdfPageSize(box, turns);
+        final grown = pdfBoxWithSideMargins(box, turns, 30, 50);
+        final wide = displayedPdfPageSize(grown, turns);
+        expect(wide.width, closeTo(shown.width + 80, 1e-9));
+        expect(wide.height, closeTo(shown.height, 1e-9));
+        final plain = appToPdfMatrix(
+            box: box, quarterTurns: turns, appWidth: shown.width, appHeight: shown.height);
+        final withMargins = appToPdfMatrix(
+            box: grown, quarterTurns: turns, appWidth: wide.width, appHeight: wide.height);
+        // A point on the PDF page lands on the same PDF spot either way.
+        for (final (x, y) in [(0.0, 0.0), (shown.width, shown.height), (12.5, 40.0)]) {
+          final a = map(plain, x, y);
+          final b = map(withMargins, 30 + x, y);
+          expectPoint(b, a.x, a.y);
+        }
+      });
+    }
+  });
 }

@@ -66,7 +66,7 @@ class _ThumbPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     if (page.isPdf) {
-      canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
+      paintPdfPageFrame(canvas, size, page);
     } else {
       paintPaper(canvas, size, page.paper, page.width, page.height);
     }

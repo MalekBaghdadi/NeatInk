@@ -31,7 +31,7 @@ void installPdfBackground(EditorController controller, {PdfPageCache? cache}) {
       builder: (context, scale, _) => PdfPageBackground(
         pdfPath: sourcePath(request.notebookId),
         pageIndex: index,
-        pageWidthPt: request.page.width,
+        pageWidthPt: request.page.contentWidth,
         pageHeightPt: request.page.height,
         scale: scale,
         cache: cache,
@@ -43,7 +43,8 @@ void installPdfBackground(EditorController controller, {PdfPageCache? cache}) {
       (ui.Canvas canvas, PagePaintContext context, double pixelsPerPoint) async {
     final page = context.page;
     final index = page.pdfPageIndex;
-    final region = thumbnailRegion(page.width, page.height, pixelsPerPoint);
+    final region =
+        thumbnailRegion(page.contentWidth, page.height, pixelsPerPoint);
     if (index == null || region == null) return;
     final path = sourcePath(context.notebookId);
     final cacheNow = pages();
@@ -56,7 +57,8 @@ void installPdfBackground(EditorController controller, {PdfPageCache? cache}) {
           image.image,
           Rect.fromLTWH(0, 0, image.image.width.toDouble(),
               image.image.height.toDouble()),
-          Rect.fromLTWH(0, 0, page.width, page.height),
+          Rect.fromLTWH(
+              page.contentLeft, 0, page.contentWidth, page.height),
           Paint()..filterQuality = FilterQuality.medium,
         );
       } finally {

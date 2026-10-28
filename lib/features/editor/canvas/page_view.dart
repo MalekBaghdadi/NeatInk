@@ -106,6 +106,22 @@ class EditorPageView extends StatelessWidget {
         ),
       );
       pdf ??= _PdfPlaceholder(pdfPageIndex: page.pdfPageIndex!);
+      if (page.hasMargins) {
+        // Writing margins: paper beside the PDF page.
+        pdf = Stack(
+          fit: StackFit.expand,
+          children: [
+            CustomPaint(painter: PdfPageFramePainter(page), isComplex: true),
+            Positioned(
+              left: page.contentLeft,
+              top: 0,
+              width: page.contentWidth,
+              height: page.height,
+              child: pdf,
+            ),
+          ],
+        );
+      }
     }
     return DecoratedBox(
       // A thin shadow in page points, so pages stand out from the backdrop

@@ -240,6 +240,9 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val width = p.num("width", 595.0)
         val height = p.num("height", 842.0)
         val pdfIndex = (p["pdfPageIndex"] as? Number)?.toInt()
+        val marginLeft = max(0.0, p.num("marginLeft", 0.0))
+        val marginRight = max(0.0, p.num("marginRight", 0.0))
+        val margins = pdfIndex != null && (marginLeft > 0 || marginRight > 0)
 
         val page: PDPage
         if (pdfIndex != null) {
@@ -254,10 +257,13 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             s.doc.addPage(page)
         }
 
-        val box = PdfCoords.visibleBox(page.mediaBox.toBox(), page.cropBox.toBox())
+        var box = PdfCoords.visibleBox(page.mediaBox.toBox(), page.cropBox.toBox())
         // PdfBox's getRotation() normalises differently from PDFium; read the
         // raw value like the app does (importPage copied it onto the page).
         val turns = PdfCoords.quarterTurns(page.getCOSObject().getInt(COSName.ROTATE, 0))
+        if (margins) {
+            box = PdfMargins.apply(s.doc, page, box, turns, width, marginLeft, marginRight)
+        }
         val m = PdfCoords.appToPdfMatrix(box, turns, width, height)
 
         PDPageContentStream(s.doc, page, PDPageContentStream.AppendMode.APPEND, true, true).use { cs ->
@@ -265,7 +271,13 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             // Everything below is in app coordinates (points, y down).
             cs.saveGraphicsState()
             cs.transform(Matrix(m[0].toFloat(), m[1].toFloat(), m[2].toFloat(), m[3].toFloat(), m[4].toFloat(), m[5].toFloat()))
-            d.background(p, width, height)
+            if (margins) {
+                // Paper only beside the PDF page, never over it.
+                d.background(p, 0.0, marginLeft)
+                d.background(p, width - marginRight, marginRight)
+            } else if (pdfIndex == null) {
+                d.background(p, 0.0, width)
+            }
             d.lines(p.list("lines"))
             d.dots(p)
             d.images(p.list("images"))
@@ -283,11 +295,12 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         private var fillAlpha = 1f
         private var strokeAlpha = 1f
 
-        fun background(p: Map<*, *>, width: Double, height: Double) {
+        /** Fills the band [x]..[x] + [w] of the page with its background. */
+        fun background(p: Map<*, *>, x: Double, w: Double) {
             val color = (p["background"] as? Number)?.toLong() ?: return
-            if (alphaOf(color) == 0) return
+            if (alphaOf(color) == 0 || w <= 0) return
             setFill(color)
-            cs.addRect(0f, 0f, width.toFloat(), height.toFloat())
+            cs.addRect(x.toFloat(), 0f, w.toFloat(), p.num("height", 842.0).toFloat())
             cs.fill()
         }
 

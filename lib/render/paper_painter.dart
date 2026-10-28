@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 
+import '../document/notebook_meta.dart';
 import '../document/paper.dart';
 
 /// Thinnest line the painter draws, in logical pixels. Page rulings are
@@ -38,6 +39,45 @@ class PaperPainter extends CustomPainter {
       oldDelegate.paper != paper ||
       oldDelegate.pageWidthPt != pageWidthPt ||
       oldDelegate.pageHeightPt != pageHeightPt;
+}
+
+/// The background of a PDF page ([PageMeta.isPdf]) onto a [size] canvas:
+/// white, or with writing margins ([PageMeta.hasMargins]) the page's paper
+/// in the margins and a hairline along the PDF page's edges. The PDF page
+/// itself is drawn over [PageMeta.contentLeft]..[PageMeta.contentRight].
+void paintPdfPageFrame(Canvas canvas, Size size, PageMeta page) {
+  const white = Color(0xFFFFFFFF);
+  if (!page.hasMargins || !(page.width > 0)) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = white);
+    return;
+  }
+  paintPaper(canvas, size, page.paper, page.width, page.height);
+  final sx = size.width / page.width;
+  final pdf = Rect.fromLTWH(page.contentLeft * sx, 0, page.contentWidth * sx, size.height);
+  canvas.drawRect(pdf, Paint()..color = white);
+  final edge = Paint()
+    ..color = const Color(0x33000000)
+    ..strokeWidth = math.max(1.0, 0.75 * sx);
+  canvas.drawLine(pdf.topLeft, pdf.bottomLeft, edge);
+  canvas.drawLine(pdf.topRight, pdf.bottomRight, edge);
+}
+
+/// [paintPdfPageFrame] as a painter (page points; the canvas is the page).
+class PdfPageFramePainter extends CustomPainter {
+  PdfPageFramePainter(this.page);
+
+  final PageMeta page;
+
+  @override
+  void paint(Canvas canvas, Size size) => paintPdfPageFrame(canvas, size, page);
+
+  @override
+  bool shouldRepaint(PdfPageFramePainter oldDelegate) =>
+      oldDelegate.page.paper != page.paper ||
+      oldDelegate.page.width != page.width ||
+      oldDelegate.page.height != page.height ||
+      oldDelegate.page.marginLeft != page.marginLeft ||
+      oldDelegate.page.marginRight != page.marginRight;
 }
 
 /// Paints [paper] for a page of [pageWidthPt] × [pageHeightPt] points onto

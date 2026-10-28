@@ -1,4 +1,5 @@
 import '../../document/paper.dart';
+import '../../document/pdf_margins.dart';
 import '../../ink/stroke.dart' show enumByName;
 
 enum AppThemeMode { system, light, dark }
@@ -16,6 +17,7 @@ class AppSettings {
     this.stylusButtonErases = true,
     this.shapeSnapEnabled = true,
     this.tidyHighlighter = true,
+    this.pdfMargins = PdfMargins.none,
     this.exportPaperLines = true,
     this.autoConvert = false,
     this.autoConvertDelayMs = defaultAutoConvertDelayMs,
@@ -34,6 +36,7 @@ class AppSettings {
         stylusButtonErases: j['stylusButtonErases'] as bool? ?? true,
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
         tidyHighlighter: j['tidyHighlighter'] is bool ? j['tidyHighlighter'] as bool : true,
+        pdfMargins: PdfMargins.byName(j['pdfMargins']),
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
         autoConvertDelayMs: clampAutoConvertDelay(switch (j['autoConvertDelayMs']) {
@@ -67,6 +70,10 @@ class AppSettings {
   /// becomes a straight band that fits the line (the drawn one is kept for
   /// "Restore original"). On by default.
   final bool tidyHighlighter;
+
+  /// Writing margins last chosen when importing a PDF (the next import
+  /// offers the same).
+  final PdfMargins pdfMargins;
 
   /// Draw paper lines/grid when exporting blank notebooks as PDF.
   final bool exportPaperLines;
@@ -113,6 +120,7 @@ class AppSettings {
     bool? stylusButtonErases,
     bool? shapeSnapEnabled,
     bool? tidyHighlighter,
+    PdfMargins? pdfMargins,
     bool? exportPaperLines,
     bool? autoConvert,
     int? autoConvertDelayMs,
@@ -130,6 +138,7 @@ class AppSettings {
         stylusButtonErases: stylusButtonErases ?? this.stylusButtonErases,
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
         tidyHighlighter: tidyHighlighter ?? this.tidyHighlighter,
+        pdfMargins: pdfMargins ?? this.pdfMargins,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
         autoConvertDelayMs: autoConvertDelayMs == null
@@ -149,6 +158,7 @@ class AppSettings {
         'stylusButtonErases': stylusButtonErases,
         'shapeSnapEnabled': shapeSnapEnabled,
         'tidyHighlighter': tidyHighlighter,
+        'pdfMargins': pdfMargins.name,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,
         'autoConvertDelayMs': autoConvertDelayMs,

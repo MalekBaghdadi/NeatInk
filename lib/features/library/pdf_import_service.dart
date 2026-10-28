@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../document/notebook_meta.dart';
+import '../../document/pdf_margins.dart';
 import '../../pdf/pdf_import.dart';
 import '../../storage/notebook_repository.dart';
 import '../lock/auto_lock_suspension.dart';
@@ -67,14 +68,17 @@ class PdfImportService {
   /// Creates a PDF-backed notebook from [pdf] in [folderId].
   /// Throws [PdfImportException] with a user-facing message on failure.
   Future<NotebookMeta> importPdf(NotebookRepository repo, PickedPdf pdf,
-      {String? folderId}) async {
+      {String? folderId, PdfMargins margins = PdfMargins.none}) async {
     try {
       return await importPdfNotebook(repo, pdf.path,
-          title: pdf.suggestedTitle, folderId: folderId);
+          title: pdf.suggestedTitle, folderId: folderId, margins: margins);
     } finally {
       await _cleanUp(pdf);
     }
   }
+
+  /// Drops a picked file that will not be imported after all.
+  Future<void> discard(PickedPdf pdf) => _cleanUp(pdf);
 
   /// Streams [file] into a fresh temp folder (never into memory as a whole:
   /// PDFs can be large) and returns the new file's path.

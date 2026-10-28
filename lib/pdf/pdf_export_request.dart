@@ -118,6 +118,8 @@ class ExportPage {
     required this.width,
     required this.height,
     this.pdfPageIndex,
+    this.marginLeft = 0,
+    this.marginRight = 0,
     this.background,
     this.lines = const [],
     this.dots = const [],
@@ -139,7 +141,14 @@ class ExportPage {
   /// selectable). When null, a new blank page is created.
   final int? pdfPageIndex;
 
-  /// Fill colour (ARGB) for blank pages; null leaves the page unfilled.
+  /// Writing space beside a PDF page, in points: the output page is
+  /// [width] wide with the PDF page between the margins (its content
+  /// unchanged and still selectable). Zero for plain pages.
+  final double marginLeft;
+  final double marginRight;
+
+  /// Fill colour (ARGB) for blank pages, or for the margins of a PDF page;
+  /// null leaves the page unfilled.
   final int? background;
   final List<ExportLine> lines;
 
@@ -157,6 +166,8 @@ class ExportPage {
         'width': width,
         'height': height,
         'pdfPageIndex': pdfPageIndex,
+        'marginLeft': marginLeft,
+        'marginRight': marginRight,
         'background': background,
         'lines': [for (final l in lines) l.toMap()],
         'dots': dots,

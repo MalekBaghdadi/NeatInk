@@ -118,10 +118,33 @@ ExportPage buildExportPage(
 
   final pdfIndex = page.pdfPageIndex;
   if (pdfIndex != null) {
+    final margins = page.hasMargins;
+    final ruling = margins && exportPaperLines
+        ? _ruling(page.paper, page.width, page.height, xRanges: [
+            (0, page.contentLeft),
+            (page.contentRight, page.width),
+          ])
+        : (lines: const <ExportLine>[], dots: const <double>[]);
     return ExportPage(
       width: page.width,
       height: page.height,
       pdfPageIndex: pdfIndex,
+      marginLeft: page.marginLeft,
+      marginRight: page.marginRight,
+      background: margins ? page.paper.color : null,
+      lines: [
+        ...ruling.lines,
+        // A hairline along the PDF page's edges, as on screen.
+        if (margins) ...[
+          ExportLine(page.contentLeft, 0, page.contentLeft, page.height, 0.75,
+              _pdfEdgeColor),
+          ExportLine(page.contentRight, 0, page.contentRight, page.height,
+              0.75, _pdfEdgeColor),
+        ],
+      ],
+      dots: ruling.dots,
+      dotRadius: PaperGeometry.dotRadius,
+      dotColor: page.paper.lineColor,
       images: images,
       highlighter: highlighter,
       textRects: textRects,
@@ -131,35 +154,16 @@ ExportPage buildExportPage(
   }
 
   final paper = page.paper;
-  var lines = const <ExportLine>[];
-  List<double> dots = const <double>[];
-  if (exportPaperLines && paper.type != PaperType.blank) {
-    final geometry = PaperGeometry(paper, page.width, page.height);
-    lines = [
-      for (final l in geometry.lines)
-        ExportLine(
-          l.from.x,
-          l.from.y,
-          l.to.x,
-          l.to.y,
-          PaperGeometry.strokeWidthFor(l.role),
-          l.role == PaperLineRole.rule ? paper.lineColor : paper.accentColor,
-        ),
-    ];
-    final flat = Float32List(geometry.dots.length * 2);
-    for (var i = 0; i < geometry.dots.length; i++) {
-      flat[i * 2] = geometry.dots[i].x;
-      flat[i * 2 + 1] = geometry.dots[i].y;
-    }
-    dots = flat;
-  }
+  final ruling = exportPaperLines
+      ? _ruling(paper, page.width, page.height)
+      : (lines: const <ExportLine>[], dots: const <double>[]);
 
   return ExportPage(
     width: page.width,
     height: page.height,
     background: paper.color,
-    lines: lines,
-    dots: dots,
+    lines: ruling.lines,
+    dots: ruling.dots,
     dotRadius: PaperGeometry.dotRadius,
     dotColor: paper.lineColor,
     images: images,
@@ -168,6 +172,50 @@ ExportPage buildExportPage(
     textLines: textLines,
     ink: ink,
   );
+}
+
+/// The hairline at the edges of a PDF page between writing margins.
+const int _pdfEdgeColor = 0x33000000;
+
+/// [paper]'s lines and dots for a page of [width] x [height] points. With
+/// [xRanges], only the parts inside those horizontal ranges (the margins
+/// beside a PDF page).
+({List<ExportLine> lines, List<double> dots}) _ruling(
+  Paper paper,
+  double width,
+  double height, {
+  List<(double, double)>? xRanges,
+}) {
+  if (paper.type == PaperType.blank) {
+    return (lines: const <ExportLine>[], dots: const <double>[]);
+  }
+  final ranges = [
+    for (final r in xRanges ?? [(0.0, width)])
+      if (r.$2 > r.$1) r,
+  ];
+  final geometry = PaperGeometry(paper, width, height);
+  final lines = <ExportLine>[];
+  for (final l in geometry.lines) {
+    final color =
+        l.role == PaperLineRole.rule ? paper.lineColor : paper.accentColor;
+    final lineWidth = PaperGeometry.strokeWidthFor(l.role);
+    final x1 = math.min(l.from.x, l.to.x), x2 = math.max(l.from.x, l.to.x);
+    for (final (left, right) in ranges) {
+      final a = math.max(x1, left), b = math.min(x2, right);
+      if (x1 == x2 ? (x1 < left || x1 > right) : b <= a) continue;
+      if (x1 == x2) {
+        lines.add(ExportLine(x1, l.from.y, x2, l.to.y, lineWidth, color));
+      } else {
+        // Ruled lines are horizontal: clip them to the range.
+        lines.add(ExportLine(a, l.from.y, b, l.to.y, lineWidth, color));
+      }
+    }
+  }
+  final xy = <double>[
+    for (final d in geometry.dots)
+      if (ranges.any((r) => d.x >= r.$1 && d.x <= r.$2)) ...[d.x, d.y],
+  ];
+  return (lines: lines, dots: Float32List.fromList(xy));
 }
 
 /// A text box as PDF instructions: one [ExportTextLine] per visual line,

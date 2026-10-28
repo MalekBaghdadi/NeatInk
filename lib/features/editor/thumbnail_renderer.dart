@@ -37,7 +37,7 @@ Future<Uint8List?> renderPageThumbnail(
   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()));
   final pixelSize = Size(w.toDouble(), h.toDouble());
   if (page.isPdf) {
-    canvas.drawRect(Offset.zero & pixelSize, Paint()..color = const Color(0xFFFFFFFF));
+    paintPdfPageFrame(canvas, pixelSize, page);
   } else {
     // Paper is painted in pixels (not under the point scale) so its
     // minimum line width keeps the ruling visible at thumbnail size.

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../editor_controller.dart';
 import '../../editor_integrations.dart';
 import 'export_install.dart';
+import 'margins_install.dart';
 import 'pdf_background.dart';
 
 export 'export_service.dart' show PdfExportService, pdfExportServiceProvider;
@@ -15,4 +16,5 @@ final EditorIntegration pdfIntegration = _install;
 void _install(EditorController controller, WidgetRef ref) {
   installPdfBackground(controller);
   installPdfExport(controller, ref);
+  installPdfMargins(controller);
 }

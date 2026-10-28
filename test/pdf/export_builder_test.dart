@@ -109,6 +109,42 @@ void main() {
       expect(page.height, 792);
     });
 
+    test('a PDF page with margins: wider page, paper only beside the PDF', () {
+      const meta = PageMeta(
+          id: 'p',
+          width: 1000,
+          height: 600,
+          pdfPageIndex: 0,
+          marginLeft: 150,
+          marginRight: 250,
+          paper: Paper(type: PaperType.lined, color: Paper.cream));
+      final page = buildExportPage(meta, PageContent(),
+          exportPaperLines: true, assetPath: assetPath);
+      expect(page.pdfPageIndex, 0);
+      expect(page.width, 1000);
+      expect((page.marginLeft, page.marginRight), (150, 250));
+      expect(page.background, Paper.cream);
+      final ruled = page.lines.where((l) => l.y1 == l.y2).toList();
+      expect(ruled, isNotEmpty);
+      // Every ruled line stays in a margin, never over the PDF page.
+      for (final l in ruled) {
+        final inLeft = l.x1 >= 0 && l.x2 <= 150;
+        final inRight = l.x1 >= 750 && l.x2 <= 1000;
+        expect(inLeft || inRight, isTrue, reason: '${l.x1}..${l.x2}');
+      }
+      expect(ruled.any((l) => l.x1 == 0 && l.x2 == 150), isTrue);
+      expect(ruled.any((l) => l.x1 == 750 && l.x2 == 1000), isTrue);
+      // Hairlines along the PDF page's edges.
+      final edges = page.lines.where((l) => l.x1 == l.x2 && l.color == 0x33000000).map((l) => l.x1);
+      expect(edges, containsAll([150.0, 750.0]));
+      expect(page.toMap()['marginLeft'], 150);
+
+      final plain = buildExportPage(meta, PageContent(),
+          exportPaperLines: false, assetPath: assetPath);
+      expect(plain.lines.where((l) => l.y1 == l.y2), isEmpty, reason: 'no ruling when not asked');
+      expect(plain.lines, hasLength(2), reason: 'the edges stay');
+    });
+
     test('a lined page gets background and ruling only when asked', () {
       const meta = PageMeta(
           id: 'p', paper: Paper(type: PaperType.lined, color: Paper.cream));
