@@ -39,6 +39,22 @@ void installPdfBackground(EditorController controller, {PdfPageCache? cache}) {
     );
   };
 
+  // The page grid: the same widget at thumbnail size, so it renders a small
+  // image (or reuses one the editor already has) off the UI thread.
+  controller.extensions.pageThumbnailBackgroundBuilder =
+      (context, notebookId, page, scale) {
+    final index = page.pdfPageIndex;
+    if (index == null) return null;
+    return PdfPageBackground(
+      pdfPath: sourcePath(notebookId),
+      pageIndex: index,
+      pageWidthPt: page.contentWidth,
+      pageHeightPt: page.height,
+      scale: scale,
+      cache: cache,
+    );
+  };
+
   controller.extensions.thumbnailBackground =
       (ui.Canvas canvas, PagePaintContext context, double pixelsPerPoint) async {
     final page = context.page;

@@ -8,7 +8,9 @@ import '../../editor_controller.dart';
 import '../../editor_extensions.dart';
 
 /// A small live picture of a page: paper, ink, text and images, painted
-/// directly (no image encoding). PDF pages show plain white under the ink.
+/// directly (no image encoding). PDF pages show their PDF page under the ink
+/// when the PDF feature is installed (`pageThumbnailBackgroundBuilder`),
+/// plain white otherwise.
 class PageThumbnail extends StatelessWidget {
   const PageThumbnail({
     super.key,
@@ -24,10 +26,8 @@ class PageThumbnail extends StatelessWidget {
     final page = controller.doc.meta.pages[pageIndex];
     final content = controller.doc.pages[page.id] ?? PageContent();
     final ext = controller.extensions;
-    return AspectRatio(
-      aspectRatio: page.width / page.height,
-      child: RepaintBoundary(
-        child: CustomPaint(
+    final pdfBuilder = page.isPdf ? ext.pageThumbnailBackgroundBuilder : null;
+    CustomPaint ink({required bool background}) => CustomPaint(
           painter: _ThumbPainter(
             page: page,
             content: content,
@@ -36,8 +36,37 @@ class PageThumbnail extends StatelessWidget {
             notebookId: controller.notebookId,
             imageLayer: ext.imageLayer,
             textLayer: ext.textLayer,
+            paintBackground: background,
           ),
-        ),
+        );
+    return AspectRatio(
+      aspectRatio: page.width / page.height,
+      child: RepaintBoundary(
+        child: pdfBuilder == null
+            ? ink(background: true)
+            : LayoutBuilder(builder: (context, box) {
+                final scale = page.width > 0 ? box.maxWidth / page.width : 0.0;
+                final pdf = scale > 0
+                    ? pdfBuilder(context, controller.notebookId, page, scale)
+                    : null;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // The frame: white page, or paper in the writing margins.
+                    CustomPaint(painter: PdfPageFramePainter(page)),
+                    if (pdf != null)
+                      Positioned(
+                        key: const ValueKey('page-thumb-pdf'),
+                        left: page.contentLeft * scale,
+                        top: 0,
+                        width: page.contentWidth * scale,
+                        bottom: 0,
+                        child: pdf,
+                      ),
+                    ink(background: false),
+                  ],
+                );
+              }),
       ),
     );
   }
@@ -52,6 +81,7 @@ class _ThumbPainter extends CustomPainter {
     required this.notebookId,
     this.imageLayer,
     this.textLayer,
+    this.paintBackground = true,
   });
 
   final PageMeta page;
@@ -62,12 +92,15 @@ class _ThumbPainter extends CustomPainter {
   final PageLayerPainter? imageLayer;
   final PageLayerPainter? textLayer;
 
+  /// False when the page's background is a widget below this painter.
+  final bool paintBackground;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    if (page.isPdf) {
+    if (paintBackground && page.isPdf) {
       paintPdfPageFrame(canvas, size, page);
-    } else {
+    } else if (paintBackground) {
       paintPaper(canvas, size, page.paper, page.width, page.height);
     }
     canvas.save();
@@ -94,5 +127,6 @@ class _ThumbPainter extends CustomPainter {
       old.page != page ||
       old.content != content ||
       old.revision != revision ||
-      old.pageIndex != pageIndex;
+      old.pageIndex != pageIndex ||
+      old.paintBackground != paintBackground;
 }

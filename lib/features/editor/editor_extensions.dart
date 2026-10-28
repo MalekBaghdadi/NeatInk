@@ -174,6 +174,13 @@ typedef PageBackgroundBuilder = Widget? Function(
 typedef ThumbnailBackgroundPainter = Future<void> Function(
     ui.Canvas canvas, PagePaintContext context, double pixelsPerPoint);
 
+/// Builds the PDF page of [page] for a small live thumbnail (the page grid).
+/// The widget fills the PDF part of the page ([PageMeta.contentWidth] x
+/// [PageMeta.height] points); [scale] is logical pixels per point. Return
+/// null to leave the page white.
+typedef PageThumbnailBackgroundBuilder = Widget? Function(
+    BuildContext context, String notebookId, PageMeta page, double scale);
+
 /// Information about a page widget, for overlay builders.
 class EditorPageInfo {
   const EditorPageInfo({
@@ -273,6 +280,9 @@ class EditorExtensions {
 
   /// Background of a PDF page in the library thumbnail.
   ThumbnailBackgroundPainter? thumbnailBackground;
+
+  /// Background of a PDF page in the page grid's thumbnails.
+  PageThumbnailBackgroundBuilder? pageThumbnailBackgroundBuilder;
 
   /// Painted below highlighter strokes.
   PageLayerPainter? imageLayer;
