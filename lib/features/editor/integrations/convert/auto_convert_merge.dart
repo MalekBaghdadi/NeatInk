@@ -72,6 +72,11 @@ class MergePlan {
 /// gone); boxes in [taken] already took a line this pass. The nearest wins.
 /// The joined box keeps the autocorrect marks of both texts ([corrections]
 /// are those of [text]).
+///
+/// With [joinLines] a line also carries on a box on the line above when
+/// the box's sentence ran to the right edge there and is not finished
+/// ([continuesOnNextLine]); the box then wraps at the right margin. Text
+/// joined on the same line may wrap too.
 MergePlan? planMerge({
   required Iterable<AutoBox> boxes,
   required TextItem? Function(String id) liveItem,
@@ -82,12 +87,33 @@ MergePlan? planMerge({
   required ConvertTextMetrics metrics,
   Iterable<TextItem> pageTexts = const [],
   Set<String> taken = const {},
+  bool joinLines = false,
+  PageRuling? ruling,
 }) {
   final xh = line.xHeight;
   if (!xh.isFinite || xh <= 0 || text.isEmpty) return null;
   final start = line.baselineAt(line.left);
   MergePlan? best;
   var bestGap = double.infinity;
+
+  // How far below the box's last line [line] starts, when it carries on the
+  // box's unfinished sentence that ran to the right edge; else null.
+  double? dropBelow(TextItem live, AutoBoxVersion? base) {
+    if (endsSentence(live.text)) return null;
+    if (line.left > live.x + ConvertConfig.joinIndentXHeights * xh) return null;
+    final double lastBaseline;
+    if (base != null) {
+      if (!ranToRightEdge(base.inkRight, xh, pageWidth)) return null;
+      lastBaseline = base.inkBaseline;
+    } else {
+      // A typed box: its text wraps, or reaches the edge itself.
+      final wraps = metrics.naturalWidth(live) > live.width + 1e-6;
+      if (!wraps && !ranToRightEdge(live.x + live.width, xh, pageWidth)) return null;
+      lastBaseline = live.y + metrics.heightOf(live) - 0.25 * live.fontSize;
+    }
+    final drop = start - lastBaseline;
+    return drop > 0 && drop <= maxLineDrop(xh, ruling) ? drop : null;
+  }
 
   void consider(AutoBox box, TextItem live, AutoBoxVersion? base) {
     if (live.align != TextAlignKind.left) return;
@@ -110,26 +136,47 @@ MergePlan? planMerge({
         gap = gap == null ? h : math.min(gap, h);
       }
     }
+    // ... or on the line below, carrying on the sentence (after any box on
+    // the same line).
+    var below = false;
+    if (gap == null && joinLines) {
+      final drop = dropBelow(live, base);
+      if (drop != null) {
+        gap = ConvertConfig.mergeMaxGap * xh + drop;
+        below = true;
+      }
+    }
     if (gap == null || gap >= bestGap) return;
 
-    // The old box must be a single line, and so must the joined text.
+    // Beside the text, the old box must be a single line.
     const slack = ConvertConfig.lineSlack;
-    if (metrics.naturalWidth(live) + slack > live.width + 1e-6) return;
-    final head = '${live.text.trimRight()} ';
+    if (!below && metrics.naturalWidth(live) + slack > live.width + 1e-6) return;
     final tail = text.trimLeft();
     final lead = text.length - tail.length;
-    final grown = live.copyWith(text: head + tail);
+    final joinedText = below
+        ? joinSentence(live.text, tail)
+        : '${live.text.trimRight()} $tail';
+    final tailStart = joinedText.length - tail.length;
+    final grown = live.copyWith(text: joinedText);
     final joined = corrections.isEmpty
         ? grown
         : grown.copyWith(corrections: [
             ...grown.corrections,
             for (final c in corrections)
-              if (c.start >= lead) c.shifted(head.length - lead),
+              if (c.start >= lead) c.shifted(tailStart - lead),
           ]);
     final room = pageWidth - ConvertConfig.rightMargin - live.x;
     final natural = metrics.naturalWidth(joined);
-    if (natural + slack > room) return;
-    final wide = joined.copyWith(width: math.max(live.width, natural + slack));
+    // One line when it fits; else, joining sentences, it wraps at the margin.
+    final double width;
+    if (natural + slack <= room) {
+      width = math.max(live.width, natural + slack);
+    } else if (joinLines) {
+      width = math.max(live.width, room);
+    } else {
+      return;
+    }
+    final wide = joined.copyWith(width: width);
     final after = wide.copyWith(height: metrics.heightOf(wide));
     best = MergePlan(box, live, after, base ?? AutoBoxVersion(live, typedEnd, typedBaseline));
     bestGap = gap;

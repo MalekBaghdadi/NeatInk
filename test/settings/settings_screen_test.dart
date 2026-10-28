@@ -201,6 +201,15 @@ void main() {
     expect(settingsOf(c).autocorrect, isTrue);
   });
 
+  testWidgets('"Typed text" opens the look of converted text', (tester) async {
+    await pumpSettings(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('settings-typed-text')));
+    await tester.tap(find.byKey(const ValueKey('settings-typed-text')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('convert-size-even')), findsOneWidget);
+    expect(find.byKey(const ValueKey('convert-join-lines')), findsOneWidget);
+  });
+
   testWidgets('the autocorrect switch shows the saved value', (tester) async {
     SharedPreferences.setMockInitialValues({
       AppSettings.prefsKey: '{"autocorrect": false}',

@@ -8,37 +8,62 @@ import '../../app/providers.dart';
 import '../../document/font_kind.dart';
 import '../../ink/stroke.dart' show colorFromHex, colorToHex;
 
+/// How big converted text is.
+enum ConvertSizeMode {
+  /// One size for every line, chosen from the page: it fits the ruled lines
+  /// (16 pt on paper without lines). The default.
+  even('Even size'),
+
+  /// Each line as big as its handwriting.
+  handwriting('Match my handwriting'),
+
+  /// A size the user picked ([ConvertStylePrefs.fixedSize]).
+  custom('Custom');
+
+  const ConvertSizeMode(this.label);
+  final String label;
+}
+
 /// The look the user last chose for converted handwriting: font, bold /
 /// italic, size and colour. The "Convert to text" sheet saves it when the
 /// user converts, and auto-convert types with it, so both give the same
 /// result without asking again.
 ///
 /// Persisted as one JSON string in shared_preferences under [prefsKey].
-/// Defaults: Roboto, Auto size (match my handwriting), keep my ink colour.
+/// Defaults: Roboto, even size, keep my ink colour, join lines.
 class ConvertStylePrefs {
   const ConvertStylePrefs({
     this.fontId = 'sans',
     this.bold = false,
     this.italic = false,
+    this.sizeMode = ConvertSizeMode.even,
     this.fixedSize,
     this.colorOverride,
+    this.joinLines = true,
   });
 
   factory ConvertStylePrefs.fromJson(Map<String, dynamic> j) {
     final size = j['size'];
     final colour = j['colour'];
+    final validSize = size is num && size.isFinite && size > 0;
     return ConvertStylePrefs(
       // An unknown id is kept as the default font (FontKind.byName).
       fontId: FontKind.byName(j['font'] is String ? j['font'] as String : null)
           .name,
       bold: j['bold'] == true,
       italic: j['italic'] == true,
-      fixedSize: j['sizeMode'] == 'fixed' && size is num && size.isFinite && size > 0
-          ? size.toDouble()
-          : null,
+      // Before 1.5.0 the default was "auto" (match my handwriting), which
+      // gave every line its own size; it reads as the even size now.
+      sizeMode: switch (j['sizeMode']) {
+        'fixed' when validSize => ConvertSizeMode.custom,
+        'handwriting' => ConvertSizeMode.handwriting,
+        _ => ConvertSizeMode.even,
+      },
+      fixedSize: validSize ? size.toDouble() : null,
       colorOverride: j['colourMode'] == 'fixed' && colour is String
           ? _tryColor(colour)
           : null,
+      joinLines: j['joinLines'] is bool ? j['joinLines'] as bool : true,
     );
   }
 
@@ -49,41 +74,58 @@ class ConvertStylePrefs {
   final bool bold;
   final bool italic;
 
-  /// Font size in points, or null for "Auto (match my handwriting)".
+  /// How big the typed text is ([ConvertSizeMode]).
+  final ConvertSizeMode sizeMode;
+
+  /// The size in points for [ConvertSizeMode.custom] (remembered while
+  /// another mode is chosen); null: not chosen yet.
   final double? fixedSize;
 
   /// ARGB colour for every converted line, or null for "Keep my ink colour".
   final int? colorOverride;
 
+  /// A sentence written over several lines (the writer ran out of room at
+  /// the right edge) becomes one text box that wraps at the page edge.
+  final bool joinLines;
+
   FontKind get font => FontKind.byName(fontId);
-  bool get autoSize => fixedSize == null;
+  bool get autoSize => sizeMode == ConvertSizeMode.handwriting;
 
   ConvertStylePrefs copyWith({
     String? fontId,
     bool? bold,
     bool? italic,
+    ConvertSizeMode? sizeMode,
     double? fixedSize,
     bool clearFixedSize = false,
     int? colorOverride,
     bool clearColorOverride = false,
+    bool? joinLines,
   }) =>
       ConvertStylePrefs(
         fontId: fontId ?? this.fontId,
         bold: bold ?? this.bold,
         italic: italic ?? this.italic,
+        sizeMode: sizeMode ?? this.sizeMode,
         fixedSize: clearFixedSize ? null : (fixedSize ?? this.fixedSize),
         colorOverride:
             clearColorOverride ? null : (colorOverride ?? this.colorOverride),
+        joinLines: joinLines ?? this.joinLines,
       );
 
   Map<String, dynamic> toJson() => {
         'font': fontId,
         'bold': bold,
         'italic': italic,
-        'sizeMode': fixedSize == null ? 'auto' : 'fixed',
+        'sizeMode': switch (sizeMode) {
+          ConvertSizeMode.even => 'even',
+          ConvertSizeMode.handwriting => 'handwriting',
+          ConvertSizeMode.custom => 'fixed',
+        },
         'size': fixedSize,
         'colourMode': colorOverride == null ? 'keep' : 'fixed',
         'colour': colorOverride == null ? null : colorToHex(colorOverride!),
+        'joinLines': joinLines,
       };
 
   @override
@@ -92,11 +134,14 @@ class ConvertStylePrefs {
       other.fontId == fontId &&
       other.bold == bold &&
       other.italic == italic &&
+      other.sizeMode == sizeMode &&
       other.fixedSize == fixedSize &&
-      other.colorOverride == colorOverride;
+      other.colorOverride == colorOverride &&
+      other.joinLines == joinLines;
 
   @override
-  int get hashCode => Object.hash(fontId, bold, italic, fixedSize, colorOverride);
+  int get hashCode =>
+      Object.hash(fontId, bold, italic, sizeMode, fixedSize, colorOverride, joinLines);
 
   static int? _tryColor(String hex) {
     try {

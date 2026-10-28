@@ -478,10 +478,17 @@ class AutoConvertSession with WidgetsBindingObserver {
       final items = <TextItem>[];
       final replacements = <(TextItem, TextItem)>[];
       final ids = <String>{};
+      final ruling = PageRuling.of(meta.paper, meta.width, meta.height,
+          isPdf: meta.isPdf);
       for (final out in laid) {
-        final line = lineById[out.id]!;
-        final geometry = LineGeometry.of(line.line);
-        ids.addAll(line.strokeIds);
+        // A box may hold several written lines (joined into a sentence).
+        final lines = [for (final id in out.members) lineById[id]!];
+        final geometry = LineGeometry.of(lines.first.line);
+        final last =
+            lines.length == 1 ? geometry : LineGeometry.of(lines.last.line);
+        for (final l in lines) {
+          ids.addAll(l.strokeIds);
+        }
         final merge = planMerge(
           boxes: boxes?.values ?? const <AutoBox>[],
           pageTexts: page.texts,
@@ -492,9 +499,11 @@ class AutoConvertSession with WidgetsBindingObserver {
           pageWidth: meta.width,
           metrics: metrics,
           taken: takenBoxes,
+          joinLines: style.joinLines,
+          ruling: ruling,
         );
-        final inkRight = geometry.right;
-        final inkBaseline = geometry.baselineAt(geometry.right);
+        final inkRight = last.right;
+        final inkBaseline = last.baselineAt(last.right);
         if (merge != null) {
           takenBoxes.add(merge.box.id);
           replacements.add((merge.before, merge.after));

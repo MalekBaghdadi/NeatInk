@@ -292,6 +292,10 @@ class EditorExtensions {
   /// Overflow menu "Export PDF". Disabled when null.
   EditorAction? exportPdf;
 
+  /// App bar button next to Auto: the "Typed text" settings (how converted
+  /// handwriting looks), open also when there is nothing to convert.
+  EditorAction? convertSettings;
+
   /// Overflow menu "PDF margins…" (shown for notebooks with PDF pages).
   EditorAction? pdfMargins;
 

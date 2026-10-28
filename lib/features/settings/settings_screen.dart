@@ -1,3 +1,4 @@
+import '../editor/integrations/convert/convert_style_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -112,6 +113,16 @@ class SettingsScreen extends ConsumerWidget {
                   value: settings.autocorrect,
                   onChanged: (v) =>
                       change((s) => s.copyWith(autocorrect: v)),
+                ),
+                ListTile(
+                  key: const ValueKey('settings-typed-text'),
+                  leading: const Icon(Icons.text_fields),
+                  title: const Text('Typed text'),
+                  subtitle: const Text(
+                      'Font, size and colour of converted handwriting, and '
+                      'joining lines into sentences.'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => showConvertStyleSheet(context),
                 ),
                 ListTile(
                   key: const ValueKey('settings-my-words'),

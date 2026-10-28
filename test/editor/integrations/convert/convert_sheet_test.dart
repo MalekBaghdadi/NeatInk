@@ -272,11 +272,14 @@ void main() {
     expect(tester.widget<TextField>(key('convert-text-0')).style!.fontStyle,
         FontStyle.italic);
 
-    expect(tester.widget<ChoiceChip>(key('convert-size-auto')).selected, isTrue);
-    expect(find.text('Auto (match my handwriting)'), findsOneWidget);
+    // Even size is the default; matching the handwriting is a choice.
+    expect(tester.widget<ChoiceChip>(key('convert-size-even')).selected, isTrue);
+    expect(tester.widget<ChoiceChip>(key('convert-size-auto')).selected, isFalse);
+    expect(find.text('Match my handwriting'), findsOneWidget);
     await tester.tap(key('convert-size-slider'));
     await tester.pump();
-    expect(tester.widget<ChoiceChip>(key('convert-size-auto')).selected, isFalse);
+    expect(tester.widget<ChoiceChip>(key('convert-size-even')).selected, isFalse);
+    expect(tester.widget<ChoiceChip>(key('convert-size-custom')).selected, isTrue);
     final label = tester.widget<Text>(key('convert-size-label')).data!;
     expect(label, endsWith(' pt'));
     final pt = int.parse(label.replaceAll(' pt', ''));

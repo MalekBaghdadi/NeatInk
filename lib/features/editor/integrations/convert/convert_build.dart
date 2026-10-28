@@ -41,7 +41,8 @@ List<LaidOutLine> layoutPlannedPage({
   return [
     for (final out in laid)
       out.withItem(out.item.copyWith(
-          corrections: locateCorrections(
-              out.item.text, byId[out.id]?.autoApplied ?? const []))),
+          corrections: locateCorrections(out.item.text, [
+            for (final id in out.members) ...?byId[id]?.autoApplied,
+          ]))),
   ];
 }

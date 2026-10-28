@@ -10,6 +10,7 @@ import 'package:neatink/document/commands.dart';
 import 'package:neatink/document/font_kind.dart';
 import 'package:neatink/features/editor/canvas/document_view.dart';
 import 'package:neatink/features/editor/editor_tool.dart';
+import 'package:neatink/features/editor/integrations/convert/convert_config.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_layout.dart';
 import 'package:neatink/features/settings/app_settings.dart';
 import 'package:neatink/features/settings/convert_style_prefs.dart';
@@ -537,6 +538,71 @@ void main() {
       expect(h.page.texts.single.id, box.id);
     });
 
+    group('a sentence that runs on to the next line', () {
+      // Five words reach the right edge of the page; the reading has no
+      // full stop, so the sentence goes on below.
+      FakeRecognizer longReader() => reader({
+            'aw2': ('fire', 0.9),
+            'aw3': ('when', 0.9),
+            'aw4': ('they', 0.9),
+            'aw5': ('reach', 0.9),
+            'aw6': ('threshold', 0.9),
+          });
+
+      Future<ConvertHarness> twoLines(WidgetTester tester, {bool join = true}) async {
+        final h = await ConvertHarness.open(tester,
+            recognizer: longReader(),
+            autoConvert: true,
+            prefsValues: {
+              ConvertStylePrefs.prefsKey: jsonEncode(ConvertStylePrefs(joinLines: join).toJson()),
+            });
+        final first = writeLine('a', ['hello', 'online', 'hello', 'online', 'hello', 'online', 'hello'], y: 104, gap: 20);
+        expect(rightOf(first), greaterThan(595 * 0.8), reason: 'the test needs ink up to the edge');
+        await h.write(first);
+        await wait(tester, 1100);
+        expect(texts(h), ['hello online fire when they reach threshold']);
+        await h.write(writeLine('b', ['hello'], y: 130));
+        await wait(tester, 1100);
+        return h;
+      }
+
+      testWidgets('is joined to the text above, in one box', (tester) async {
+        final h = await twoLines(tester);
+        expect(texts(h), ['hello online fire when they reach threshold second']);
+        expect(h.page.strokes, isEmpty);
+        final box = h.page.texts.single;
+        expect(box.fontSize, 16, reason: 'the even size on the default ruling');
+        expect(box.x + box.width, lessThanOrEqualTo(595 - ConvertConfig.rightMargin + 1e-6));
+        // One undo puts the second line's handwriting back, the box as it was.
+        h.controller.undo();
+        await tester.pump();
+        expect(texts(h), ['hello online fire when they reach threshold']);
+      });
+
+      testWidgets('the Convert sheet joins them too, in one pass', (tester) async {
+        final first = writeLine('a', ['hello', 'online', 'hello', 'online', 'hello', 'online', 'hello'], y: 104, gap: 20);
+        final h = await ConvertHarness.open(tester,
+            pages: [
+              [...first, ...writeLine('b', ['hello'], y: 130)],
+            ],
+            recognizer: longReader(),
+            prefsValues: {
+              ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs().toJson()),
+            });
+        await h.tapConvert();
+        await tester.tap(key('convert-apply'));
+        await tester.pumpAndSettle();
+        expect(texts(h), ['hello online fire when they reach threshold second']);
+        expect(h.page.strokes, isEmpty, reason: 'the ink of both lines is replaced');
+        await tester.pump(const Duration(seconds: 6));
+      });
+
+      testWidgets('with joining off it is a box of its own', (tester) async {
+        final h = await twoLines(tester, join: false);
+        expect(texts(h), ['hello online fire when they reach threshold', 'second']);
+      });
+    });
+
     testWidgets('a word on another baseline starts a box of its own',
         (tester) async {
       final h = await twoWords(tester, y2: 116);
@@ -897,12 +963,12 @@ void main() {
       expect(saved.fontId, 'lora');
       expect(saved.bold, isTrue);
       expect(saved.colorOverride, 0xFF1A237E);
-      expect(saved.fixedSize, isNull);
+      expect(saved.sizeMode, ConvertSizeMode.even);
       final stored = jsonDecode(h.container
           .read(sharedPreferencesProvider)
           .getString(ConvertStylePrefs.prefsKey)!) as Map<String, dynamic>;
       expect(stored['font'], 'lora');
-      expect(stored['sizeMode'], 'auto');
+      expect(stored['sizeMode'], 'even');
       await tester.pump(const Duration(seconds: 6));
 
       // The toggle names that font, and a later auto pass types in it.
@@ -921,7 +987,7 @@ void main() {
           recognizer: reader(),
           prefsValues: {
             ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs(
-                    fontId: 'lora', bold: true, fixedSize: 18)
+                    fontId: 'lora', bold: true, sizeMode: ConvertSizeMode.custom, fixedSize: 18)
                 .toJson()),
           });
       await h.tapConvert();

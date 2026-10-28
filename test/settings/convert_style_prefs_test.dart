@@ -27,17 +27,32 @@ void main() {
     return container;
   }
 
-  test('the defaults are Roboto, auto size, keep the ink colour', () async {
+  test('the defaults are Roboto, even size, keep the ink colour, join lines', () async {
     final c = await containerWith({});
     final p = c.read(convertStylePrefsProvider);
     expect(p.fontId, 'sans');
     expect(p.font, FontKind.sans);
     expect(p.bold, isFalse);
     expect(p.italic, isFalse);
+    expect(p.sizeMode, ConvertSizeMode.even);
     expect(p.fixedSize, isNull);
-    expect(p.autoSize, isTrue);
+    expect(p.autoSize, isFalse);
     expect(p.colorOverride, isNull);
+    expect(p.joinLines, isTrue);
     expect(p, const ConvertStylePrefs());
+  });
+
+  test('the old auto size (one size per line) reads as the even size', () async {
+    final c = await containerWith({
+      ConvertStylePrefs.prefsKey: jsonEncode({'font': 'lato', 'sizeMode': 'auto', 'size': null}),
+    });
+    final p = c.read(convertStylePrefsProvider);
+    expect(p.sizeMode, ConvertSizeMode.even);
+    expect(p.fontId, 'lato');
+    expect(p.joinLines, isTrue, reason: 'saved before it existed');
+    // Matching the handwriting is still there when chosen.
+    const hand = ConvertStylePrefs(sizeMode: ConvertSizeMode.handwriting, joinLines: false);
+    expect(ConvertStylePrefs.fromJson(hand.toJson()), hand);
   });
 
   test('saving persists every field and survives a restart', () async {
@@ -46,8 +61,10 @@ void main() {
       fontId: 'lora',
       bold: true,
       italic: true,
+      sizeMode: ConvertSizeMode.custom,
       fixedSize: 18,
       colorOverride: 0xFF1A237E,
+      joinLines: false,
     );
     c.read(convertStylePrefsProvider.notifier).save(chosen);
     expect(c.read(convertStylePrefsProvider), chosen);
@@ -60,19 +77,21 @@ void main() {
     expect(stored['size'], 18);
     expect(stored['colourMode'], 'fixed');
     expect(stored['colour'], '#FF1A237E');
+    expect(stored['joinLines'], isFalse);
 
     expect(restart(prefs).read(convertStylePrefsProvider), chosen);
   });
 
-  test('auto size and the ink colour are remembered as such', () async {
+  test('the even size and the ink colour are remembered as such', () async {
     final c = await containerWith({});
     final n = c.read(convertStylePrefsProvider.notifier);
-    n.save(const ConvertStylePrefs(fixedSize: 14, colorOverride: 0xFF000000));
-    n.save(const ConvertStylePrefs(fontId: 'lato'));
+    n.save(const ConvertStylePrefs(sizeMode: ConvertSizeMode.custom, fixedSize: 14, colorOverride: 0xFF000000));
+    n.save(const ConvertStylePrefs(fontId: 'lato', fixedSize: 14));
     final back = restart(c.read(sharedPreferencesProvider))
         .read(convertStylePrefsProvider);
     expect(back.fontId, 'lato');
-    expect(back.fixedSize, isNull);
+    expect(back.sizeMode, ConvertSizeMode.even);
+    expect(back.fixedSize, 14, reason: 'the custom size is remembered for later');
     expect(back.colorOverride, isNull);
   });
 
@@ -129,18 +148,30 @@ void main() {
 
   test('it converts to and from the look the layout uses', () {
     const prefs = ConvertStylePrefs(
-        fontId: 'lora', bold: true, fixedSize: 18, colorOverride: 0xFF4E342E);
+        fontId: 'lora',
+        bold: true,
+        sizeMode: ConvertSizeMode.custom,
+        fixedSize: 18,
+        colorOverride: 0xFF4E342E);
     final style = ConvertStyle.fromPrefs(prefs);
     expect(style.font, FontKind.lora);
     expect(style.bold, isTrue);
     expect(style.italic, isFalse);
     expect(style.fixedSize, 18);
+    expect(style.evenSize, isFalse);
     expect(style.colorOverride, 0xFF4E342E);
     expect(style.toPrefs(), prefs);
 
     final defaults = ConvertStyle.fromPrefs(const ConvertStylePrefs());
     expect(defaults.font, FontKind.sans);
+    expect(defaults.evenSize, isTrue);
+    expect(defaults.joinLines, isTrue);
+    expect(defaults.keepsSize, isTrue);
     expect(defaults.fixedSize, isNull);
     expect(defaults.colorOverride, isNull);
+    expect(defaults.toPrefs(), const ConvertStylePrefs());
+
+    final hand = ConvertStyle.fromPrefs(const ConvertStylePrefs(sizeMode: ConvertSizeMode.handwriting, fixedSize: 18));
+    expect((hand.evenSize, hand.fixedSize, hand.keepsSize), (false, null, false));
   });
 }

@@ -10,6 +10,7 @@ import '../../tools/selection.dart';
 import '../erase_select/lasso_handler.dart';
 import 'auto_convert_indicator.dart';
 import 'auto_convert_session.dart';
+import 'convert_style_sheet.dart';
 import 'convert_layout.dart';
 import 'convert_providers.dart';
 import 'convert_scope.dart';
@@ -79,7 +80,11 @@ final EditorIntegration convertIntegration = (controller, ref) {
           selection != null && hasConvertibleStrokes(c, selection);
       return open(context, useSelection ? selection : null);
     }
-    ..convertSelection = (context, c, selection) => open(context, selection);
+    ..convertSelection = ((context, c, selection) => open(context, selection))
+    ..convertSettings = (context, c) => showConvertStyleSheet(context,
+        page: c.isReady && c.pageCount > 0
+            ? c.doc.meta.pages[c.currentPageIndex]
+            : null);
 
   // Auto-convert: follows the settings, never runs inside the pen path.
   auto = AutoConvertSession(

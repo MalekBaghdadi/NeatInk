@@ -137,6 +137,8 @@ class ConvertStyle {
     this.italic = false,
     this.fixedSize,
     this.colorOverride,
+    this.evenSize = false,
+    this.joinLines = false,
   });
 
   /// The look remembered in the settings (see [ConvertStylePrefs]).
@@ -144,8 +146,12 @@ class ConvertStyle {
         font: prefs.font,
         bold: prefs.bold,
         italic: prefs.italic,
-        fixedSize: prefs.fixedSize,
+        fixedSize: prefs.sizeMode == ConvertSizeMode.custom
+            ? prefs.fixedSize ?? ConvertConfig.defaultFixedSize
+            : null,
         colorOverride: prefs.colorOverride,
+        evenSize: prefs.sizeMode == ConvertSizeMode.even,
+        joinLines: prefs.joinLines,
       );
 
   /// This look as something that can be remembered.
@@ -153,8 +159,14 @@ class ConvertStyle {
         fontId: font.name,
         bold: bold,
         italic: italic,
+        sizeMode: evenSize
+            ? ConvertSizeMode.even
+            : fixedSize != null
+                ? ConvertSizeMode.custom
+                : ConvertSizeMode.handwriting,
         fixedSize: fixedSize,
         colorOverride: colorOverride,
+        joinLines: joinLines,
       );
 
   final FontKind font;
@@ -166,6 +178,81 @@ class ConvertStyle {
 
   /// ARGB colour for every line, or null for "Keep my ink colour".
   final int? colorOverride;
+
+  /// One size for every line, from the page ([evenFontSize]); wins over
+  /// [fixedSize].
+  final bool evenSize;
+
+  /// Lines of one sentence become one wrapping box ([continuesOnNextLine]).
+  final bool joinLines;
+
+  /// The size stays the same for every line: long text wraps instead of
+  /// shrinking to fit.
+  bool get keepsSize => evenSize || fixedSize != null;
+}
+
+/// The even size ([ConvertStyle.evenSize]) on a page: on ruled paper the
+/// size that sits well on the ruling ([ConvertConfig.evenSizeOfRuling]),
+/// otherwise [ConvertConfig.defaultFixedSize].
+double evenFontSize(PageRuling? ruling) {
+  final spacing = ruling?.spacing;
+  if (spacing == null || !spacing.isFinite || spacing <= 0) {
+    return ConvertConfig.defaultFixedSize;
+  }
+  return (spacing * ConvertConfig.evenSizeOfRuling)
+      .roundToDouble()
+      .clamp(ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize)
+      .toDouble();
+}
+
+final RegExp _sentenceEnd = RegExp('[.!?:;…]["\'”’)\\]]*\$');
+
+/// Whether [text] ends a sentence (`.`, `!`, `?`, `:` or `;`, maybe
+/// followed by quotes or brackets).
+bool endsSentence(String text) => _sentenceEnd.hasMatch(text.trimRight());
+
+/// Whether [next], the line written below [line], carries on [line]'s
+/// sentence: [text] (what [line] says) does not end one, the writing ran to
+/// the right edge of the page ([pageWidth]) and goes on at the left of the
+/// line below.
+bool continuesOnNextLine({
+  required LineGeometry line,
+  required String text,
+  required LineGeometry next,
+  required double pageWidth,
+  PageRuling? ruling,
+}) {
+  if (text.trim().isEmpty || endsSentence(text)) return false;
+  final xh = math.max(line.xHeight, next.xHeight);
+  if (!xh.isFinite || xh <= 0) return false;
+  if (!ranToRightEdge(line.right, xh, pageWidth)) return false;
+  if (next.left > line.left + ConvertConfig.joinIndentXHeights * xh) return false;
+  final drop = next.baselineAt(next.left) - line.baselineAt(line.left);
+  return drop > 0 && drop <= maxLineDrop(xh, ruling);
+}
+
+/// Whether writing that ends at [right] ran out of room on the page: less
+/// is left than [ConvertConfig.joinEdgeFraction] of the page width (or
+/// [ConvertConfig.joinEdgeXHeights] letters, if more).
+bool ranToRightEdge(double right, double xHeight, double pageWidth) =>
+    pageWidth - right <=
+    math.max(ConvertConfig.joinEdgeFraction * pageWidth, ConvertConfig.joinEdgeXHeights * xHeight);
+
+/// How far below a line the next line of the same sentence may start.
+double maxLineDrop(double xHeight, PageRuling? ruling) => ruling != null
+    ? ruling.spacing * ConvertConfig.joinMaxRulings
+    : xHeight * ConvertConfig.joinMaxXHeights;
+
+/// [a] and [b] as one sentence: a space between them, or nothing after a
+/// word broken with a hyphen (`neuro-` + `science`).
+String joinSentence(String a, String b) {
+  final head = a.trimRight(), tail = b.trimLeft();
+  if (head.isEmpty) return tail;
+  if (tail.isEmpty) return head;
+  if (RegExp(r'[A-Za-z]-$').hasMatch(head) && RegExp('^[a-z]').hasMatch(tail)) {
+    return head.substring(0, head.length - 1) + tail;
+  }
+  return '$head $tail';
 }
 
 /// One recognised line to lay out.
@@ -216,10 +303,18 @@ class LaidOutLine {
     required this.snapped,
     required this.fit,
     required this.collides,
-  });
+    List<String>? lineIds,
+  }) : lineIds = lineIds ?? const [];
 
-  /// The id of the [LayoutLineInput].
+  /// The id of the [LayoutLineInput] (the first one, for joined lines).
   final String id;
+
+  /// With [ConvertStyle.joinLines], the ids of all the lines joined into
+  /// this box, in order; empty for a box of one line ([members] has it).
+  final List<String> lineIds;
+
+  /// The ids of the lines in this box.
+  List<String> get members => lineIds.isEmpty ? [id] : lineIds;
   final TextItem item;
 
   /// The page height the first line's baseline was put on.
@@ -241,6 +336,17 @@ class LaidOutLine {
         snapped: snapped,
         fit: fit,
         collides: collides,
+        lineIds: lineIds,
+      );
+
+  LaidOutLine withLines(List<String> ids) => LaidOutLine(
+        id: id,
+        item: item,
+        baselineY: baselineY,
+        snapped: snapped,
+        fit: fit,
+        collides: collides,
+        lineIds: ids,
       );
 }
 
@@ -278,9 +384,14 @@ String normalizeLineText(String text) =>
 ///   the room to the right margin first shrinks to fit (down to the floor),
 ///   and only then wraps inside the available width;
 /// * a box never runs into the line below (included or not): the size is
-///   reduced step by step until it clears it.
+///   reduced step by step until it clears it;
+/// * with an even or fixed size ([ConvertStyle.keepsSize]) a long line
+///   wraps at the right margin instead of shrinking;
+/// * with [ConvertStyle.joinLines], consecutive lines of one sentence
+///   ([continuesOnNextLine]) become one box that wraps at the right margin
+///   ([LaidOutLine.members]).
 ///
-/// The result has one entry per laid-out line, in input order.
+/// The result has one entry per laid-out box, in input order.
 List<LaidOutLine> layoutPage({
   required double pageWidth,
   required double pageHeight,
@@ -290,7 +401,67 @@ List<LaidOutLine> layoutPage({
   ConvertTextMetrics metrics = const FlutterTextMetrics(),
   Uuid? uuid,
 }) {
-  final ids = uuid ?? const Uuid();
+  final joined = style.joinLines
+      ? _joinParagraphs(lines, pageWidth, ruling)
+      : (lines: lines, members: <List<String>>[for (final _ in lines) const []]);
+  return _layoutLines(
+    pageWidth: pageWidth,
+    lines: joined.lines,
+    members: joined.members,
+    style: style,
+    ruling: ruling,
+    metrics: metrics,
+    ids: uuid ?? const Uuid(),
+  );
+}
+
+/// [lines] with each run of lines of one sentence merged into one input
+/// (the first line's place and colour, the texts joined), and for each
+/// input the ids of the lines it holds (empty when just itself).
+({List<LayoutLineInput> lines, List<List<String>> members}) _joinParagraphs(
+    List<LayoutLineInput> lines, double pageWidth, PageRuling? ruling) {
+  final out = <LayoutLineInput>[];
+  final members = <List<String>>[];
+  for (var i = 0; i < lines.length; i++) {
+    final l = lines[i];
+    final text = normalizeLineText(l.text);
+    final prev = i > 0 ? lines[i - 1] : null;
+    if (prev != null &&
+        out.last.include &&
+        l.include &&
+        text.isNotEmpty &&
+        continuesOnNextLine(
+            line: prev.geometry,
+            text: normalizeLineText(prev.text),
+            next: l.geometry,
+            pageWidth: pageWidth,
+            ruling: ruling)) {
+      final last = out.last;
+      out[out.length - 1] = LayoutLineInput(
+        id: last.id,
+        text: joinSentence(normalizeLineText(last.text), text),
+        geometry: last.geometry,
+        color: last.color,
+      );
+      final ids = members.last;
+      members[members.length - 1] = [...(ids.isEmpty ? [last.id] : ids), l.id];
+      continue;
+    }
+    out.add(l);
+    members.add(const []);
+  }
+  return (lines: out, members: members);
+}
+
+List<LaidOutLine> _layoutLines({
+  required double pageWidth,
+  required List<LayoutLineInput> lines,
+  required List<List<String>> members,
+  required ConvertStyle style,
+  required PageRuling? ruling,
+  required ConvertTextMetrics metrics,
+  required Uuid ids,
+}) {
   final n = lines.length;
   final texts = [for (final l in lines) normalizeLineText(l.text)];
   bool active(int i) => lines[i].include && texts[i].isNotEmpty;
@@ -347,8 +518,9 @@ List<LaidOutLine> layoutPage({
       style: style,
       ruling: ruling,
       metrics: metrics,
+      paragraph: members[i].isNotEmpty,
     );
-    out[i] = placed;
+    out[i] = members[i].isEmpty ? placed : placed.withLines(members[i]);
     nextTop = placed.item.y;
   }
   return [for (final o in out) ?o];
@@ -368,6 +540,7 @@ LaidOutLine _placeLine({
   required ConvertStyle style,
   required PageRuling? ruling,
   required ConvertTextMetrics metrics,
+  bool paragraph = false,
 }) {
   const slack = ConvertConfig.lineSlack;
   final rightEdge = pageWidth - ConvertConfig.rightMargin;
@@ -375,8 +548,12 @@ LaidOutLine _placeLine({
   if (rightEdge - x < 60) x = math.max(0.0, rightEdge - 60);
   final avail = math.max(rightEdge - x, ConvertConfig.minBoxWidth);
 
-  var base = style.fixedSize ??
-      autoFontSize(style.font, geometry.xHeight, ruling: ruling?.spacing);
+  var base = style.evenSize
+      ? evenFontSize(ruling)
+      : style.fixedSize ??
+          autoFontSize(style.font, geometry.xHeight, ruling: ruling?.spacing);
+  // Even and fixed sizes, and joined sentences, wrap rather than shrink.
+  final keepSize = style.keepsSize || paragraph;
 
   TextItem build(double size, double width) => TextItem(
         id: id,
@@ -440,8 +617,13 @@ LaidOutLine _placeLine({
   }
 
   var size = base;
-  final single = widthFit(base);
-  if (single >= ConvertConfig.floorSize || single >= base) {
+  final single = keepSize ? base : widthFit(base);
+  if (keepSize) {
+    // The chosen size, wrapping when long; a little smaller if it would run
+    // into the line below, and only as a last resort more than that.
+    size = clear(base, base * ConvertConfig.softShrinkFactor);
+    if (!fits(place(size))) size = clear(size, ConvertConfig.absoluteMinSize);
+  } else if (single >= ConvertConfig.floorSize || single >= base) {
     // One line: shrink to fit the width, then to clear the line below.
     size = clear(single, ConvertConfig.absoluteMinSize);
   } else {

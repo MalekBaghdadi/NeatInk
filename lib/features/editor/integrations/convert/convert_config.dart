@@ -44,6 +44,25 @@ abstract final class ConvertConfig {
   static const double maxFixedSize = 32;
   static const double defaultFixedSize = 16;
 
+  /// The even size on ruled paper, as a fraction of the ruling: 26 pt lines
+  /// (the default) give 16 pt text, about as big as handwriting on them.
+  static const double evenSizeOfRuling = 0.62;
+
+  /// Joining lines into sentences: a line continues on the next when its
+  /// writing ends closer to the right page edge than this fraction of the
+  /// page width (or this many x-heights, if more)...
+  static const double joinEdgeFraction = 0.2;
+  static const double joinEdgeXHeights = 8;
+
+  /// ...the next line starts at most this many x-heights right of where the
+  /// line started...
+  static const double joinIndentXHeights = 4;
+
+  /// ...and its baseline is at most this many rulings (or x-heights on
+  /// paper without lines) lower.
+  static const double joinMaxRulings = 1.6;
+  static const double joinMaxXHeights = 5.5;
+
   /// Space kept free at the right page edge (points).
   static const double rightMargin = 24;
 

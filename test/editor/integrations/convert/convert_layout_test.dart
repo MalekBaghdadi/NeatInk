@@ -228,11 +228,11 @@ void main() {
   });
 
   group('too wide: shrink, then wrap', () {
-    // x = 100: room = 595 - 24 - 100 = 471.
+    // x = 100: room = 595 - 24 - 100 = 471. Matching the handwriting, an
+    // x-height of 10.4 gives 20 pt.
     test('shrinks gently first', () {
       // 52 chars * 0.5 * 20 = 520 > 467 -> about 17.96, which is >= 85% of 20.
-      final out = layout([input('a', 'x' * 52, geo())],
-          style: const ConvertStyle(fixedSize: 20));
+      final out = layout([input('a', 'x' * 52, geo(xHeight: 10.4))]);
       final l = out.single;
       expect(l.fit, ConvertFit.softShrink);
       expect(l.item.fontSize, lessThan(20));
@@ -243,8 +243,7 @@ void main() {
 
     test('then shrinks further, down to the floor', () {
       // 100 chars: needs about 9.3 pt.
-      final out = layout([input('a', 'x' * 100, geo())],
-          style: const ConvertStyle(fixedSize: 20));
+      final out = layout([input('a', 'x' * 100, geo(xHeight: 10.4))]);
       final l = out.single;
       expect(l.fit, ConvertFit.hardShrink);
       expect(l.item.fontSize, lessThan(20 * 0.85));
@@ -408,6 +407,108 @@ void main() {
       );
       final item = out.single.item;
       expect(item.x + item.width, lessThanOrEqualTo(595 - ConvertConfig.rightMargin + 1e-6));
+    });
+  });
+
+  group('even size', () {
+    test('fits the ruling, 16 pt on paper without lines', () {
+      expect(evenFontSize(lined()), 16, reason: '26 pt ruling (the default)');
+      expect(evenFontSize(PageRuling.of(const Paper(spacingPt: 20), 595, 842)), 12);
+      expect(evenFontSize(PageRuling.of(const Paper(spacingPt: 32), 595, 842)), 20);
+      expect(evenFontSize(null), ConvertConfig.defaultFixedSize);
+    });
+
+    test('every line gets it, however big the handwriting', () {
+      final out = layout([
+        input('a', 'small', geo(baseline: 100, xHeight: 6)),
+        input('b', 'big', geo(baseline: 160, xHeight: 16)),
+      ], style: const ConvertStyle(evenSize: true));
+      expect(out.map((l) => l.item.fontSize), [16, 16]);
+    });
+
+    test('a long line wraps instead of shrinking (custom sizes too)', () {
+      for (final style in const [ConvertStyle(evenSize: true), ConvertStyle(fixedSize: 16)]) {
+        final l = layout([input('a', 'x' * 80, geo())], style: style).single;
+        expect(l.item.fontSize, 16);
+        expect(l.fit, ConvertFit.wrapped);
+        expect(l.item.x + l.item.width, lessThanOrEqualTo(595 - ConvertConfig.rightMargin + 1e-9));
+        expect(l.item.height, closeTo(2 * 1.2 * 16, 1e-9), reason: 'two lines');
+      }
+    });
+  });
+
+  group('joining lines into sentences', () {
+    // The first line runs to the right edge (ink to x 560 of 595) without a
+    // full stop; the second starts at the left, one line lower.
+    List<LayoutLineInput> sentence({String first = 'Neurons send signals', double right = 560, double drop = 26}) => [
+          input('a', first, geo(baseline: 300, right: right)),
+          input('b', 'to other neurons.', geo(baseline: 300 + drop, left: 102)),
+        ];
+
+    test('a sentence over two lines becomes one box that wraps at the margin', () {
+      final out = layout(sentence(), style: const ConvertStyle(evenSize: true, joinLines: true), ruling: lined());
+      final box = out.single;
+      expect(box.item.text, 'Neurons send signals to other neurons.');
+      expect(box.members, ['a', 'b']);
+      expect(box.item.x, 100);
+      expect(box.item.fontSize, 16);
+      // 38 chars * 8 = 304 + slack: fits on one line here.
+      expect(box.item.height, closeTo(1.2 * 16, 1e-9));
+    });
+
+    test('a long joined sentence wraps at the right margin', () {
+      final out = layout([
+        input('a', 'x' * 50, geo(baseline: 300, right: 570)),
+        input('b', 'y' * 50, geo(baseline: 326, left: 100)),
+      ], style: const ConvertStyle(evenSize: true, joinLines: true), ruling: lined());
+      final box = out.single;
+      expect(box.item.width, closeTo(595 - ConvertConfig.rightMargin - 100, 1e-9));
+      expect(box.fit, ConvertFit.wrapped);
+    });
+
+    test('three lines join; matching the handwriting, the joined box wraps rather than shrinks', () {
+      final out = layout([
+        input('a', 'one two three', geo(baseline: 300, right: 565)),
+        input('b', 'four five six', geo(baseline: 326, right: 570)),
+        input('c', 'seven.', geo(baseline: 352)),
+      ], style: const ConvertStyle(joinLines: true), ruling: lined());
+      expect(out.single.members, ['a', 'b', 'c']);
+      expect(out.single.item.text, 'one two three four five six seven.');
+    });
+
+    test('lines are kept apart when the sentence ended, the line was short, or far below', () {
+      const style = ConvertStyle(evenSize: true, joinLines: true);
+      expect(layout(sentence(first: 'Neurons send signals.'), style: style, ruling: lined()), hasLength(2));
+      expect(layout(sentence(first: 'Key terms:'), style: style, ruling: lined()), hasLength(2));
+      expect(layout(sentence(right: 300), style: style, ruling: lined()), hasLength(2), reason: 'a list item');
+      expect(layout(sentence(drop: 80), style: style, ruling: lined()), hasLength(2), reason: 'a new paragraph');
+      final indented = [
+        input('a', 'Neurons send signals', geo(baseline: 300, right: 560)),
+        input('b', 'to other neurons.', geo(baseline: 326, left: 300)),
+      ];
+      expect(layout(indented, style: style, ruling: lined()), hasLength(2));
+    });
+
+    test('with the setting off every line stays its own box', () {
+      expect(layout(sentence(), style: const ConvertStyle(evenSize: true), ruling: lined()), hasLength(2));
+    });
+
+    test('a line that stays handwriting is never joined', () {
+      final lines = sentence();
+      final out = layout([lines[0], input('b', 'to other neurons.', lines[1].geometry, include: false)],
+          style: const ConvertStyle(evenSize: true, joinLines: true), ruling: lined());
+      expect(out.single.members, ['a']);
+      expect(out.single.item.text, 'Neurons send signals');
+    });
+
+    test('joinSentence and endsSentence', () {
+      expect(joinSentence('a neuro-', 'transmitter'), 'a neurotransmitter');
+      expect(joinSentence('well-', 'Known'), 'well- Known');
+      expect(joinSentence('one ', ' two'), 'one two');
+      expect(endsSentence('the end.'), isTrue);
+      expect(endsSentence('really?"'), isTrue);
+      expect(endsSentence('(see above)'), isFalse);
+      expect(endsSentence('the end'), isFalse);
     });
   });
 }

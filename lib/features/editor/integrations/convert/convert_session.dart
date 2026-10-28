@@ -54,12 +54,7 @@ class ConvertSession extends ChangeNotifier {
     DateTime Function()? clock,
   })  : _uuid = uuid ?? const Uuid(),
         _clock = clock ?? DateTime.now {
-    _font = initialStyle.font;
-    _bold = initialStyle.bold;
-    _italic = initialStyle.italic;
-    _fixedSize = initialStyle.fixedSize?.clamp(
-        ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize).toDouble();
-    _colorOverride = initialStyle.colorOverride;
+    _load(initialStyle);
   }
 
   final EditorController controller;
@@ -101,6 +96,8 @@ class ConvertSession extends ChangeNotifier {
   bool _italic = false;
   double? _fixedSize;
   int? _colorOverride;
+  bool _evenSize = false;
+  bool _joinLines = false;
 
   ConvertPhase get phase => _phase;
 
@@ -120,7 +117,9 @@ class ConvertSession extends ChangeNotifier {
 
   /// Fixed size in points, or null for auto.
   double? get fixedSize => _fixedSize;
-  bool get autoSize => _fixedSize == null;
+  bool get autoSize => !_evenSize && _fixedSize == null;
+  bool get evenSize => _evenSize;
+  bool get joinLines => _joinLines;
 
   /// Colour for every line, or null to keep the ink colour.
   int? get colorOverride => _colorOverride;
@@ -131,6 +130,8 @@ class ConvertSession extends ChangeNotifier {
         italic: _italic,
         fixedSize: _fixedSize,
         colorOverride: _colorOverride,
+        evenSize: _evenSize,
+        joinLines: _joinLines,
       );
 
   // ---------------------------------------------------------------------------
@@ -290,11 +291,31 @@ class ConvertSession extends ChangeNotifier {
     _notify();
   }
 
-  /// A size in points, clamped to the slider range; null selects auto.
+  /// A size in points, clamped to the slider range; null selects auto
+  /// (match my handwriting).
   void setFixedSize(double? value) {
     _fixedSize = value?.clamp(
         ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize).toDouble();
+    _evenSize = false;
     _notify();
+  }
+
+  /// The whole look at once (the style controls).
+  void setStyle(ConvertStylePrefs prefs) {
+    _load(prefs);
+    _notify();
+  }
+
+  void _load(ConvertStylePrefs prefs) {
+    final style = ConvertStyle.fromPrefs(prefs);
+    _font = style.font;
+    _bold = style.bold;
+    _italic = style.italic;
+    _fixedSize = style.fixedSize?.clamp(
+        ConvertConfig.minFixedSize, ConvertConfig.maxFixedSize).toDouble();
+    _colorOverride = style.colorOverride;
+    _evenSize = style.evenSize;
+    _joinLines = style.joinLines;
   }
 
   void setColorOverride(int? value) {
@@ -324,7 +345,7 @@ class ConvertSession extends ChangeNotifier {
         convert: (l) => l.willConvert,
       );
       if (laid.isEmpty) continue;
-      final converted = {for (final l in laid) l.id};
+      final converted = {for (final l in laid) ...l.members};
       out.add(PageConversion(
         pageId: plan.pageId,
         strokeIds: {

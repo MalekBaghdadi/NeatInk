@@ -249,6 +249,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
       if (ext.convertHandwriting != null) ...[
         _convertButton(context),
         _autoConvertButton(context),
+        if (ext.convertSettings != null)
+          IconButton(
+            key: const ValueKey('convert-settings'),
+            icon: const Icon(Icons.tune),
+            tooltip: 'Typed text settings',
+            onPressed: () => unawaited(ext.convertSettings!(context, c)),
+          ),
       ],
       IconButton(
         key: const ValueKey('undo'),

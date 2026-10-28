@@ -2,18 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../../document/font_kind.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/text_polish.dart';
 import '../../../../recognition/word_image.dart';
 import '../../../settings/convert_style_prefs.dart';
 import '../../editor_controller.dart';
 import '../../tools/selection.dart';
-import '../text_images/text_format_bar.dart';
 import 'convert_apply.dart';
-import 'convert_config.dart';
+import 'convert_layout.dart' show PageRuling, evenFontSize;
 import 'convert_plan.dart';
 import 'convert_session.dart';
+import 'convert_style_controls.dart';
 import 'sample_share.dart';
 import 'user_lexicon.dart';
 import 'word_crop.dart';
@@ -520,7 +519,9 @@ class _Controls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = session;
-    final label = Theme.of(context).textTheme.labelLarge;
+    final page = s.controller.isReady && s.controller.pageCount > 0
+        ? s.controller.doc.meta.pages[s.controller.currentPageIndex]
+        : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       child: Column(
@@ -530,123 +531,12 @@ class _Controls extends StatelessWidget {
             _ScopeSwitch(session: s),
             const SizedBox(height: 12),
           ],
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              PopupMenuButton<FontKind>(
-                key: const ValueKey('convert-font'),
-                tooltip: 'Font',
-                initialValue: s.font,
-                onSelected: s.setFont,
-                itemBuilder: (_) => TextFormatBar.fontPickerItems(s.font),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                        color: Theme.of(context).colorScheme.outline),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(s.font.label,
-                          key: const ValueKey('convert-font-label'),
-                          style: TextStyle(fontFamily: s.font.family)),
-                      const Icon(Icons.arrow_drop_down),
-                    ],
-                  ),
-                ),
-              ),
-              FilterChip(
-                key: const ValueKey('convert-bold'),
-                label: const Text('Bold'),
-                selected: s.bold,
-                onSelected: s.setBold,
-              ),
-              FilterChip(
-                key: const ValueKey('convert-italic'),
-                label: const Text('Italic'),
-                selected: s.italic,
-                onSelected: s.setItalic,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text('Size', style: label),
-          Wrap(
-            spacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ChoiceChip(
-                key: const ValueKey('convert-size-auto'),
-                label: const Text('Auto (match my handwriting)'),
-                selected: s.autoSize,
-                onSelected: (_) => s.setFixedSize(null),
-              ),
-              SizedBox(
-                width: 260,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Slider(
-                        key: const ValueKey('convert-size-slider'),
-                        min: ConvertConfig.minFixedSize,
-                        max: ConvertConfig.maxFixedSize,
-                        divisions: (ConvertConfig.maxFixedSize -
-                                ConvertConfig.minFixedSize)
-                            .round(),
-                        value: (s.fixedSize ?? ConvertConfig.defaultFixedSize),
-                        onChanged: s.setFixedSize,
-                      ),
-                    ),
-                    SizedBox(
-                      width: 40,
-                      child: Text(
-                        s.autoSize ? '' : '${s.fixedSize!.round()} pt',
-                        key: const ValueKey('convert-size-label'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          Text('Colour', style: label),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ChoiceChip(
-                key: const ValueKey('convert-colour-keep'),
-                label: const Text('Keep my ink colour'),
-                selected: s.colorOverride == null,
-                onSelected: (_) => s.setColorOverride(null),
-              ),
-              for (final c in ConvertConfig.colorChoices)
-                GestureDetector(
-                  key: ValueKey('convert-colour-${c.toRadixString(16)}'),
-                  onTap: () => s.setColorOverride(c),
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Color(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        width: s.colorOverride == c ? 3 : 1,
-                        color: s.colorOverride == c
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+          ConvertStyleControls(
+            value: s.style.toPrefs(),
+            onChange: (change) => s.setStyle(change(s.style.toPrefs())),
+            evenSize: page == null
+                ? null
+                : evenFontSize(PageRuling.of(page.paper, page.width, page.height, isPdf: page.isPdf)),
           ),
         ],
       ),
