@@ -9,9 +9,11 @@ import 'package:neatink/features/editor/integrations/convert/convert_corrections
 import 'package:neatink/features/editor/integrations/convert/convert_plan.dart';
 import 'package:neatink/features/editor/integrations/convert/png_gray.dart';
 import 'package:neatink/features/editor/integrations/convert/sample_export.dart';
+import 'package:neatink/features/settings/app_settings.dart';
+import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
-import 'package:neatink/recognition/htr_channel.dart';
 import 'package:neatink/recognition/stroke_grouping.dart';
+import 'package:neatink/recognition/text_polish.dart';
 import 'package:neatink/recognition/word_image.dart';
 
 import 'harness.dart';
@@ -42,32 +44,23 @@ List<Stroke> threeLines() => [
       ...writeLine('c', ['hello'], y: 208),
     ];
 
-/// A recognised line of [texts] (one word each) as the review sheet holds it.
+/// A recognised line of [texts] (one word each, 0.8 sure) as the review sheet
+/// holds it.
 PlannedLine plannedLine(List<String> texts,
-    {String id = 'p/0', List<List<String>>? alternatives}) {
-  final strokes = writeLine('a', [for (final _ in texts) 'hello'], y: 104);
-  final line = groupStrokes(strokes).single;
-  expect(line.words, hasLength(texts.length));
-  return plannedLineFrom(
-    id: id,
-    pageId: 'p',
-    line: line,
-    words: [
-      for (var i = 0; i < texts.length; i++)
-        WordResult(
-          group: line.words[i],
-          text: texts[i],
-          confidence: 0.8,
-          raw: '${texts[i]}~',
-          alternatives: alternatives?[i] ?? const [],
-        ),
-    ],
-  );
-}
+        {String id = 'p/0',
+        List<List<String>>? alternatives,
+        List<PolishSuggestion> suggestions = const [],
+        bool autoFix = false}) =>
+    plannedLineOf([for (final t in texts) (t, 0.8)],
+        id: id,
+        alternatives: alternatives,
+        suggestions: suggestions,
+        autoFix: autoFix);
 
 const int testImageWidth = 100;
 
-WordImage imageOf(int seed) => WordImage(
+/// A picture like the ones the model is given, whose pixels depend on [seed].
+LineImage imageOf(int seed) => LineImage(
       pixels: Uint8List.fromList([
         for (var i = 0; i < testImageWidth * wordImageHeight; i++)
           (i * 7 + seed) % 256,
@@ -75,7 +68,36 @@ WordImage imageOf(int seed) => WordImage(
       width: testImageWidth,
       scale: 2.5,
       strokeWidthPx: 2,
+      strokes: const [],
+      angle: 0.25,
+      originX: 12.5,
     );
+
+/// A fix of "Nuerons fire quik" (three words, three fixes).
+const nuerons = PolishSuggestion(
+  original: 'Nuerons',
+  replacement: 'Neurons',
+  kind: PolishKind.spelling,
+  reason: 'Spelling',
+  start: 0,
+  end: 7,
+);
+const fireFix = PolishSuggestion(
+  original: 'fire',
+  replacement: 'fires',
+  kind: PolishKind.grammar,
+  reason: 'Grammar',
+  start: 8,
+  end: 12,
+);
+const quikFix = PolishSuggestion(
+  original: 'quik',
+  replacement: 'quick',
+  kind: PolishKind.spelling,
+  reason: 'Spelling',
+  start: 13,
+  end: 17,
+);
 
 /// Reads a grey 8-bit PNG back: checks the signature and every chunk's CRC
 /// and returns (width, height, pixels).
@@ -191,158 +213,245 @@ void main() {
   });
 
   group('the samples JSON', () {
-    test('has the format, version, and one entry per word', () {
+    Map<String, dynamic> build(List<SampleLineInput> lines) => buildSamplesJson(
+          appVersion: 'x',
+          createdAt: DateTime.utc(2026),
+          lines: lines,
+        );
+
+    Map<String, dynamic> single(PlannedLine line, [List<WordImage>? images]) =>
+        (build([
+          SampleLineInput(line: line, pageIndex: 0, images: images ?? [imageOf(1)]),
+        ])['lines'] as List)
+            .single as Map<String, dynamic>;
+
+    test('has the format, version, and one entry per line', () {
       final l1 = plannedLine(['hello', 'online']);
       final l2 = plannedLine(['third'], id: 'p/1');
+      final l3 = plannedLine(['second'], id: 'p/1');
       final json = buildSamplesJson(
         appVersion: '1.1.0+2',
         createdAt: DateTime.utc(2026, 10, 27, 9, 30),
         lines: [
-          SampleLineInput(line: l1, pageIndex: 0, images: [imageOf(1), imageOf(2)]),
+          SampleLineInput(line: l1, pageIndex: 0, images: [imageOf(1)]),
           SampleLineInput(line: l2, pageIndex: 2, images: [imageOf(3)]),
+          SampleLineInput(line: l3, pageIndex: 0, images: [imageOf(2)]),
         ],
       );
-      expect(json['format'], 1);
+      expect(json['format'], 2);
+      expect(samplesFormat, 2);
       expect(json['appVersion'], '1.1.0+2');
       expect(json['createdAt'], '2026-10-27T09:30:00.000Z');
-      expect(json['wordCount'], 3);
+      expect(json['lineCount'], 3);
+      expect(json.containsKey('words'), isFalse, reason: 'one entry per line now');
+      expect(json.containsKey('wordCount'), isFalse);
       expect(json['image'], containsPair('encoding', 'png-gray8-base64'));
       expect(json['image'], containsPair('height', wordImageHeight));
-      final words = (json['words'] as List).cast<Map<String, dynamic>>();
-      expect(words, hasLength(3));
-      expect(words.map((w) => (w['page'], w['line'], w['wordInLine'])), [
-        (1, 0, 0),
-        (1, 0, 1),
-        (3, 0, 0),
-      ]);
-      expect(words.map((w) => w['wordsInLine']), [2, 2, 1]);
+      final lines = (json['lines'] as List).cast<Map<String, dynamic>>();
+      expect(lines, hasLength(3));
+      // Pages are 1-based, lines are counted on their own page.
+      expect(lines.map((l) => (l['page'], l['line'])), [(1, 0), (3, 0), (1, 1)]);
+      expect(lines.map((l) => (l['words'] as List).length), [2, 1, 1]);
+      expect(lines.map((l) => l['recognizedText']),
+          ['hello online', 'third', 'second']);
       // It really is JSON.
       expect(jsonDecode(encodeSamplesJson(json)), json);
     });
 
-    test('a corrected line is split back to the words it was read from', () {
-      final line = plannedLine(['hello', 'onlyne']);
+    test('a corrected line has the recognised and the final text', () {
+      final line = plannedLineOf([('hello', 0.8), ('onlyne', 0.6)]);
       line.text = 'Hello online';
-      final json = buildSamplesJson(
-        appVersion: 'x',
-        createdAt: DateTime.utc(2026),
-        lines: [
-          SampleLineInput(line: line, pageIndex: 0, images: [imageOf(1), imageOf(2)]),
-        ],
-      );
-      final words = (json['words'] as List).cast<Map<String, dynamic>>();
-      expect(words[0]['finalText'], 'Hello');
-      expect(words[0]['read'], 'hello');
-      expect(words[0]['raw'], 'hello~');
-      expect(words[0]['corrected'], isTrue);
-      expect(words[1]['finalText'], 'online');
-      expect(words[1]['read'], 'onlyne');
-      expect(words[1]['corrected'], isTrue);
-      expect(words[0]['lineText'], 'Hello online');
-      expect(words[0]['lineIncluded'], isTrue);
-      expect(words[0]['confidence'], 0.8);
+      final l = single(line);
+      expect(l['recognizedText'], 'hello onlyne');
+      expect(l['finalText'], 'Hello online');
+      expect(l['corrected'], isTrue);
+      expect(l['lineIncluded'], isTrue);
+      expect(l['confidence'], 0.6, reason: 'that of the least sure word');
+      final words = (l['words'] as List).cast<Map<String, dynamic>>();
+      expect(words.map((w) => w['text']), ['hello', 'onlyne']);
+      expect(words.map((w) => w['raw']), ['hello~', 'onlyne~']);
+      expect(words.map((w) => w['confidence']), [0.8, 0.6]);
     });
 
     test('an untouched line has no corrections', () {
-      final line = plannedLine(['hello', 'online']);
-      final json = buildSamplesJson(
-        appVersion: 'x',
-        createdAt: DateTime.utc(2026),
-        lines: [
-          SampleLineInput(line: line, pageIndex: 0, images: [imageOf(1), imageOf(2)]),
-        ],
-      );
-      for (final w in (json['words'] as List).cast<Map<String, dynamic>>()) {
-        expect(w['corrected'], isFalse);
-        expect(w['finalText'], w['read']);
-      }
+      final l = single(plannedLine(['hello', 'online']));
+      expect(l['corrected'], isFalse);
+      expect(l['finalText'], l['recognizedText']);
+      expect(l['suggestions'], isEmpty);
     });
 
-    test('when the word count changed only the line text is given', () {
-      final line = plannedLine(['hello', 'online']);
-      line.text = 'Hello on line';
-      final json = buildSamplesJson(
-        appVersion: 'x',
-        createdAt: DateTime.utc(2026),
-        lines: [
-          SampleLineInput(line: line, pageIndex: 0, images: [imageOf(1), imageOf(2)]),
-        ],
-      );
-      for (final w in (json['words'] as List).cast<Map<String, dynamic>>()) {
-        expect(w['finalText'], isNull);
-        expect(w['corrected'], isFalse);
-        expect(w['lineText'], 'Hello on line');
-        expect(w['read'], isNotEmpty);
-        expect(w['raw'], isNotEmpty);
-      }
+    test('a line corrected only by spelling fixes is not a correction of the recogniser',
+        () {
+      // The fix is in the text, but what was read is kept next to it.
+      final line = plannedLine(['Nuerons', 'fire'],
+          suggestions: [nuerons], autoFix: true);
+      final l = single(line);
+      expect(l['recognizedText'], 'Nuerons fire');
+      expect(l['finalText'], 'Neurons fire');
+      expect(l['suggestions'], [
+        {'original': 'Nuerons', 'replacement': 'Neurons', 'kind': 'spelling', 'status': 'auto'},
+      ]);
     });
 
-    test('carries the pen data, line geometry, alternatives and the picture', () {
-      final line = plannedLine(['hello'], alternatives: [
+    test('suggestions say whether they are pending, accepted or were applied for the user',
+        () {
+      final line = plannedLine(['Nuerons', 'fire', 'quik'],
+          suggestions: [nuerons, fireFix, quikFix], autoFix: true);
+      expect(line.text, 'Neurons fires quick');
+      expect(line.revertAutoFix(fireFix), isTrue); // pending again
+      expect(line.revertAutoFix(quikFix), isTrue);
+      expect(line.acceptSuggestion(quikFix), isTrue); // accepted by the user
+      final l = single(line);
+      expect(l['recognizedText'], 'Nuerons fire quik');
+      expect(l['finalText'], 'Neurons fire quick');
+      final fixes = (l['suggestions'] as List).cast<Map<String, dynamic>>();
+      expect([for (final f in fixes) (f['original'], f['status'])], [
+        ('fire', 'pending'),
+        ('quik', 'accepted'),
+        ('Nuerons', 'auto'),
+      ]);
+      expect(fixes.map((f) => f['kind']), ['grammar', 'spelling', 'spelling']);
+      expect(fixes[1]['replacement'], 'quick');
+    });
+
+    test('carries every pen stroke in order, the line geometry and alternatives', () {
+      final line = plannedLine(['hello', 'online'], alternatives: [
         ['hallo', 'jello'],
+        const [],
       ]);
-      final image = imageOf(5);
-      final json = buildSamplesJson(
-        appVersion: 'x',
-        createdAt: DateTime.utc(2026),
-        lines: [
-          SampleLineInput(line: line, pageIndex: 0, images: [image]),
-        ],
-      );
-      final w = (json['words'] as List).single as Map<String, dynamic>;
-      expect(w['alternatives'], ['hallo', 'jello']);
-      expect(w['xHeight'], closeTo(line.line.xHeight, 0.01));
-      expect(w['baselineSlope'], closeTo(line.line.baselineSlope, 1e-5));
-      final b = line.words.single.group.bounds;
-      expect(w['bounds'], [
-        closeTo(b.left, 0.01),
-        closeTo(b.top, 0.01),
-        closeTo(b.right, 0.01),
-        closeTo(b.bottom, 0.01),
+      final l = single(line);
+      final words = (l['words'] as List).cast<Map<String, dynamic>>();
+      expect(words.first['alternatives'], ['hallo', 'jello']);
+      expect(words.last['alternatives'], isEmpty);
+      expect(l['xHeight'], closeTo(line.line.xHeight, 0.01));
+      expect(l['baselineSlope'], closeTo(line.line.baselineSlope, 1e-5));
+      final ink = line.line.inkStrokes;
+      var left = double.infinity, top = double.infinity;
+      var right = double.negativeInfinity, bottom = double.negativeInfinity;
+      for (final s in ink) {
+        for (final p in s.raw) {
+          if (p.x < left) left = p.x;
+          if (p.x > right) right = p.x;
+          if (p.y < top) top = p.y;
+          if (p.y > bottom) bottom = p.y;
+        }
+      }
+      expect(l['bounds'], [
+        closeTo(left, 0.01),
+        closeTo(top, 0.01),
+        closeTo(right, 0.01),
+        closeTo(bottom, 0.01),
       ]);
 
-      final strokes = (w['strokes'] as List).cast<Map<String, dynamic>>();
-      final source = line.words.single.group.strokes;
-      expect(strokes, hasLength(source.length));
-      expect(strokes.first['id'], source.first.id);
-      expect(strokes.first['size'], source.first.size);
+      final strokes = (l['strokes'] as List).cast<Map<String, dynamic>>();
+      // Every stroke of the line, in the order written ("hello hello").
+      expect(strokes, hasLength(5 + 5));
+      expect(strokes.map((s) => s['id']), ink.map((s) => s.id));
+      expect(strokes.map((s) => s['id']).toSet(), line.strokeIds);
+      expect(strokes.first['size'], ink.first.size);
+      expect(strokes.first['color'], colorToHex(ink.first.color));
       final points = strokes.first['points'] as List;
-      expect(points, hasLength(source.first.raw.length));
-      final p0 = source.first.raw.first;
+      expect(points, hasLength(ink.first.raw.length));
+      final p0 = ink.first.raw.first;
       expect(points.first, [
         closeTo(p0.x, 0.01),
         closeTo(p0.y, 0.01),
         closeTo(p0.pressure, 0.001),
         p0.t,
       ]);
+      final pEnd = ink.last.raw.last;
+      expect((strokes.last['points'] as List).last, [
+        closeTo(pEnd.x, 0.01),
+        closeTo(pEnd.y, 0.01),
+        closeTo(pEnd.pressure, 0.001),
+        pEnd.t,
+      ]);
+    });
 
-      final img = w['image'] as Map<String, dynamic>;
+    test('the pen data is the raw ink, not what is displayed', () {
+      final line = plannedLine(['hello']);
+      final base = line.line;
+      final first = base.inkStrokes.first;
+      // A stroke whose displayed points differ from what the pen produced.
+      final snapped = first.copyWith(
+        points: [for (final p in first.raw) InkPoint(p.x + 50, p.y, p.pressure, p.t)],
+      );
+      expect(snapped.points.first.x, isNot(snapped.raw.first.x));
+      final shifted = RecognizedLine(
+        words: base.words,
+        baselineY: base.baselineY,
+        baselineSlope: base.baselineSlope,
+        left: base.left,
+        right: base.right,
+        xHeight: base.xHeight,
+        inkStrokes: [snapped, ...base.inkStrokes.skip(1)],
+      );
+      final sampled = PlannedLine(
+        id: 'p/0',
+        pageId: 'p',
+        line: shifted,
+        words: line.words,
+        text: line.text,
+        confidence: line.confidence,
+        dominantColor: line.dominantColor,
+        strokeIds: line.strokeIds,
+        lowConfidence: false,
+      );
+      final l = single(sampled);
+      final points = ((l['strokes'] as List).first as Map)['points'] as List;
+      expect((points.first as List).first, closeTo(first.raw.first.x, 0.01));
+    });
+
+    test('the picture is the model input, pixel for pixel, with how it was made', () {
+      final image = imageOf(5);
+      final l = single(plannedLine(['hello']), [image]);
+      final images = (l['images'] as List).cast<Map<String, dynamic>>();
+      expect(images, hasLength(1));
+      final img = images.single;
       expect(img['scale'], 2.5);
+      expect(img['strokeWidthPx'], 2);
+      expect(img['originX'], 12.5);
+      expect(img['angle'], 0.25);
       expect((img['width'], img['height']), (testImageWidth, wordImageHeight));
-      final (iw, ih, pixels) =
-          decodeGrayPng(base64Decode(img['png'] as String));
+      final (iw, ih, pixels) = decodeGrayPng(base64Decode(img['png'] as String));
       expect((iw, ih), (testImageWidth, wordImageHeight));
       expect(pixels, image.pixels);
     });
 
-    test('a word without a picture still has its entry', () {
-      final line = plannedLine(['hello']);
-      final json = buildSamplesJson(
-        appVersion: 'x',
-        createdAt: DateTime.utc(2026),
-        lines: [SampleLineInput(line: line, pageIndex: 0, images: const [])],
+    test('a very wide line has all its pictures, in order', () {
+      final l = single(plannedLine(['hello']), [imageOf(1), imageOf(2), imageOf(3)]);
+      final images = (l['images'] as List).cast<Map<String, dynamic>>();
+      expect(images, hasLength(3));
+      final firstPixels = [
+        for (final i in images)
+          decodeGrayPng(base64Decode(i['png'] as String)).$3.first,
+      ];
+      expect(firstPixels, [for (final seed in [1, 2, 3]) imageOf(seed).pixels.first]);
+    });
+
+    test('a line without a picture still has its entry', () {
+      final l = single(plannedLine(['hello']), const []);
+      expect(l['images'], isEmpty);
+      expect(l['recognizedText'], 'hello');
+      expect(l['strokes'], isNotEmpty);
+    });
+
+    test('a picture that does not fit its size is left out, not written wrong', () {
+      final broken = LineImage(
+        pixels: Uint8List(10),
+        width: testImageWidth,
+        scale: 1,
+        strokeWidthPx: 1,
+        strokes: const [],
+        angle: 0,
+        originX: 0,
       );
-      expect(((json['words'] as List).single as Map)['image'], isNull);
+      expect(single(plannedLine(['hello']), [broken])['images'], isEmpty);
     });
 
     test('an unticked line says so', () {
       final line = plannedLine(['hello'])..include = false;
-      final json = buildSamplesJson(
-        appVersion: 'x',
-        createdAt: DateTime.utc(2026),
-        lines: [SampleLineInput(line: line, pageIndex: 0, images: [imageOf(1)])],
-      );
-      expect(((json['words'] as List).single as Map)['lineIncluded'], isFalse);
+      expect(single(line)['lineIncluded'], isFalse);
     });
 
     test('the file name has the date and time', () {
@@ -472,6 +581,101 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
     });
 
+    group('spelling fixes and the personal dictionary', () {
+      const capital = PolishSuggestion(
+        original: 'hello',
+        replacement: 'Hello',
+        kind: PolishKind.capitalization,
+        reason: 'Capital letter',
+        start: 0,
+        end: 5,
+      );
+
+      FakeRecognizer suggesting() => reader()..suggestions['aw0'] = [capital];
+
+      testWidgets('accepting a suggested fix teaches nothing', (tester) async {
+        final h = await ConvertHarness.open(tester,
+            pages: [threeLines()], recognizer: suggesting());
+        await h.tapConvert();
+        await tester.tap(key('convert-suggest-0-0'));
+        await tester.pump();
+        expect(fieldText(tester, 0), 'Hello online');
+
+        await tester.tap(key('convert-apply'));
+        await settle(tester);
+        expect(h.page.texts.first.text, 'Hello online');
+        expect(h.learner.words, isEmpty,
+            reason: 'taking a fix is not a correction of the recogniser');
+        await tester.pump(const Duration(seconds: 6));
+      });
+
+      testWidgets('typing the same capital by hand does teach it (for comparison)',
+          (tester) async {
+        final h = await ConvertHarness.open(tester,
+            pages: [threeLines()], recognizer: reader());
+        await h.tapConvert();
+        await tester.enterText(key('convert-text-0'), 'Hello online');
+        await tester.pump();
+        await tester.tap(key('convert-apply'));
+        await settle(tester);
+        expect(h.learner.words, ['Hello']);
+        await tester.pump(const Duration(seconds: 6));
+      });
+
+      testWidgets('a word the user rewrites after accepting a fix is still learned',
+          (tester) async {
+        final h = await ConvertHarness.open(tester,
+            pages: [threeLines()], recognizer: suggesting());
+        await h.tapConvert();
+        await tester.tap(key('convert-suggest-0-0'));
+        await tester.pump();
+        await tester.enterText(key('convert-text-0'), 'Hello onlinne');
+        await tester.pump();
+        await tester.tap(key('convert-apply'));
+        await settle(tester);
+        expect(h.learner.words, ['onlinne']);
+        await tester.pump(const Duration(seconds: 6));
+      });
+
+      testWidgets('fixes applied by the setting teach nothing either, and the setting is used',
+          (tester) async {
+        final h = await ConvertHarness.open(tester,
+            pages: [threeLines()],
+            recognizer: suggesting(),
+            prefsValues: {
+              AppSettings.prefsKey: jsonEncode({'autoFixSpelling': true}),
+            });
+        await h.tapConvert();
+        expect(fieldText(tester, 0), 'Hello online');
+        await tester.tap(key('convert-apply'));
+        await settle(tester);
+        expect(h.page.texts.first.text, 'Hello online');
+        expect(h.learner.words, isEmpty);
+        await tester.pump(const Duration(seconds: 6));
+      });
+
+      testWidgets('a fix that was undone is not applied, and the rest is still learned',
+          (tester) async {
+        final h = await ConvertHarness.open(tester,
+            pages: [threeLines()],
+            recognizer: suggesting(),
+            prefsValues: {
+              AppSettings.prefsKey: jsonEncode({'autoFixSpelling': true}),
+            });
+        await h.tapConvert();
+        await tester.tap(key('convert-undo-0-0'));
+        await tester.pump();
+        expect(fieldText(tester, 0), 'hello online');
+        await tester.enterText(key('convert-text-0'), 'hello onlinne');
+        await tester.pump();
+        await tester.tap(key('convert-apply'));
+        await settle(tester);
+        expect(h.page.texts.first.text, 'hello onlinne');
+        expect(h.learner.words, ['onlinne']);
+        await tester.pump(const Duration(seconds: 6));
+      });
+    });
+
     testWidgets('Share samples builds one file and opens the share sheet',
         (tester) async {
       final fake = reader();
@@ -493,17 +697,23 @@ void main() {
       expect(shared.fileName,
           matches(RegExp(r'^mariams-notes-samples-\d{8}-\d{4}\.json$')));
       final json = jsonDecode(shared.json) as Map<String, dynamic>;
-      expect(json['format'], 1);
+      expect(json['format'], 2);
       expect(json['appVersion'], isA<String>());
-      final words = (json['words'] as List).cast<Map<String, dynamic>>();
-      expect(words.map((w) => w['read']), ['hello', 'online', 'second', 'third']);
-      expect(words.map((w) => w['finalText']),
-          ['Hello', 'online', 'second', 'third']);
-      expect(words[0]['corrected'], isTrue);
-      expect(words[0]['alternatives'], ['hallo']);
-      expect(words[2]['line'], 1);
-      // The picture is what the recogniser got: ink on white.
-      final image = words[0]['image'] as Map<String, dynamic>;
+      expect(json['lineCount'], 3);
+      final lines = (json['lines'] as List).cast<Map<String, dynamic>>();
+      expect(lines.map((l) => l['recognizedText']),
+          ['hello online', 'second', 'third']);
+      expect(lines.map((l) => l['finalText']),
+          ['Hello online', 'second', 'third']);
+      expect(lines.map((l) => l['corrected']), [true, false, false]);
+      expect(lines.map((l) => (l['page'], l['line'])), [(1, 0), (1, 1), (1, 2)]);
+      final words = (lines[0]['words'] as List).cast<Map<String, dynamic>>();
+      expect(words.map((w) => w['text']), ['hello', 'online']);
+      expect(words.first['alternatives'], ['hallo']);
+      // Every pen stroke of the line, the i's dot too.
+      expect(lines.map((l) => (l['strokes'] as List).length), [5 + 7, 5, 5]);
+      // The picture is what the recogniser got: the whole line, ink on white.
+      final image = (lines[0]['images'] as List).single as Map<String, dynamic>;
       final (w, hh, pixels) = decodeGrayPng(base64Decode(image['png'] as String));
       expect((w, hh), (image['width'], wordImageHeight));
       expect(w, greaterThanOrEqualTo(wordImageMinWidth));

@@ -16,17 +16,19 @@ import 'convert_config.dart';
 import 'convert_layout.dart';
 import 'convert_plan.dart';
 
-/// Whether auto-convert should type [line] by itself: no word was unreadable
-/// and EVERY word was read with at least [minConfidence]. Anything less stays
-/// handwriting, because nobody reviews the result first.
+/// Whether auto-convert should type [line] by itself: it has text, no word
+/// was unreadable and the line's confidence (that of its least sure word) is
+/// at least [minConfidence]. Anything less stays handwriting, because nobody
+/// reviews the result first. The text typed is the line's [PlannedLine.text]:
+/// the reading as it is, plus the spelling fixes only when "Fix spelling
+/// automatically" is on (suggestions are never applied silently otherwise).
 bool autoConvertsLine(PlannedLine line,
     {double minConfidence = ConvertConfig.autoMinConfidence}) {
-  if (line.words.isEmpty) return false;
+  if (line.text.trim().isEmpty) return false;
   for (final w in line.words) {
     if (w.text.trim().isEmpty) return false;
-    if (!(w.confidence >= minConfidence)) return false;
   }
-  return true;
+  return line.confidence >= minConfidence;
 }
 
 /// Converts handwriting to typed text by itself, like the Freenote app.
@@ -35,10 +37,12 @@ bool autoConvertsLine(PlannedLine line,
 /// snapped shapes are ignored) restarts a timer of [idle]
 /// (`ConvertConfig.autoIdleMs`). A new pen-down postpones it. When it fires
 /// with the pen up the *pending* strokes (pen strokes finished since the last
-/// pass that are still on the page) are grouped, read, and each line is typed
-/// only if every word was read confidently (see [autoConvertsLine]). Lines
-/// that are not typed keep their ink exactly as it is and are never tried
-/// again by auto-convert (the manual Convert button still reads them).
+/// pass that are still on the page) are grouped into lines, each line is read
+/// as a whole, and it is typed only if the line was read confidently (see
+/// [autoConvertsLine]). Lines that are not typed keep their ink exactly as it
+/// is and are never tried again by auto-convert (the manual Convert button
+/// still reads them). With "Fix spelling automatically" on ([readAutoFix]) the
+/// recogniser's spelling and grammar fixes are applied to the typed text too.
 ///
 /// One pass is one undo step ("Auto-convert"). Strokes it converted are
 /// remembered as ignored, so undoing never converts them again. A line that
@@ -54,6 +58,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     required this.controller,
     required this.recognizer,
     required this.readStyle,
+    bool Function()? readAutoFix,
     this._enabled = false,
     Duration? idle,
     this.minConfidence = ConvertConfig.autoMinConfidence,
@@ -61,6 +66,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     Uuid? uuid,
     bool observeLifecycle = true,
   })  : idle = idle ?? const Duration(milliseconds: ConvertConfig.autoIdleMs),
+        readAutoFix = readAutoFix ?? _noAutoFix,
         _uuid = uuid ?? const Uuid() {
     _startedSub = controller.strokeEvents.started.listen(_onStarted);
     _finishedSub = controller.strokeEvents.finished.listen(_onFinished);
@@ -76,6 +82,13 @@ class AutoConvertSession with WidgetsBindingObserver {
 
   /// The look to type with, read at the start of every pass.
   final ConvertStyle Function() readStyle;
+
+  /// Whether to apply the recogniser's spelling and grammar fixes, read at the
+  /// start of every pass (the setting "Fix spelling automatically", off by
+  /// default).
+  final bool Function() readAutoFix;
+
+  static bool _noAutoFix() => false;
 
   /// Quiet time after the last stroke before a pass starts.
   final Duration idle;
@@ -283,6 +296,7 @@ class AutoConvertSession with WidgetsBindingObserver {
   Future<void> _pass() async {
     final generation = _generation;
     final style = readStyle();
+    final autoFix = readAutoFix();
     final doc = controller.doc;
 
     // 1. Take what is waiting.
@@ -320,7 +334,8 @@ class AutoConvertSession with WidgetsBindingObserver {
     working.value = true;
     final List<PagePlan> plans;
     try {
-      plans = await recognizePages(scope, recognizer, cancel: token)
+      plans = await recognizePages(scope, recognizer,
+              cancel: token, autoFix: autoFix)
           .timeout(ConvertConfig.autoPassTimeout);
     } on ConvertCancelled {
       rethrow;

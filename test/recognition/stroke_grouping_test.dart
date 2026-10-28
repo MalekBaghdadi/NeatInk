@@ -353,4 +353,277 @@ void main() {
       expect(lines.single.words.length, greaterThan(1));
     });
   });
+
+  group('line splitting', () {
+    // Polylines of [text] in the shared font with the baseline at [y], the
+    // first letter at [x].
+    List<List<Vec2>> textAt(String text, double x, double y, {double gap = 4}) => [
+          for (final p in wordPolylines(text, gap: gap)) [for (final v in p) Vec2(v.x + x, v.y + y)],
+        ];
+
+    // A vertical stroke from y0 to y1: the long tail of a y or q, or an l.
+    List<Vec2> vline(double x, double y0, double y1) => densify([Vec2(x, y0), Vec2(x, y1)]);
+
+    List<Stroke> strokesOf(List<List<Vec2>> polylines, String prefix) =>
+        toStrokes(polylines, prefix: prefix, m: distortion(x: 0, y: 0));
+
+    List<String> idsOf(RecognizedLine l) => [for (final s in l.inkStrokes) s.id];
+
+    test('two lines whose descenders and ascenders interleave are not merged', () {
+      // The page the old splitter failed on: the deepest valley of the whole
+      // ink profile lies in the long tail of the LAST line, where only one
+      // stroke crosses; the real valley between the lines holds two strokes
+      // at every height (two tails above, two ascenders below) and was never
+      // tried. Peak-first splitting cuts between the line bodies.
+      final a = [
+        ...textAt('hello', 100, 100),
+        ...textAt('online', 160, 100),
+        vline(150, 90, 124), // tail of a y
+        vline(214, 90, 124), // tail of a q
+      ];
+      final b = [
+        ...textAt('hello', 100, 128),
+        ...textAt('hen', 150, 128),
+        vline(190, 118, 160), // the long tail of a g, the last ink of the page
+      ];
+      final lines = groupStrokes([...strokesOf(a, 'a'), ...strokesOf(b, 'b')]);
+      expect(lines, hasLength(2));
+      expect(idsOf(lines[0]).every((id) => id.startsWith('a')), isTrue);
+      expect(idsOf(lines[1]).every((id) => id.startsWith('b')), isTrue);
+      expect(lines[0].inkStrokes.length, a.length);
+      expect(lines[1].inkStrokes.length, b.length);
+      expect(lines[0].baselineY, lessThan(lines[1].baselineY));
+    });
+
+    test('the same page without the descender tail of the last line', () {
+      final a = [
+        ...textAt('hello', 100, 100),
+        ...textAt('online', 160, 100),
+        vline(150, 90, 124),
+        vline(214, 90, 124),
+      ];
+      final b = [...textAt('hello', 100, 128), ...textAt('hen', 150, 128)];
+      final lines = groupStrokes([...strokesOf(a, 'a'), ...strokesOf(b, 'b')]);
+      expect(strokeCounts(lines).length, greaterThan(0));
+      expect(lines, hasLength(2));
+    });
+
+    test('a long descender does not make a line of its own', () {
+      final polylines = [
+        ...textAt('hello', 100, 100),
+        ...textAt('online', 160, 100),
+        vline(150, 90, 140), // 5 x-heights of tail
+        vline(214, 90, 135),
+      ];
+      final lines = groupStrokes(strokesOf(polylines, 's'));
+      expect(lines, hasLength(1));
+      expect(lines.single.inkStrokes, hasLength(polylines.length));
+    });
+
+    test('a row of i-dots above the letters is part of the line', () {
+      final polylines = [
+        ...textAt('online', 100, 100),
+        ...textAt('line', 160, 100),
+        ...textAt('online', 100, 140),
+      ];
+      final lines = groupStrokes(strokesOf(polylines, 's'));
+      expect(lines, hasLength(2));
+    });
+
+    test('dots hovering between two lines follow the stem under them', () {
+      // Line B's i-dots are written high: closer to line A's baseline than
+      // to B's own letters. They still belong to B.
+      List<List<Vec2>> lineWithHighDots(double y, double dotLift) => [
+            ...textAt('hello', 100, y),
+            // i stems with their dots 'dotLift' above the stem top
+            for (final x in [160.0, 172.0, 184.0]) ...[
+              vline(x, y - 10, y),
+              densify([Vec2(x - 0.3, y - 10 - dotLift), Vec2(x + 0.3, y - 10 - dotLift)]),
+            ],
+          ];
+      for (final lift in [4.0, 7.0, 9.0]) {
+        final a = lineWithHighDots(100, 4);
+        final b = lineWithHighDots(125, lift);
+        final lines = groupStrokes([...strokesOf(a, 'a'), ...strokesOf(b, 'b')]);
+        expect(lines, hasLength(2), reason: 'lift $lift');
+        expect(idsOf(lines[0]).every((id) => id.startsWith('a')), isTrue, reason: 'lift $lift');
+        expect(idsOf(lines[1]).every((id) => id.startsWith('b')), isTrue, reason: 'lift $lift');
+        expect(lines[1].inkStrokes.length, b.length);
+      }
+    });
+
+    test('a full stop at the end of a line stays with its line', () {
+      final a = [...textAt('hello', 100, 100), ...textAt('online', 160, 100)];
+      final stop = densify([const Vec2(222, 99.6), const Vec2(222.4, 100)]);
+      final b = textAt('hello', 100, 126);
+      final lines = groupStrokes([...strokesOf([...a, stop], 'a'), ...strokesOf(b, 'b')]);
+      expect(lines, hasLength(2));
+      expect(lines[0].inkStrokes.length, a.length + 1);
+      expect(lines[1].inkStrokes.length, b.length);
+    });
+
+    test('three lines, whatever their x positions, keep all their strokes', () {
+      final a = [...textAt('hello', 100, 100), ...textAt('online', 170, 100)];
+      final b = [...textAt('hen', 140, 140), ...textAt('hello', 190, 140)];
+      final c = [...textAt('online', 100, 180), ...textAt('hello', 175, 180)];
+      final all = [...strokesOf(a, 'a'), ...strokesOf(b, 'b'), ...strokesOf(c, 'c')];
+      final lines = groupStrokes(all.reversed.toList());
+      expect(lines, hasLength(3));
+      expect([for (final l in lines) l.inkStrokes.length], [a.length, b.length, c.length]);
+      for (var i = 0; i < 3; i++) {
+        final prefix = 'abc'[i];
+        expect(idsOf(lines[i]).every((id) => id.startsWith(prefix)), isTrue);
+      }
+    });
+
+    test('a sparse line next to a dense one is still a line', () {
+      final dense = [
+        ...textAt('hello', 100, 100),
+        ...textAt('online', 160, 100),
+        ...textAt('hello', 230, 100),
+        ...textAt('online', 290, 100),
+      ];
+      final sparse = textAt('hen', 100, 140);
+      final lines = groupStrokes([...strokesOf(dense, 'a'), ...strokesOf(sparse, 'b')]);
+      expect(lines, hasLength(2));
+      expect(lines[1].inkStrokes.length, sparse.length);
+    });
+
+    test('inkStrokes keeps every stroke in input order', () {
+      final a = [...textAt('hello', 100, 100), ...textAt('online', 160, 100)];
+      final b = [...textAt('hen', 100, 140)];
+      final sa = strokesOf(a, 'a'), sb = strokesOf(b, 'b');
+      // interleaved input: a0 b0 a1 b1 ...
+      final input = <Stroke>[];
+      for (var i = 0; i < sa.length || i < sb.length; i++) {
+        if (i < sa.length) input.add(sa[i]);
+        if (i < sb.length) input.add(sb[i]);
+      }
+      final lines = groupStrokes(input);
+      expect(lines, hasLength(2));
+      for (final l in lines) {
+        final positions = [for (final s in l.inkStrokes) input.indexOf(s)];
+        expect(positions, orderedEquals([...positions]..sort()));
+      }
+      expect(lines[0].inkStrokes.length + lines[1].inkStrokes.length, input.length);
+      // the legacy word groups cover the same strokes
+      for (final l in lines) {
+        expect({for (final w in l.words) ...w.strokes}, {...l.inkStrokes});
+        expect(l.strokes, same(l.inkStrokes));
+      }
+    });
+
+    test('copyWith keeps the ink and the geometry', () {
+      final lines = groupStrokes(line(['hello', 'online'], [0, 52]));
+      final l = lines.single;
+      final one = l.copyWith(words: [l.words.first]);
+      expect(one.words, hasLength(1));
+      expect(one.inkStrokes, same(l.inkStrokes));
+      expect(one.baselineY, l.baselineY);
+      expect(one.baselineSlope, l.baselineSlope);
+      expect(one.left, l.left);
+      expect(one.right, l.right);
+      expect(one.xHeight, l.xHeight);
+      expect(l.copyWith().words, same(l.words));
+    });
+
+    test('a RecognizedLine built without inkStrokes takes the words strokes', () {
+      final l = groupStrokes(line(['hello', 'online'], [0, 52])).single;
+      final built = RecognizedLine(
+        words: l.words,
+        baselineY: l.baselineY,
+        baselineSlope: l.baselineSlope,
+        left: l.left,
+        right: l.right,
+        xHeight: l.xHeight,
+      );
+      expect(built.inkStrokes.length, 12);
+      expect(built.strokes.length, 12);
+    });
+  });
+
+  group('per-line x-height', () {
+    test('each line has its own x-height, not the page-wide one', () {
+      final small = line(['hello', 'online'], [0, 52], prefix: 'a', y: 100, scale: 0.7);
+      final medium = line(['hello', 'online'], [0, 52], prefix: 'b', y: 200);
+      final big = line(['hello', 'online'], [0, 52], prefix: 'c', y: 330, scale: 2);
+      final lines = groupStrokes([...small, ...medium, ...big]);
+      expect(lines, hasLength(3));
+      expect(lines[0].xHeight, closeTo(7, 1.8));
+      expect(lines[1].xHeight, closeTo(10, 2.5));
+      expect(lines[2].xHeight, closeTo(20, 4.5));
+      expect(lines[2].xHeight, greaterThan(2 * lines[0].xHeight));
+      // and the word groups carry it
+      expect(lines[2].words.first.xHeight, lines[2].xHeight);
+    });
+
+    test('a line of a few strokes still gets an x-height from its own letters', () {
+      final lines = groupStrokes([
+        ...line(['hello', 'online'], [0, 52], prefix: 'a', y: 100),
+        ...line(['hen'], [0], prefix: 'b', y: 230, scale: 2.5),
+      ]);
+      expect(lines, hasLength(2));
+      expect(lines[1].xHeight, closeTo(25, 7));
+    });
+
+    test('an expected x-height hint still wins', () {
+      final lines = groupStrokes(line(['hello', 'online'], [0, 52]), expectedXHeight: 12);
+      expect(lines.single.xHeight, 12);
+    });
+  });
+
+  group('nearestSupport', () {
+    const u = 10.0;
+    LevelBox box(double l, double t, double r, double b) => (left: l, top: t, right: r, bottom: b);
+
+    test('an i-dot picks the stem under it', () {
+      final dot = box(100, 80, 101, 81);
+      final stems = [box(60, 85, 68, 95), box(100, 85, 101, 95)];
+      expect(nearestSupport(dot, stems, u: u), 1);
+    });
+
+    test('a full stop picks the letter before it, not the line below', () {
+      final stop = box(120, 94, 121, 95);
+      final before = box(108, 85, 118, 95); // overlaps the stop in height
+      final below = box(120, 108, 130, 118); // next line, within reach
+      expect(nearestSupport(stop, [below, before], u: u), 1);
+    });
+
+    test('nothing within reach gives null', () {
+      final dot = box(0, 0, 1, 1);
+      expect(nearestSupport(dot, [box(50, 5, 60, 15)], u: u), isNull); // too far sideways
+      expect(nearestSupport(dot, [box(0, 40, 10, 50)], u: u), isNull); // too far down
+      expect(nearestSupport(dot, const [], u: u), isNull);
+    });
+
+    test('strokes above count several times their gap and underOnly ignores them', () {
+      final mark = box(0, 50, 1, 51);
+      final above = box(0, 30, 10, 45);
+      final under = box(0, 60, 10, 70);
+      expect(nearestSupport(mark, [above], u: u), 0);
+      expect(nearestSupport(mark, [above], u: u, underOnly: true), isNull);
+      expect(nearestSupport(mark, [above, under], u: u), 1);
+    });
+
+    test('a stroke directly under the mark beats a tail passing beside it', () {
+      // The i-dot at x 100, the stem under it, and the descender tail of the
+      // line above running down past the dot, one point to its left.
+      final dot = box(100, 80, 101, 81);
+      final stem = box(100, 86, 101, 96);
+      final tail = box(95, 40, 99, 85);
+      expect(nearestSupport(dot, [tail, stem], u: u), 1);
+      expect(nearestSupport(dot, [stem, tail], u: u), 0);
+      // Without a stem under it the tail is the nearest stroke.
+      expect(nearestSupport(dot, [tail], u: u), 0);
+    });
+
+    test('a stroke far under the mark is not "directly under"', () {
+      // The next line's letter 1.5 x-heights below a full stop does not
+      // take it from the letter before it.
+      final stop = box(120, 94, 121, 95);
+      final before = box(108, 85, 118, 95);
+      final next = box(120, 110, 130, 120);
+      expect(nearestSupport(stop, [next, before], u: u), 1);
+    });
+  });
 }

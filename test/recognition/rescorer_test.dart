@@ -8,9 +8,12 @@ import 'package:neatink/recognition/user_lexicon.dart';
 
 import 'ctc_fixtures.dart';
 
-// Counts on the scale of the bundled list (the rarest listed word is about
-// 1e-9.8 of the total).
+// Counts on the scale of the bundled list (total about 3.6e11; the last line
+// is a filler that carries the mass of the thousands of words not listed
+// here, so probabilities and the rank-30000 prior of unknown strings have
+// realistic sizes).
 const _words = '''
+filler 330000000000
 the 10000000000
 and 5000000000
 i 3000000000
@@ -76,7 +79,9 @@ void main() {
       final r = read(catOrCot(0.01, 0.95));
       expect(r.raw, 'cot');
       expect(r.text, 'cot');
-      expect(r.confidence, greaterThan(0.5));
+      // (was 0.5 before an unknown string got the prior of a rare real word:
+      // the rivals 'cut'/'car'/... now weigh a little more in the posterior)
+      expect(r.confidence, greaterThan(0.4));
     });
 
     test('a known word is kept unless the language clearly prefers another', () {
@@ -327,6 +332,75 @@ void main() {
     });
   });
 
+  group('unknown strings and replacements (the v1.2.1 bugs)', () {
+    final withMale = Lexicon.parse('$_words\nmale 90000000\n');
+
+    test('a clearly read name is not replaced by a frequent word one edit away', () {
+      // "Malek" read with confidence; "male" is listed and frequent.
+      final r = read(spell('Malek'), lexicon: withMale);
+      expect(r.text, 'Malek');
+      expect(r.corrected, isFalse);
+    });
+
+    test('a name with a doubtful extra letter may lose it to a frequent word', () {
+      // The head start of the model's own reading shrinks with doubt: an x the
+      // model itself is unsure of does not protect "Malex" from "Male".
+      final r = read(
+          spellWith('Malex', {
+            4: {'x': 0.4, 'e': 0.35},
+          }),
+          lexicon: withMale);
+      expect(r.raw, 'Malex');
+      expect(r.text, 'Male');
+      expect(r.alternatives, contains('Malex'));
+    });
+
+    test('an unknown string gets the prior of a rare listed word, not of an impossible one', () {
+      // A listed word nobody would expect must not beat a clear unknown reading
+      // just because it is listed: "rare" is the rarest listed word.
+      final lexicon = Lexicon.parse('$_words\nmarx 1000000\n');
+      expect(read(spell('Marz'), lexicon: lexicon).text, 'Marz');
+    });
+
+    test('a replacement does not inherit a capital from a different first letter', () {
+      // raw "Eat" (E and c look alike); the replacement "cat" starts with
+      // another letter, so it is not capitalised (it used to become "Cat")
+      final r = read(spellWith('Eat', {
+        0: {'E': 0.5, 'c': 0.45},
+      }));
+      expect(r.raw, 'Eat');
+      expect(r.text, 'cat');
+    });
+
+    test('a replacement with the same first letter keeps the capital', () {
+      final r = read(spellWith('Cot', {
+        1: {'o': 0.45, 'a': 0.5},
+      }));
+      expect(r.text, 'Cat');
+    });
+
+    test('contractions without the apostrophe are known words', () {
+      final r = read(spellWith('isut', {
+        2: {'u': 0.45, 'n': 0.5},
+      }));
+      expect(r.text, 'isnt');
+      expect(read(spell('isnt')).text, 'isnt');
+    });
+
+    test('the head start of a clear unknown reading shrinks with doubt', () {
+      // the same slip, once read with certainty and once with real doubt
+      final user = personal(['Mariam']);
+      final sure = read(spellWith('Masiam', {
+        2: {'s': 0.97, 'r': 0.002},
+      }), user: user);
+      final doubtful = read(spellWith('Masiam', {
+        2: {'s': 0.5, 'r': 0.45},
+      }), user: user);
+      expect(sure.text, 'Masiam');
+      expect(doubtful.text, 'Mariam');
+    });
+  });
+
   group('on the bundled word list', () {
     const candidates = [
       'assets/htr/word_freq.txt',
@@ -336,12 +410,14 @@ void main() {
     // The mirror has no assets folder: these tests then do nothing.
     final real = file == null ? null : Lexicon.parse(file.readAsStringSync());
 
-    List<String> sample(int n) {
+    /// [n] words of the first [top] entries of the list (the list is sorted
+    /// by frequency).
+    List<String> sample(int n, {int top = 50000}) {
       final lines = file!.readAsLinesSync();
       final rng = Random(3);
       final out = <String>[];
       while (out.length < n) {
-        final w = lines[rng.nextInt(lines.length)].split(' ').first;
+        final w = lines[rng.nextInt(min(top, lines.length))].split(' ').first;
         if (w.length >= 3 && RegExp(r'^[a-z]+$').hasMatch(w)) out.add(w);
       }
       return out;
@@ -354,7 +430,10 @@ void main() {
     /// wrong letter at [wrong] and the right one at [right].
     ({int fixed, int other, int total}) slips(LexiconRescorer r, double wrong, double right) {
       var fixed = 0, other = 0, total = 0;
-      for (final w in sample(300)) {
+      // Running text is made of frequent words: a uniform sample of the whole
+      // list is mostly words from rank 10000 up, which a unigram prior (and the
+      // sane prior of an unknown string) cannot rescue from a doubtful letter.
+      for (final w in sample(300, top: 5000)) {
         final i = w.split('').indexWhere(lookAlike.containsKey);
         if (i < 0) continue;
         final bad = w.replaceRange(i, i + 1, lookAlike[w[i]]!);

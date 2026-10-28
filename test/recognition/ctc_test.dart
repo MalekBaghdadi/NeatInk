@@ -231,4 +231,200 @@ void main() {
       expect(ctcBeamSearch(empty, cs).single.text, '');
     });
   });
+
+  group('CtcLogProbs.slice', () {
+    test('cuts timesteps [start, end) and clamps', () {
+      final lp = framesOf(cs, [
+        {'a': 0.9},
+        {'b': 0.9},
+        {'c': 0.9},
+        {'d': 0.9},
+      ]);
+      final mid = lp.slice(1, 3);
+      expect(mid.timesteps, 2);
+      expect(mid.classes, lp.classes);
+      expect(mid.at(0, cs.indexOf('b')!), lp.at(1, cs.indexOf('b')!));
+      expect(mid.at(1, cs.indexOf('c')!), lp.at(2, cs.indexOf('c')!));
+      expect(lp.slice(-5, 99).timesteps, 4);
+      expect(lp.slice(3, 1).timesteps, 0);
+    });
+  });
+
+  group('CtcScorer', () {
+    CtcLogProbs randomFrames(math.Random rng, int steps) {
+      final letters = ['a', 'b', 'c', 'e', ' ', '_'];
+      return framesOf(cs, [
+        for (var t = 0; t < steps; t++) _randomFrame(rng, letters),
+      ]);
+    }
+
+    test('matches the log-domain forward algorithm', () {
+      final rng = math.Random(4);
+      for (var n = 0; n < 40; n++) {
+        final lp = randomFrames(rng, 3 + rng.nextInt(12));
+        final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+        final text = String.fromCharCodes(List.generate(rng.nextInt(5), (_) => 97 + rng.nextInt(5)));
+        final labels = cs.encode(text.replaceAll('d', ' '))!;
+        final sets = [
+          for (final l in labels) [l],
+        ];
+        final exact = ctcLogLikelihoodSets(lp, sets, blank: cs.blank);
+        final fast = scorer.logLikelihood(sets);
+        if (exact == double.negativeInfinity) {
+          expect(fast, double.negativeInfinity, reason: text);
+        } else {
+          expect(fast, closeTo(exact, 1e-9), reason: text);
+        }
+      }
+    });
+
+    test('case-insensitive sets add the probabilities of both cases', () {
+      final lp = framesOf(cs, [
+        {'a': 0.3, 'A': 0.4},
+      ]);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      final sets = [
+        [cs.indexOf('a')!, cs.indexOf('A')!],
+      ];
+      expect(scorer.logLikelihood(sets), closeTo(math.log(0.7), 1e-9));
+    });
+
+    test('empty labels and empty input', () {
+      final lp = framesOf(cs, [
+        {'_': 0.5},
+        {'_': 0.25},
+      ]);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      expect(scorer.logLikelihood(const []), closeTo(math.log(0.125), 1e-9));
+      final none = CtcScorer.fromLogProbs(CtcLogProbs(const [], timesteps: 0, classes: cs.classes), blank: cs.blank);
+      expect(none.logLikelihood(const []), 0);
+      expect(none.logLikelihood([
+        [1],
+      ]), double.negativeInfinity);
+    });
+
+    test('a repeated letter needs a blank between its frames', () {
+      final two = CtcScorer.fromLogProbs(
+          framesOf(cs, [
+            {'a': 0.9},
+            {'a': 0.9},
+          ]),
+          blank: cs.blank);
+      final aa = [
+        [cs.indexOf('a')!],
+        [cs.indexOf('a')!],
+      ];
+      expect(two.logLikelihood(aa), double.negativeInfinity);
+    });
+
+    test('slice scores a part of the frames', () {
+      final lp = framesOf(cs, spell('cat'));
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      final whole = scorer.logLikelihood([for (final l in cs.encode('cat')!) [l]]);
+      final firstLetter = scorer.slice(0, 3).logLikelihood([
+        [cs.indexOf('c')!],
+      ]);
+      expect(firstLetter, greaterThan(whole));
+      expect(scorer.slice(0, 3).timesteps, 3);
+      expect(scorer.slice(2, 99).timesteps, lp.timesteps - 2);
+    });
+
+    test('smoothing lends probability to the look-alike letter and leaves the rest', () {
+      final lp = framesOf(cs, [
+        {'c': 0.9, '_': 0.05},
+      ]);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      final pairs = [
+        ([cs.indexOf('e')!], [cs.indexOf('c')!]),
+      ];
+      final smooth = scorer.smoothed(pairs, 0.1);
+      expect(smooth.prob(0, cs.indexOf('e')!), closeTo(scorer.prob(0, cs.indexOf('e')!) + 0.09, 1e-9));
+      expect(smooth.prob(0, cs.indexOf('c')!), closeTo(scorer.prob(0, cs.indexOf('c')!) + 0.1 * scorer.prob(0, cs.indexOf('e')!), 1e-9));
+      expect(smooth.prob(0, cs.indexOf('t')!), scorer.prob(0, cs.indexOf('t')!));
+      expect(identical(scorer.smoothed(pairs, 0), scorer), isTrue);
+      final e = smooth.logLikelihood([
+        [cs.indexOf('e')!],
+      ]);
+      final plain = scorer.logLikelihood([
+        [cs.indexOf('e')!],
+      ]);
+      expect(e, greaterThan(plain + 3));
+    });
+
+    test('folding the space into the blank turns gap frames into "no letter"', () {
+      final lp = framesOf(cs, [
+        {'a': 0.9, '_': 0.05},
+        {' ': 0.9, '_': 0.05},
+      ]);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      final a = [
+        [cs.indexOf('a')!],
+      ];
+      final folded = scorer.foldedIntoBlank(cs.space!);
+      expect(folded.logLikelihood(a), greaterThan(scorer.logLikelihood(a) + 2));
+      expect(folded.prob(1, cs.blank), closeTo(0.95, 1e-9));
+      expect(folded.prob(1, cs.space!), closeTo(ctcProbFloor, 1e-12));
+    });
+
+    test('align finds the frames and the probability of each label', () {
+      final lp = framesOf(cs, [
+        {'_': 0.9},
+        {'c': 0.9, '_': 0.05},
+        {'_': 0.9},
+        {'a': 0.6, 'o': 0.3, '_': 0.05},
+        {'a': 0.7, '_': 0.05},
+        {'_': 0.9},
+        {'t': 0.8, '_': 0.1},
+      ]);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      final spans = scorer.align([for (final l in cs.encode('cat')!) [l]])!;
+      expect(spans, hasLength(3));
+      expect([spans[0].firstFrame, spans[0].lastFrame], [1, 1]);
+      expect([spans[1].firstFrame, spans[1].lastFrame], [3, 4]);
+      expect([spans[2].firstFrame, spans[2].lastFrame], [6, 6]);
+      expect(spans[0].prob, closeTo(0.9, 1e-9));
+      expect(spans[1].prob, closeTo(0.7, 1e-9));
+      expect(spans[2].prob, closeTo(0.8, 1e-9));
+      expect(scorer.align(const []), isEmpty);
+    });
+
+    test('align returns null when the labels do not fit', () {
+      final lp = framesOf(cs, [
+        {'a': 0.9},
+        {'a': 0.9},
+      ]);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      expect(scorer.align([for (final l in cs.encode('aa')!) [l]]), isNull);
+    });
+
+    test('is faster than the log-domain forward algorithm', () {
+      final rng = math.Random(9);
+      final lp = randomFrames(rng, 80);
+      final scorer = CtcScorer.fromLogProbs(lp, blank: cs.blank);
+      final sets = [for (final l in cs.encode('abcabceabcabceabcab')!) [l]];
+      var sink = 0.0;
+      final slow = Stopwatch()..start();
+      for (var i = 0; i < 40; i++) {
+        sink += ctcLogLikelihoodSets(lp, sets, blank: cs.blank);
+      }
+      final slowMs = slow.elapsedMicroseconds;
+      final fast = Stopwatch()..start();
+      for (var i = 0; i < 40; i++) {
+        sink += scorer.logLikelihood(sets);
+      }
+      final fastMs = fast.elapsedMicroseconds;
+      expect(sink.isNaN, isFalse);
+      expect(fastMs, lessThan(slowMs));
+    });
+  });
+}
+
+/// One frame of random probabilities over [letters] (`_` is the blank, a
+/// space is the space class), summing to a little less than 1.
+Map<String, double> _randomFrame(math.Random rng, List<String> letters) {
+  final weights = [for (final _ in letters) rng.nextDouble()];
+  final total = weights.fold(0.0, (a, b) => a + b) * 1.05;
+  return {
+    for (var i = 0; i < letters.length; i++) letters[i]: weights[i] / total,
+  };
 }

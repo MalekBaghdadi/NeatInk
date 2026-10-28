@@ -1,6 +1,8 @@
 import '../../../../ink/stroke.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/stroke_grouping.dart';
+import '../../../../recognition/text_polish.dart';
+import '../../../../recognition/word_image.dart';
 import 'convert_config.dart';
 
 /// Asked to stop: raised by [recognizePages] when its [ConvertCancelToken]
@@ -32,33 +34,58 @@ class PlannedLine {
     required this.dominantColor,
     required this.strokeIds,
     required this.lowConfidence,
-  }) : include = !lowConfidence;
+    String? recognizedText,
+    List<PolishSuggestion> suggestions = const [],
+    List<PolishSuggestion> autoApplied = const [],
+    this.images = const [],
+  })  : recognizedText = recognizedText ?? text,
+        suggestions = List.of(suggestions),
+        autoApplied = List.of(autoApplied),
+        include = !lowConfidence;
 
   /// Unique within the plan (`<pageId>/<index>`).
   final String id;
   final String pageId;
 
-  /// The grouped strokes (geometry for the layout).
+  /// The grouped strokes (geometry for the layout). Its [RecognizedLine.words]
+  /// are the word groups the recogniser found; its
+  /// [RecognizedLine.inkStrokes] hold every pen stroke of the line.
   final RecognizedLine line;
 
-  /// What the recogniser read for each word (same order as `line.words`).
+  /// What the recogniser read for each word, left to right (the groups of
+  /// `line.words`).
   final List<WordResult> words;
 
-  /// The text to type: the recogniser's reading until the user edits it.
+  /// The text to type: the recogniser's reading, with the automatic fixes
+  /// when "Fix spelling automatically" is on, until the user edits it.
   String text;
 
-  /// Mean confidence of the line's words (0..1).
+  /// The text the recogniser read, before any polishing. The offsets of
+  /// [suggestions] and [autoApplied] refer to it.
+  final String recognizedText;
+
+  /// Spelling and grammar fixes still offered for this line, in text order.
+  /// Mutable: [acceptSuggestion] takes one out, [revertAutoFix] puts one back.
+  final List<PolishSuggestion> suggestions;
+
+  /// Fixes that were applied to [text] automatically (the setting "Fix
+  /// spelling automatically"); each can be taken back with [revertAutoFix].
+  final List<PolishSuggestion> autoApplied;
+
+  /// The pictures the model was given for this line, exactly as sent.
+  final List<LineImage> images;
+
+  /// Confidence of the line (0..1): that of its least sure word.
   final double confidence;
 
   /// The most used stroke colour of the line (ARGB).
   final int dominantColor;
 
-  /// Ids of every stroke of the line's words: removed when the line is
-  /// converted.
+  /// Ids of every stroke of the line: removed when the line is converted.
   final Set<String> strokeIds;
 
-  /// Below [ConvertConfig.lowConfidenceThreshold] (or a word could not be
-  /// read at all): starts unchecked, shown with a "Not sure" badge.
+  /// Below [ConvertConfig.lowConfidenceThreshold] (or nothing could be read):
+  /// starts unchecked, shown with a "Not sure" badge.
   final bool lowConfidence;
 
   /// Whether the line will be converted. Starts as `!lowConfidence`.
@@ -66,6 +93,96 @@ class PlannedLine {
 
   /// True when the line will actually be converted (ticked, has text).
   bool get willConvert => include && text.trim().isNotEmpty;
+
+  // Fixes the user accepted (they are in [text] now). Not part of the
+  // contract of [suggestions]: kept so offsets stay exact and so accepting a
+  // fix is never mistaken for correcting the recogniser.
+  final List<PolishSuggestion> _accepted = [];
+
+  /// Fixes the user accepted with [acceptSuggestion] and did not take back.
+  List<PolishSuggestion> get accepted => List.unmodifiable(_accepted);
+
+  /// [recognizedText] with the fixes that are in [text] (accepted and
+  /// automatic): what the line says when the user changed nothing else.
+  /// Corrections to the recogniser are what differs from THIS, so taking a
+  /// polish suggestion never teaches the personal dictionary.
+  String get polishedText =>
+      applyPolish(recognizedText, [...autoApplied, ..._accepted]);
+
+  /// Applies [s] to [text]: its [PolishSuggestion.original] is replaced by the
+  /// replacement (at the position the suggestion was made for while the text
+  /// is as polished so far, else at the first whole-word occurrence) and the
+  /// suggestion moves out of [suggestions]. False, and nothing changes, when
+  /// the word is no longer in [text].
+  bool acceptSuggestion(PolishSuggestion s) {
+    final at = _find(s.original, _currentStart(s));
+    if (at == null) return false;
+    text = text.replaceRange(at, at + s.original.length, s.replacement);
+    suggestions.remove(s);
+    _accepted.add(s);
+    return true;
+  }
+
+  /// Takes back [s], a fix that was applied automatically (or accepted):
+  /// its replacement in [text] goes back to the original and the suggestion
+  /// returns to [suggestions]. False, and nothing changes, when the
+  /// replacement is no longer in [text].
+  bool revertAutoFix(PolishSuggestion s) {
+    final at = _find(s.replacement, _currentStart(s));
+    if (at == null) return false;
+    text = text.replaceRange(at, at + s.replacement.length, s.original);
+    autoApplied.remove(s);
+    _accepted.remove(s);
+    if (!suggestions.contains(s)) {
+      final i = suggestions.indexWhere((o) => o.start > s.start);
+      suggestions.insert(i < 0 ? suggestions.length : i, s);
+    }
+    return true;
+  }
+
+  /// Where [s] sits in [text] when only polish fixes changed it: its offset in
+  /// [recognizedText] moved by the fixes applied before it.
+  int _currentStart(PolishSuggestion s) {
+    var at = s.start;
+    for (final a in [...autoApplied, ..._accepted]) {
+      if (a.start < s.start) at += a.replacement.length - a.original.length;
+    }
+    return at;
+  }
+
+  /// [needle] at [expected] when it is there as a whole word, else its first
+  /// whole-word occurrence in [text], else null.
+  int? _find(String needle, int expected) {
+    if (needle.isEmpty) return null;
+    if (expected >= 0 &&
+        text.startsWith(needle, expected) &&
+        _isWholeWord(text, expected, needle.length)) {
+      return expected;
+    }
+    var from = 0;
+    while (true) {
+      final i = text.indexOf(needle, from);
+      if (i < 0) return null;
+      if (_isWholeWord(text, i, needle.length)) return i;
+      from = i + 1;
+    }
+  }
+
+  static final RegExp _wordChar = RegExp("[\\p{L}\\p{N}'’]", unicode: true);
+
+  static bool _isWord(String char) => _wordChar.hasMatch(char);
+
+  /// The [length] characters at [at] are not part of a longer word: a word
+  /// character next to the match on a side where the match itself ends in a
+  /// word character makes it part of one.
+  static bool _isWholeWord(String t, int at, int length) {
+    final first = t[at], last = t[at + length - 1];
+    if (at > 0 && _isWord(first) && _isWord(t[at - 1])) return false;
+    if (at + length < t.length && _isWord(last) && _isWord(t[at + length])) {
+      return false;
+    }
+    return true;
+  }
 }
 
 /// The recognised lines of one page, top to bottom.
@@ -92,8 +209,9 @@ class PageStrokes {
   final List<Stroke> strokes;
 }
 
-/// Groups [strokes] (ignoring highlighter strokes and shapes) into lines and
-/// words, without recognising anything yet.
+/// Groups [strokes] (ignoring highlighter strokes and shapes) into lines,
+/// without recognising anything yet. Every pen stroke ends up in a line's
+/// [RecognizedLine.inkStrokes].
 List<RecognizedLine> groupPageStrokes(List<Stroke> strokes) =>
     groupStrokes(strokes);
 
@@ -115,94 +233,125 @@ int dominantColorOf(Iterable<Stroke> strokes) {
   return best;
 }
 
-/// Builds the plan line for [line] from the words the recogniser read.
+/// The suggestions of [all] that [applyPolish] would apply to [text] (the
+/// same rules: by position, none overlapping an earlier one, each still
+/// matching the text), in text order.
+List<PolishSuggestion> applicableSuggestions(
+    String text, Iterable<PolishSuggestion> all) {
+  final sorted = all.toList()..sort((a, b) => a.start.compareTo(b.start));
+  final out = <PolishSuggestion>[];
+  var lastEnd = -1;
+  for (final s in sorted) {
+    if (s.start < lastEnd || s.start < 0 || s.end > text.length || s.end < s.start) {
+      continue;
+    }
+    if (text.substring(s.start, s.end) != s.original) continue;
+    out.add(s);
+    lastEnd = s.end;
+  }
+  return out;
+}
+
+/// Builds the plan line for a line the recogniser read.
+///
+/// With [autoFix] the polish suggestions that can be applied are applied to
+/// the text right away and listed in [PlannedLine.autoApplied]; otherwise they
+/// stay pending in [PlannedLine.suggestions] and the text is the reading as it
+/// is.
 PlannedLine plannedLineFrom({
   required String id,
   required String pageId,
-  required RecognizedLine line,
-  required List<WordResult> words,
+  required LineResult result,
+  bool autoFix = false,
   double threshold = ConvertConfig.lowConfidenceThreshold,
 }) {
-  final texts = <String>[];
-  var sum = 0.0;
-  var unreadable = false;
-  for (final w in words) {
-    final t = w.text.trim();
-    if (t.isEmpty) {
-      unreadable = true;
-    } else {
-      texts.add(t);
-      sum += w.confidence.clamp(0.0, 1.0);
-    }
-  }
-  final confidence = words.isEmpty ? 0.0 : sum / words.length;
+  final recognized = result.text;
+  final applied = autoFix
+      ? applicableSuggestions(recognized, result.suggestions)
+      : const <PolishSuggestion>[];
+  final pending = [
+    for (final s in result.suggestions)
+      if (!applied.contains(s)) s,
+  ];
+  final strokes = result.line.inkStrokes;
+  final unreadable = recognized.trim().isEmpty ||
+      result.words.any((w) => w.text.trim().isEmpty);
+  final confidence = result.confidence.isNaN
+      ? 0.0
+      : result.confidence.clamp(0.0, 1.0).toDouble();
   return PlannedLine(
     id: id,
     pageId: pageId,
-    line: line,
-    words: words,
-    text: texts.join(' '),
+    line: result.line,
+    words: result.words,
+    text: applied.isEmpty ? recognized : applyPolish(recognized, applied),
+    recognizedText: recognized,
+    suggestions: pending,
+    autoApplied: applied,
+    images: result.images,
     confidence: confidence,
-    dominantColor: dominantColorOf(line.strokes),
-    strokeIds: {for (final s in line.strokes) s.id},
-    lowConfidence: unreadable || texts.isEmpty || confidence < threshold,
+    dominantColor: dominantColorOf(strokes),
+    strokeIds: {for (final s in strokes) s.id},
+    lowConfidence: unreadable || confidence < threshold,
   );
 }
 
 /// Reads the handwriting of [pages] with [recognizer]: groups every page
-/// into lines and words, recognises all words in chunks (so [cancel] is
-/// honoured between chunks) and returns one plan per page, in input order.
+/// into lines, recognises the lines in chunks of [ConvertConfig.chunkLines]
+/// (so [cancel] is honoured between chunks) and returns one plan per page, in
+/// input order.
 ///
-/// [onProgress] reports `(wordsDone, wordsTotal)` over all pages. Pages
-/// without pen strokes get an empty plan. Throws [HtrException] when the
-/// recogniser fails and [ConvertCancelled] when cancelled.
+/// [onProgress] reports `(linesDone, linesTotal)` over all pages. Pages
+/// without pen strokes get an empty plan. With [autoFix] the spelling and
+/// grammar fixes the recogniser suggests are applied to the text (and can be
+/// taken back, see [PlannedLine.revertAutoFix]). Throws [HtrException] when
+/// the recogniser fails and [ConvertCancelled] when cancelled.
 Future<List<PagePlan>> recognizePages(
   List<PageStrokes> pages,
   HtrRecognizer recognizer, {
   void Function(int done, int total)? onProgress,
   ConvertCancelToken? cancel,
+  bool autoFix = false,
 }) async {
   final grouped = [for (final p in pages) groupPageStrokes(p.strokes)];
-  final allWords = <WordGroup>[
-    for (final lines in grouped)
-      for (final line in lines) ...line.words,
-  ];
-  final total = allWords.length;
-  final results = <WordResult>[];
+  final total = grouped.fold<int>(0, (n, lines) => n + lines.length);
+  var done = 0;
   onProgress?.call(0, total);
-  for (var start = 0; start < total; start += ConvertConfig.chunkWords) {
-    if (cancel?.isCancelled ?? false) throw const ConvertCancelled();
-    final end = (start + ConvertConfig.chunkWords).clamp(0, total);
-    final chunk = allWords.sublist(start, end);
-    final read = await recognizer.recognizeWords(
-      chunk,
-      onProgress: (done, _) => onProgress?.call(start + done, total),
-    );
-    if (cancel?.isCancelled ?? false) throw const ConvertCancelled();
-    if (read.length != chunk.length) {
-      throw const HtrException('protocol', 'The recognizer returned the wrong number of results.');
-    }
-    results.addAll(read);
-    onProgress?.call(results.length, total);
-  }
-
   final plans = <PagePlan>[];
-  var next = 0;
   for (var p = 0; p < pages.length; p++) {
-    final lines = <PlannedLine>[];
-    for (var i = 0; i < grouped[p].length; i++) {
-      final line = grouped[p][i];
-      final words = results.sublist(next, next + line.words.length);
-      next += line.words.length;
-      lines.add(plannedLineFrom(
-        id: '${pages[p].pageId}/$i',
-        pageId: pages[p].pageId,
-        line: line,
-        words: words,
-      ));
+    final lines = grouped[p];
+    final planned = <PlannedLine>[];
+    // The text of the line above the chunk, so the suggestions know whether
+    // the chunk's first line starts a sentence (null: it starts the page).
+    String? above;
+    for (var start = 0; start < lines.length; start += ConvertConfig.chunkLines) {
+      if (cancel?.isCancelled ?? false) throw const ConvertCancelled();
+      final end = (start + ConvertConfig.chunkLines).clamp(0, lines.length);
+      final chunk = lines.sublist(start, end);
+      final base = done;
+      final read = await recognizer.recognizeLines(
+        chunk,
+        previousLineText: above,
+        onProgress: (d, _) => onProgress?.call(base + d, total),
+      );
+      if (cancel?.isCancelled ?? false) throw const ConvertCancelled();
+      if (read.length != chunk.length) {
+        throw const HtrException('protocol', 'The recognizer returned the wrong number of results.');
+      }
+      for (var i = 0; i < read.length; i++) {
+        planned.add(plannedLineFrom(
+          id: '${pages[p].pageId}/${start + i}',
+          pageId: pages[p].pageId,
+          result: read[i],
+          autoFix: autoFix,
+        ));
+        if (read[i].text.isNotEmpty) above = read[i].text;
+      }
+      done += read.length;
+      onProgress?.call(done, total);
     }
     plans.add(PagePlan(
-        pageId: pages[p].pageId, pageIndex: pages[p].pageIndex, lines: lines));
+        pageId: pages[p].pageId, pageIndex: pages[p].pageIndex, lines: planned));
   }
   return plans;
 }

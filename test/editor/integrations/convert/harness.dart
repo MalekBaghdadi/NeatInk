@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,7 @@ import 'package:neatink/features/editor/editor_screen.dart';
 import 'package:neatink/features/editor/editor_tool.dart';
 import 'package:neatink/features/editor/stroke_events.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_integration.dart';
+import 'package:neatink/features/editor/integrations/convert/convert_plan.dart';
 import 'package:neatink/features/editor/integrations/erase_select/erase_select_integration.dart';
 import 'package:neatink/features/editor/integrations/erase_select/lasso_handler.dart';
 import 'package:neatink/features/editor/integrations/convert/sample_share.dart';
@@ -26,6 +28,7 @@ import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/ink/vec2.dart';
 import 'package:neatink/recognition/htr_channel.dart';
 import 'package:neatink/recognition/stroke_grouping.dart';
+import 'package:neatink/recognition/text_polish.dart';
 import 'package:neatink/recognition/word_image.dart';
 import 'package:neatink/storage/notebook_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,8 +68,74 @@ List<Stroke> writeLine(
   return [for (final s in out) s.copyWith(color: color)];
 }
 
-/// A recogniser that reads words from a table keyed by the stroke id prefix
-/// (`l1w0` for the first word of the line written with id `l1`).
+/// A recognised line the way the recogniser returns it: [readings] are the
+/// (text, confidence) of each word group of [line], in order. The line's
+/// confidence is that of its least sure word unless [confidence] says
+/// otherwise; its text is the non-empty words joined by single spaces.
+LineResult lineResultOf(
+  RecognizedLine line,
+  List<(String, double)> readings, {
+  double? confidence,
+  List<PolishSuggestion> suggestions = const [],
+  List<List<String>>? alternatives,
+  List<LineImage> images = const [],
+}) {
+  // No `expect` here: this runs inside the recogniser while a test pumps.
+  if (readings.length != line.words.length) {
+    throw ArgumentError('${readings.length} readings for ${line.words.length} words');
+  }
+  final words = [
+    for (var i = 0; i < readings.length; i++)
+      WordResult(
+        group: line.words[i],
+        text: readings[i].$1,
+        confidence: readings[i].$2,
+        raw: '${readings[i].$1}~',
+        alternatives: alternatives?[i] ?? const [],
+      ),
+  ];
+  final text = words.map((w) => w.text).where((t) => t.isNotEmpty).join(' ');
+  return LineResult(
+    line: line,
+    words: words,
+    text: text,
+    raw: '$text~',
+    confidence:
+        confidence ?? words.fold<double>(1, (c, w) => math.min(c, w.confidence)),
+    suggestions: suggestions,
+    images: images,
+  );
+}
+
+/// One line of handwriting with `readings.length` words, already recognised
+/// (see [lineResultOf]) and planned the way `recognizePages` plans it.
+PlannedLine plannedLineOf(
+  List<(String, double)> readings, {
+  String id = 'p/0',
+  double? confidence,
+  List<PolishSuggestion> suggestions = const [],
+  List<List<String>>? alternatives,
+  List<LineImage> images = const [],
+  bool autoFix = false,
+}) {
+  final strokes = writeLine('a', [for (final _ in readings) 'hello'], y: 104);
+  final line = groupStrokes(strokes).single;
+  return plannedLineFrom(
+    id: id,
+    pageId: 'p',
+    result: lineResultOf(line, readings,
+        confidence: confidence,
+        suggestions: suggestions,
+        alternatives: alternatives,
+        images: images),
+    autoFix: autoFix,
+  );
+}
+
+/// A recogniser that reads lines from a table keyed by the stroke id prefix
+/// of each word (`l1w0` for the first word of the line written with id `l1`):
+/// every word group of a line is looked up, the line's text is its words and
+/// its confidence that of its least sure word.
 class FakeRecognizer extends Fake implements HtrRecognizer {
   FakeRecognizer(this.readings, {this.defaultConfidence = 0.9});
 
@@ -77,42 +146,54 @@ class FakeRecognizer extends Fake implements HtrRecognizer {
   /// prefix -> other readings of the word, best first.
   final Map<String, List<String>> alternatives = {};
 
+  /// Prefix of the FIRST word of a line -> the fixes suggested for the line
+  /// (their offsets refer to the text the line was read as).
+  final Map<String, List<PolishSuggestion>> suggestions = {};
+
   /// Throws this instead of reading, when set.
   Object? error;
 
   /// When set, reading waits for it (to look at the progress state).
   Completer<void>? gate;
 
+  /// Calls of [recognizeLines].
   int calls = 0;
+
+  /// Words read, over all calls.
   int wordsRead = 0;
+
+  /// The `previousLineText` of every call, in order.
+  final List<String?> previousTexts = [];
+
   void Function(int done, int total)? lastProgress;
 
   static String keyOf(WordGroup w) => w.strokes.first.id.split('-').first;
 
   @override
-  Future<List<WordResult>> recognizeWords(
-    List<WordGroup> words, {
+  Future<List<LineResult>> recognizeLines(
+    List<RecognizedLine> lines, {
     void Function(int done, int total)? onProgress,
+    String? previousLineText,
   }) async {
     calls++;
-    onProgress?.call(0, words.length);
+    previousTexts.add(previousLineText);
+    onProgress?.call(0, lines.length);
     final g = gate;
     if (g != null) await g.future;
     final e = error;
     if (e != null) throw e;
-    final out = <WordResult>[];
-    for (final w in words) {
-      final r = readings[keyOf(w)] ?? ('?', defaultConfidence);
-      out.add(WordResult(
-        group: w,
-        text: r.$1,
-        confidence: r.$2,
-        raw: '${r.$1}~',
-        alternatives: alternatives[keyOf(w)] ?? const [],
+    final out = <LineResult>[];
+    for (final line in lines) {
+      final keys = [for (final w in line.words) keyOf(w)];
+      out.add(lineResultOf(
+        line,
+        [for (final k in keys) readings[k] ?? ('?', defaultConfidence)],
+        alternatives: [for (final k in keys) alternatives[k] ?? const <String>[]],
+        suggestions: suggestions[keys.first] ?? const [],
       ));
-      onProgress?.call(out.length, words.length);
+      onProgress?.call(out.length, lines.length);
     }
-    wordsRead += words.length;
+    wordsRead += out.fold<int>(0, (n, r) => n + r.words.length);
     return out;
   }
 }

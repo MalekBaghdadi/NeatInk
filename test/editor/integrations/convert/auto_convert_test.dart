@@ -14,6 +14,7 @@ import 'package:neatink/features/settings/convert_style_prefs.dart';
 import 'package:neatink/features/settings/settings_controller.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/recognition/htr_channel.dart';
+import 'package:neatink/recognition/text_polish.dart';
 
 import 'harness.dart';
 
@@ -276,6 +277,80 @@ void main() {
       await wait(tester, 1100);
       expect(texts(h), ['second']);
       expect(h.page.strokes.every((s) => s.id.startsWith('aw0')), isTrue);
+    });
+  });
+
+  group('spelling fixes', () {
+    const capital = PolishSuggestion(
+      original: 'hello',
+      replacement: 'Hello',
+      kind: PolishKind.capitalization,
+      reason: 'Capital letter',
+      start: 0,
+      end: 5,
+    );
+    const secondCapital = PolishSuggestion(
+      original: 'second',
+      replacement: 'Second',
+      kind: PolishKind.capitalization,
+      reason: 'Capital letter',
+      start: 0,
+      end: 6,
+    );
+
+    /// Auto-convert on, "Fix spelling automatically" as [fix] says.
+    Map<String, Object> prefs({required bool fix}) => {
+          AppSettings.prefsKey:
+              jsonEncode({'autoConvert': true, 'autoFixSpelling': fix}),
+        };
+
+    FakeRecognizer suggesting() => reader()
+      ..suggestions['aw0'] = [capital]
+      ..suggestions['bw0'] = [secondCapital];
+
+    testWidgets('with the setting off the typed text is what was read',
+        (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: suggesting(), prefsValues: prefs(fix: false));
+      await h.write(writeLine('a', ['hello', 'online'], y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello online'],
+          reason: 'suggestions are never applied silently');
+      expect(h.page.strokes, isEmpty);
+    });
+
+    testWidgets('with the setting on the fixes are typed too', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: suggesting(), prefsValues: prefs(fix: true));
+      await h.write(writeLine('a', ['hello', 'online'], y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['Hello online']);
+      expect(h.page.strokes, isEmpty);
+    });
+
+    testWidgets('the setting is read again for every pass', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: suggesting(), prefsValues: prefs(fix: false));
+      await h.write(writeLine('a', ['hello', 'online'], y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello online']);
+
+      h.container
+          .read(settingsProvider.notifier)
+          .update((s) => s.copyWith(autoFixSpelling: true));
+      await h.write(writeLine('b', ['hello'], y: 156));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello online', 'Second']);
+    });
+
+    testWidgets('a fix never makes a doubtful line convert', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: suggesting()..readings['aw0'] = ('hello', 0.3),
+          prefsValues: prefs(fix: true));
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(h.page.texts, isEmpty);
+      expect(h.page.strokes, isNotEmpty);
     });
   });
 

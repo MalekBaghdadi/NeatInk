@@ -4,14 +4,25 @@ import 'package:neatink/features/editor/integrations/convert/convert_plan.dart';
 import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/recognition/htr_channel.dart';
+import 'package:neatink/recognition/text_polish.dart';
 
 import 'harness.dart';
 
 PageStrokes page(String id, List<Stroke> strokes, {int index = 0}) =>
     PageStrokes(pageId: id, pageIndex: index, strokes: strokes);
 
+/// "Nuerons" is a spelling slip at the start of "Nuerons fire".
+const nuerons = PolishSuggestion(
+  original: 'Nuerons',
+  replacement: 'Neurons',
+  kind: PolishKind.spelling,
+  reason: 'Spelling',
+  start: 0,
+  end: 7,
+);
+
 void main() {
-  test('strokes become lines and words, read word by word', () async {
+  test('strokes become lines, each read as a whole', () async {
     final fake = FakeRecognizer({
       'l1w0': ('hello', 0.9),
       'l1w1': ('online', 0.8),
@@ -27,13 +38,29 @@ void main() {
     expect(lines, hasLength(2));
     expect(lines[0].text, 'hello online');
     expect(lines[1].text, 'hello');
+    expect(lines[0].recognizedText, 'hello online');
     expect(lines[0].words, hasLength(2));
-    expect(lines[0].confidence, closeTo(0.85, 1e-9));
+    // The line is as sure as its least sure word (not their average).
+    expect(lines[0].confidence, closeTo(0.8, 1e-9));
+    expect(lines[1].confidence, closeTo(0.7, 1e-9));
     expect(lines[0].strokeIds.every((id) => id.startsWith('l1w')), isTrue);
     expect(lines[1].strokeIds.every((id) => id.startsWith('l2w')), isTrue);
+    // "online" has a dotted i: every pen stroke, the dot too, belongs to a line.
     expect(lines[0].strokeIds.length + lines[1].strokeIds.length, 5 + 7 + 5);
     expect(lines.map((l) => l.pageId), everyElement('p'));
     expect(lines[0].id, isNot(lines[1].id));
+    expect(fake.calls, 1);
+    expect(fake.wordsRead, 3);
+  });
+
+  test('every stroke of a line is in its strokeIds, whatever the words are', () async {
+    final strokes = writeLine('l1', ['hello', 'online'], y: 100);
+    final fake = FakeRecognizer({'l1w0': ('hello', 0.9), 'l1w1': ('online', 0.9)});
+    final plans = await recognizePages([page('p', strokes)], fake);
+    final line = plans.single.lines.single;
+    expect(line.strokeIds, {for (final s in strokes) s.id});
+    expect(line.line.inkStrokes.map((s) => s.id), strokes.map((s) => s.id),
+        reason: 'in the order they were written');
   });
 
   test('confident lines start ticked, doubtful ones start unticked', () async {
@@ -61,6 +88,22 @@ void main() {
     expect(lines[2].include, isTrue);
   });
 
+  test('one doubtful word makes the whole line doubtful', () async {
+    final fake = FakeRecognizer({
+      'l1w0': ('hello', 0.99),
+      'l1w1': ('onlxne', 0.1),
+    });
+    final line = (await recognizePages([
+      page('p', writeLine('l1', ['hello', 'online'], y: 100)),
+    ], fake))
+        .single
+        .lines
+        .single;
+    expect(line.confidence, closeTo(0.1, 1e-9));
+    expect(line.lowConfidence, isTrue);
+    expect(line.include, isFalse);
+  });
+
   test('a line with an unreadable word starts unticked', () async {
     final fake = FakeRecognizer({
       'l1w0': ('hello', 0.99),
@@ -76,6 +119,20 @@ void main() {
     expect(line.strokeIds, hasLength(12)); // the unreadable word's ink is counted
   });
 
+  test('a line the recogniser could not read at all, or is not sure of, is doubtful', () {
+    final nothing = plannedLineOf([('', 0.9)]);
+    expect(nothing.text, isEmpty);
+    expect(nothing.lowConfidence, isTrue);
+    expect(nothing.willConvert, isFalse);
+    // Not a number counts as not sure at all.
+    final unknown = plannedLineOf([('hello', double.nan)]);
+    expect(unknown.confidence, 0);
+    expect(unknown.lowConfidence, isTrue);
+    // A confidence outside 0..1 is clamped.
+    expect(plannedLineOf([('hello', 1.7)]).confidence, 1);
+    expect(plannedLineOf([('hello', 0.9)], confidence: -0.5).confidence, 0);
+  });
+
   test('the text can be corrected and a line ticked afterwards', () async {
     final fake = FakeRecognizer({'l1w0': ('hxllo', 0.1)});
     final line = (await recognizePages([
@@ -89,6 +146,7 @@ void main() {
       ..text = 'hello'
       ..include = true;
     expect(line.willConvert, isTrue);
+    expect(line.recognizedText, 'hxllo', reason: 'what was read is kept');
     line.text = '   ';
     expect(line.willConvert, isFalse);
   });
@@ -121,7 +179,8 @@ void main() {
     expect(dominantColorOf([...a, ...b]), 0xFF111111);
   });
 
-  test('several pages are read together, in page order', () async {
+  test('several pages are read in page order, with one progress over all lines',
+      () async {
     final fake = FakeRecognizer({
       'l1w0': ('first', 0.9),
       'm1w0': ('second', 0.9),
@@ -139,40 +198,88 @@ void main() {
     expect(plans[1].pageIndex, 1);
     expect(progress.first, (0, 2));
     expect(progress.last, (2, 2));
-    expect(fake.calls, 1);
-  });
-
-  test('big pages are read in chunks, with progress between them', () async {
-    final n = ConvertConfig.chunkWords + 6;
-    final strokes = [
-      for (var i = 0; i < n; i++) ...writeLine('l$i', ['hello'], y: 100.0 + 40 * i),
-    ];
-    final fake = FakeRecognizer({
-      for (var i = 0; i < n; i++) 'l${i}w0': ('w$i', 0.9),
-    });
-    final progress = <int>[];
-    final plans = await recognizePages([page('p', strokes)], fake,
-        onProgress: (d, t) => progress.add(d));
-    expect(plans.single.lines.map((l) => l.text),
-        [for (var i = 0; i < n; i++) 'w$i']);
+    expect(progress.every((p) => p.$2 == 2), isTrue);
+    // The pages are read one after the other; the empty one costs nothing.
     expect(fake.calls, 2);
-    expect(progress, contains(ConvertConfig.chunkWords));
-    expect(progress.last, n);
   });
 
-  test('cancelling stops between chunks', () async {
-    final n = ConvertConfig.chunkWords + 6;
-    final strokes = [
-      for (var i = 0; i < n; i++) ...writeLine('l$i', ['hello'], y: 100.0 + 40 * i),
-    ];
-    final fake = FakeRecognizer(const {});
-    final token = ConvertCancelToken();
-    final future = recognizePages([page('p', strokes)], fake,
-        cancel: token, onProgress: (d, t) {
-      if (d >= ConvertConfig.chunkWords) token.cancel();
+  group('chunks', () {
+    final n = ConvertConfig.chunkLines + 6;
+    final chunks = (n / ConvertConfig.chunkLines).ceil();
+
+    List<Stroke> manyLines() => [
+          for (var i = 0; i < n; i++)
+            ...writeLine('l$i', ['hello'], y: 100.0 + 40 * i),
+        ];
+
+    test('big pages are read a few lines at a time, with progress between them',
+        () async {
+      final fake = FakeRecognizer({
+        for (var i = 0; i < n; i++) 'l${i}w0': ('w$i', 0.9),
+      });
+      final progress = <int>[];
+      final plans = await recognizePages([page('p', manyLines())], fake,
+          onProgress: (d, t) => progress.add(d));
+      expect(plans.single.lines.map((l) => l.text),
+          [for (var i = 0; i < n; i++) 'w$i']);
+      expect(plans.single.lines.map((l) => l.id).toSet(), hasLength(n));
+      expect(fake.calls, chunks);
+      expect(chunks, greaterThan(1));
+      expect(progress, contains(ConvertConfig.chunkLines));
+      expect(progress.last, n);
+      // Progress never goes back.
+      for (var i = 1; i < progress.length; i++) {
+        expect(progress[i], greaterThanOrEqualTo(progress[i - 1]));
+      }
     });
-    await expectLater(future, throwsA(isA<ConvertCancelled>()));
-    expect(fake.calls, 1);
+
+    test('each chunk is told the text of the line above it', () async {
+      final fake = FakeRecognizer({
+        for (var i = 0; i < n; i++) 'l${i}w0': ('w$i', 0.9),
+        'm0w0': ('new page', 0.9),
+      });
+      await recognizePages([
+        page('p', manyLines()),
+        page('q', writeLine('m0', ['hello'], y: 100), index: 1),
+      ], fake);
+      expect(fake.previousTexts, [
+        null, // the first line of a page starts a sentence
+        'w${ConvertConfig.chunkLines - 1}',
+        'w${2 * ConvertConfig.chunkLines - 1}',
+        null, // ... and so does the first line of the next page
+      ]);
+    });
+
+    test('a line that read as nothing is not the line above', () async {
+      final last = ConvertConfig.chunkLines - 1;
+      final fake = FakeRecognizer({
+        for (var i = 0; i < n; i++) 'l${i}w0': ('w$i', 0.9),
+        'l${last}w0': ('', 0.9),
+      });
+      await recognizePages([page('p', manyLines())], fake);
+      expect(fake.previousTexts[1], 'w${last - 1}');
+    });
+
+    test('cancelling stops between chunks', () async {
+      final fake = FakeRecognizer(const {});
+      final token = ConvertCancelToken();
+      final future = recognizePages([page('p', manyLines())], fake,
+          cancel: token, onProgress: (d, t) {
+        if (d >= ConvertConfig.chunkLines) token.cancel();
+      });
+      await expectLater(future, throwsA(isA<ConvertCancelled>()));
+      expect(fake.calls, 1);
+    });
+
+    test('cancelling before the start reads nothing', () async {
+      final fake = FakeRecognizer(const {});
+      final token = ConvertCancelToken()..cancel();
+      await expectLater(
+        recognizePages([page('p', manyLines())], fake, cancel: token),
+        throwsA(isA<ConvertCancelled>()),
+      );
+      expect(fake.calls, 0);
+    });
   });
 
   test('recogniser failures reach the caller', () async {
@@ -189,5 +296,115 @@ void main() {
     final plans = await recognizePages([page('p', const [])], fake);
     expect(plans.single.isEmpty, isTrue);
     expect(fake.calls, 0);
+  });
+
+  group('spelling and grammar fixes', () {
+    Future<PlannedLine> read({required bool autoFix}) async {
+      final fake = FakeRecognizer({
+        'l1w0': ('Nuerons', 0.9),
+        'l1w1': ('fire', 0.9),
+      })
+        ..suggestions['l1w0'] = [nuerons];
+      final plans = await recognizePages([
+        page('p', writeLine('l1', ['hello', 'online'], y: 100)),
+      ], fake, autoFix: autoFix);
+      return plans.single.lines.single;
+    }
+
+    test('by default they are only offered: the text is what was read', () async {
+      final line = await read(autoFix: false);
+      expect(line.text, 'Nuerons fire');
+      expect(line.recognizedText, 'Nuerons fire');
+      expect(line.suggestions, [nuerons]);
+      expect(line.autoApplied, isEmpty);
+      expect(line.accepted, isEmpty);
+      expect(line.polishedText, 'Nuerons fire');
+    });
+
+    test('with auto-fix they are in the text and can be taken back', () async {
+      final line = await read(autoFix: true);
+      expect(line.text, 'Neurons fire');
+      expect(line.recognizedText, 'Nuerons fire', reason: 'what was read is kept');
+      expect(line.suggestions, isEmpty);
+      expect(line.autoApplied, [nuerons]);
+      expect(line.polishedText, 'Neurons fire');
+
+      expect(line.revertAutoFix(nuerons), isTrue);
+      expect(line.text, 'Nuerons fire');
+      expect(line.autoApplied, isEmpty);
+      expect(line.suggestions, [nuerons]);
+      expect(line.polishedText, 'Nuerons fire');
+    });
+
+    test('accepting an offered fix changes the text and remembers it', () async {
+      final line = await read(autoFix: false);
+      expect(line.acceptSuggestion(nuerons), isTrue);
+      expect(line.text, 'Neurons fire');
+      expect(line.suggestions, isEmpty);
+      expect(line.accepted, [nuerons]);
+      // Taking the fix is not a correction of the recogniser.
+      expect(line.polishedText, 'Neurons fire');
+      expect(line.recognizedText, 'Nuerons fire');
+      // It cannot be taken twice.
+      expect(line.acceptSuggestion(nuerons), isFalse);
+      expect(line.text, 'Neurons fire');
+      // And it can be taken back.
+      expect(line.revertAutoFix(nuerons), isTrue);
+      expect(line.text, 'Nuerons fire');
+      expect(line.accepted, isEmpty);
+      expect(line.suggestions, [nuerons]);
+    });
+
+    test('a fix for a word the user has since rewritten changes nothing', () async {
+      final line = await read(autoFix: false);
+      line.text = 'Brains fire';
+      expect(line.acceptSuggestion(nuerons), isFalse);
+      expect(line.text, 'Brains fire');
+      expect(line.suggestions, [nuerons]);
+      expect(line.accepted, isEmpty);
+    });
+
+    test('a fix inside a longer word is not applied', () async {
+      final line = await read(autoFix: false);
+      line.text = 'Nuerons1 fire';
+      expect(line.acceptSuggestion(nuerons), isFalse);
+      expect(line.text, 'Nuerons1 fire');
+    });
+
+    test('two fixes keep their places after one is applied', () async {
+      const fire = PolishSuggestion(
+        original: 'fire',
+        replacement: 'fires',
+        kind: PolishKind.grammar,
+        reason: 'Grammar',
+        start: 8,
+        end: 12,
+      );
+      final fake = FakeRecognizer({
+        'l1w0': ('Nuerons', 0.9),
+        'l1w1': ('fire', 0.9),
+      })
+        ..suggestions['l1w0'] = [nuerons, fire];
+      final line = (await recognizePages([
+        page('p', writeLine('l1', ['hello', 'online'], y: 100)),
+      ], fake))
+          .single
+          .lines
+          .single;
+      expect(line.acceptSuggestion(fire), isTrue);
+      expect(line.acceptSuggestion(nuerons), isTrue);
+      expect(line.text, 'Neurons fires');
+      expect(line.polishedText, 'Neurons fires');
+    });
+
+    test('fixes never change which lines are ticked or which strokes belong to them',
+        () async {
+      final off = await read(autoFix: false);
+      final on = await read(autoFix: true);
+      expect(on.include, off.include);
+      expect(on.lowConfidence, off.lowConfidence);
+      expect(on.strokeIds, off.strokeIds);
+      expect(on.confidence, off.confidence);
+    });
   });
 }

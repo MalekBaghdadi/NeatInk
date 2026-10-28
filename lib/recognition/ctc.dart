@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 /// Probabilities below this are clamped before taking the logarithm, so a
 /// single impossible frame costs a bounded number of nats (about 18) and the
@@ -108,6 +109,18 @@ class CtcLogProbs {
   final int classes;
 
   double at(int t, int c) => data[t * classes + c];
+
+  /// Timesteps [start, end) as a matrix of their own (a copy). Used to score
+  /// one word of a line on the frames it occupies.
+  CtcLogProbs slice(int start, int end) {
+    final from = start.clamp(0, timesteps);
+    final to = end.clamp(from, timesteps);
+    return CtcLogProbs(
+      data.sublist(from * classes, to * classes),
+      timesteps: to - from,
+      classes: classes,
+    );
+  }
 }
 
 /// Best-path (greedy) decoding of one image.
@@ -346,4 +359,236 @@ class _Beam {
   final List<int> seq;
   double pb;
   double pnb;
+}
+
+/// Where one label of a sequence sits in the best alignment (see
+/// [CtcScorer.align]).
+class CtcLabelSpan {
+  const CtcLabelSpan({required this.firstFrame, required this.lastFrame, required this.prob});
+
+  /// First and last frame (inclusive) the best path spends on the label.
+  final int firstFrame;
+  final int lastFrame;
+
+  /// The largest probability the label's accepted classes reach on those
+  /// frames (0..1): how clearly the image shows this label.
+  final double prob;
+}
+
+/// Fast repeated scoring of label sequences on ONE probability matrix.
+///
+/// [ctcLogLikelihoodSets] works in the log domain (an `exp` and a `log` per
+/// lattice cell), which is fine for a handful of readings but too slow for
+/// the hundreds of candidates a line decoder compares. This keeps the
+/// probabilities themselves and runs the forward algorithm in the linear
+/// domain with a per-frame rescaling, which gives the same numbers (see the
+/// tests) several times faster.
+class CtcScorer {
+  CtcScorer._(this._p, this.timesteps, this.classes, this.blank);
+
+  /// Linear-domain copy of [lp] (probabilities below [ctcProbFloor] are
+  /// raised to it, like [CtcLogProbs.fromProbabilities] does).
+  factory CtcScorer.fromLogProbs(CtcLogProbs lp, {required int blank}) {
+    final p = Float64List(lp.data.length);
+    for (var i = 0; i < p.length; i++) {
+      p[i] = math.max(math.exp(lp.data[i]), ctcProbFloor);
+    }
+    return CtcScorer._(p, lp.timesteps, lp.classes, blank);
+  }
+
+  final Float64List _p;
+  final int timesteps;
+  final int classes;
+  final int blank;
+
+  /// Probability of class [c] at frame [t].
+  double prob(int t, int c) => _p[t * classes + c];
+
+  /// Timesteps [start, end) as a scorer of their own.
+  CtcScorer slice(int start, int end) {
+    final from = start.clamp(0, timesteps);
+    final to = end.clamp(from, timesteps);
+    return CtcScorer._(Float64List.sublistView(_p, from * classes, to * classes), to - from, classes, blank);
+  }
+
+  /// A copy in which every frame lends [mass] of the probability of one class
+  /// of a pair to the other (a pseudo-likelihood: nothing is renormalised, so
+  /// a reading the model already supports never loses probability). Each
+  /// pair is `(classes of letter a, classes of letter b)`, one entry per
+  /// case; the loan is spread over the entries so the case-insensitive sum of
+  /// a letter grows by `mass * (sum of the other letter)`.
+  CtcScorer smoothed(List<(List<int>, List<int>)> pairs, double mass) {
+    if (mass <= 0 || pairs.isEmpty) return this;
+    final out = Float64List.fromList(_p);
+    for (var t = 0; t < timesteps; t++) {
+      final base = t * classes;
+      for (final (a, b) in pairs) {
+        var fa = 0.0, fb = 0.0;
+        for (final i in a) {
+          fa += _p[base + i];
+        }
+        for (final i in b) {
+          fb += _p[base + i];
+        }
+        if (fa < 1e-6 && fb < 1e-6) continue;
+        for (final i in a) {
+          out[base + i] += mass * fb / a.length;
+        }
+        for (final i in b) {
+          out[base + i] += mass * fa / b.length;
+        }
+      }
+    }
+    return CtcScorer._(out, timesteps, classes, blank);
+  }
+
+  /// A copy in which class [cls] (the space) counts as "no letter here": its
+  /// probability is added to the blank's and the class is floored. Used to
+  /// judge one word on its own, where the neighbouring gaps are not part of
+  /// the word.
+  CtcScorer foldedIntoBlank(int cls) {
+    final out = Float64List.fromList(_p);
+    for (var t = 0; t < timesteps; t++) {
+      final base = t * classes;
+      out[base + blank] += _p[base + cls];
+      out[base + cls] = ctcProbFloor;
+    }
+    return CtcScorer._(out, timesteps, classes, blank);
+  }
+
+  double _emit(int t, List<int> set) {
+    final base = t * classes;
+    if (set.length == 1) return _p[base + set[0]];
+    var v = 0.0;
+    for (final c in set) {
+      v += _p[base + c];
+    }
+    return v;
+  }
+
+  /// `ln P(labels | image)` like [ctcLogLikelihoodSets] (same rules: each
+  /// position is a set of accepted classes, neighbours that share a class
+  /// need a blank between them). Negative infinity when the labels do not
+  /// fit the frames.
+  double logLikelihood(List<List<int>> positions) {
+    final n = positions.length;
+    if (timesteps == 0) return n == 0 ? 0 : double.negativeInfinity;
+    if (n == 0) {
+      var sum = 0.0;
+      for (var t = 0; t < timesteps; t++) {
+        sum += math.log(_p[t * classes + blank]);
+      }
+      return sum;
+    }
+    final states = 2 * n + 1;
+    final canSkip = List<bool>.filled(n, false);
+    for (var i = 1; i < n; i++) {
+      canSkip[i] = !positions[i].any(positions[i - 1].contains);
+    }
+    var prev = Float64List(states);
+    var cur = Float64List(states);
+    var logScale = 0.0;
+    prev[0] = _p[blank];
+    prev[1] = _emit(0, positions[0]);
+    final norm0 = prev[0] + prev[1];
+    logScale += math.log(norm0);
+    prev[0] /= norm0;
+    prev[1] /= norm0;
+    for (var t = 1; t < timesteps; t++) {
+      final pb = _p[t * classes + blank];
+      var sum = 0.0;
+      for (var s = 0; s < states; s++) {
+        double v;
+        if (s.isEven) {
+          v = (s >= 1 ? prev[s] + prev[s - 1] : prev[s]) * pb;
+        } else {
+          var a = prev[s] + prev[s - 1];
+          if (s >= 3 && canSkip[s >> 1]) a += prev[s - 2];
+          v = a == 0 ? 0 : a * _emit(t, positions[s >> 1]);
+        }
+        cur[s] = v;
+        sum += v;
+      }
+      if (sum <= 0) return double.negativeInfinity;
+      logScale += math.log(sum);
+      final inv = 1 / sum;
+      for (var s = 0; s < states; s++) {
+        cur[s] *= inv;
+      }
+      final tmp = prev;
+      prev = cur;
+      cur = tmp;
+    }
+    final end = prev[states - 1] + prev[states - 2];
+    if (end <= 0) return double.negativeInfinity;
+    return logScale + math.log(end);
+  }
+
+  /// The best (Viterbi) alignment of [positions] to the frames: for each
+  /// label the frames its state occupies and how clearly it shows there.
+  /// Null when the labels do not fit.
+  List<CtcLabelSpan>? align(List<List<int>> positions) {
+    final n = positions.length;
+    if (n == 0) return const [];
+    if (timesteps == 0) return null;
+    final states = 2 * n + 1;
+    final canSkip = List<bool>.filled(n, false);
+    for (var i = 1; i < n; i++) {
+      canSkip[i] = !positions[i].any(positions[i - 1].contains);
+    }
+    const neg = double.negativeInfinity;
+    // back[t * states + s]: how many states below s the best predecessor is.
+    final back = Uint8List(timesteps * states);
+    var prev = Float64List(states)..fillRange(0, states, neg);
+    var cur = Float64List(states);
+    prev[0] = math.log(_p[blank]);
+    prev[1] = math.log(_emit(0, positions[0]));
+    for (var t = 1; t < timesteps; t++) {
+      for (var s = 0; s < states; s++) {
+        var best = prev[s];
+        var from = 0;
+        if (s >= 1 && prev[s - 1] > best) {
+          best = prev[s - 1];
+          from = 1;
+        }
+        if (s.isOdd && s >= 3 && canSkip[s >> 1] && prev[s - 2] > best) {
+          best = prev[s - 2];
+          from = 2;
+        }
+        back[t * states + s] = from;
+        if (best == neg) {
+          cur[s] = neg;
+        } else {
+          final e = s.isEven ? _p[t * classes + blank] : _emit(t, positions[s >> 1]);
+          cur[s] = best + math.log(e);
+        }
+      }
+      final tmp = prev;
+      prev = cur;
+      cur = tmp;
+    }
+    var s = prev[states - 1] >= prev[states - 2] ? states - 1 : states - 2;
+    if (prev[s] == neg) return null;
+    final first = List<int>.filled(n, timesteps);
+    final last = List<int>.filled(n, -1);
+    for (var t = timesteps - 1; t >= 0; t--) {
+      if (s.isOdd) {
+        final i = s >> 1;
+        if (t < first[i]) first[i] = t;
+        if (t > last[i]) last[i] = t;
+      }
+      s -= back[t * states + s];
+    }
+    return [
+      for (var i = 0; i < n; i++)
+        if (last[i] < 0)
+          const CtcLabelSpan(firstFrame: 0, lastFrame: 0, prob: 0)
+        else
+          CtcLabelSpan(
+            firstFrame: first[i],
+            lastFrame: last[i],
+            prob: [for (var t = first[i]; t <= last[i]; t++) _emit(t, positions[i])].reduce(math.max),
+          ),
+    ];
+  }
 }

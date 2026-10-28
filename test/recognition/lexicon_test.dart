@@ -104,4 +104,87 @@ void main() {
       expect(real.candidates('cot', maxEdits: 1).map((c) => c.word), contains('cat'));
     });
   });
+
+  group('damerauLevenshtein', () {
+    test('a swap of neighbouring letters costs 1', () {
+      expect(damerauLevenshtein('nuerons', 'neurons'), 1);
+      expect(levenshtein('nuerons', 'neurons'), 2);
+      expect(damerauLevenshtein('recieve', 'receive'), 1);
+      expect(damerauLevenshtein('ab', 'ba'), 1);
+    });
+
+    test('agrees with levenshtein otherwise', () {
+      expect(damerauLevenshtein('cat', 'cat'), 0);
+      expect(damerauLevenshtein('cat', 'cot'), 1);
+      expect(damerauLevenshtein('kitten', 'sitting'), 3);
+      expect(damerauLevenshtein('', 'abc'), 3);
+      expect(damerauLevenshtein('abc', ''), 3);
+      expect(damerauLevenshtein('abcd', 'acbd'), 1);
+      // not two swaps in one place: the restricted form
+      expect(damerauLevenshtein('ca', 'abc'), 3);
+    });
+  });
+
+  group('look-alike letters', () {
+    test('n/h and r/v are cheap substitutions', () {
+      expect(weightedEditDistance('isnt', 'isht'), 0.6);
+      expect(weightedEditDistance('are', 'ave'), 0.6);
+      expect(weightedEditDistance('cat', 'cxt'), 1.0);
+    });
+  });
+
+  group('contractions', () {
+    test('a contraction written without its apostrophe is recognised', () {
+      expect(contractionOf('isnt'), "isn't");
+      expect(contractionOf('DONT'), "don't");
+      expect(contractionOf('im'), "I'm");
+      expect(contractionOf('ive'), "I've");
+      expect(contractionOf('shouldve'), "should've");
+    });
+
+    test('ordinary words and forms that are also words are not contractions', () {
+      for (final w in ['its', 'were', 'well', 'ill', 'id', 'hell', 'shell', 'lets', 'cat', 'isn', '']) {
+        expect(contractionOf(w), isNull, reason: w);
+      }
+    });
+
+    test('priors for both spellings, in the range of a frequent word', () {
+      final plain = contractionLogProb('isnt');
+      expect(plain, isNotNull);
+      expect(contractionLogProb("isn't"), plain);
+      expect(contractionLogProb("ISN'T"), plain);
+      expect(plain, inInclusiveRange(-10.0, -7.0));
+      expect(contractionLogProb('cat'), isNull);
+      expect(contractionLogProb('dont')! > contractionLogProb('shouldnt')!, isTrue);
+    });
+
+    test('the plain forms list has no duplicates and no apostrophes', () {
+      final forms = contractionPlainForms.toList();
+      expect(forms.toSet().length, forms.length);
+      expect(forms.any((f) => f.contains("'")), isFalse);
+      expect(forms, containsAll(['isnt', 'dont', 'im', 'cant']));
+    });
+  });
+
+  group('logProbAtRank', () {
+    test('ranks words by count, clamps beyond the list', () {
+      expect(lex.logProbAtRank(0), lex.logProb('the'));
+      expect(lex.logProbAtRank(1), lex.logProb('world'));
+      expect(lex.logProbAtRank(10000), lex.minLogProb);
+      expect(lex.logProbAtRank(-3), lex.logProb('the'));
+      expect(Lexicon.parse('').logProbAtRank(30000), lessThan(-10));
+    });
+
+    test('on the bundled list rank 30000 is a rare but real word', () {
+      const candidates = [
+        'assets/htr/word_freq.txt',
+        r'C:\Users\Malek Baghdadi\Downloads\neatink\assets\htr\word_freq.txt',
+      ];
+      final file = candidates.map(File.new).where((f) => f.existsSync()).firstOrNull;
+      if (file == null) return; // the mirror has no assets folder
+      final real = Lexicon.parse(file.readAsStringSync());
+      expect(real.logProbAtRank(30000), inInclusiveRange(-14.5, -13.0));
+      expect(real.logProbAtRank(30000), greaterThan(real.minLogProb));
+    });
+  });
 }

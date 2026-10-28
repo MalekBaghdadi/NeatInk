@@ -17,6 +17,7 @@ class AppSettings {
     this.shapeSnapEnabled = true,
     this.exportPaperLines = true,
     this.autoConvert = false,
+    this.autoFixSpelling = false,
     this.defaultPaper = const Paper(),
     this.librarySort = LibrarySort.edited,
     this.pinHash,
@@ -32,6 +33,7 @@ class AppSettings {
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
+        autoFixSpelling: j['autoFixSpelling'] as bool? ?? false,
         defaultPaper:
             Paper.fromJson(j['defaultPaper'] as Map<String, dynamic>?),
         librarySort:
@@ -62,6 +64,11 @@ class AppSettings {
   /// default; the manual Convert button always works.
   final bool autoConvert;
 
+  /// Convert: apply the suggested spelling, apostrophe, capital-letter and
+  /// grammar fixes by themselves (each one can be undone in the review
+  /// sheet). Off by default: the fixes are only suggested there.
+  final bool autoFixSpelling;
+
   /// Paper preselected when creating a notebook.
   final Paper defaultPaper;
   final LibrarySort librarySort;
@@ -82,6 +89,7 @@ class AppSettings {
     bool? shapeSnapEnabled,
     bool? exportPaperLines,
     bool? autoConvert,
+    bool? autoFixSpelling,
     Paper? defaultPaper,
     LibrarySort? librarySort,
     String? pinHash,
@@ -96,6 +104,7 @@ class AppSettings {
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
+        autoFixSpelling: autoFixSpelling ?? this.autoFixSpelling,
         defaultPaper: defaultPaper ?? this.defaultPaper,
         librarySort: librarySort ?? this.librarySort,
         pinHash: clearPin ? null : (pinHash ?? this.pinHash),
@@ -110,6 +119,7 @@ class AppSettings {
         'shapeSnapEnabled': shapeSnapEnabled,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,
+        'autoFixSpelling': autoFixSpelling,
         'defaultPaper': defaultPaper.toJson(),
         'librarySort': librarySort.name,
         'pinHash': pinHash,

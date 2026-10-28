@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../../../document/font_kind.dart';
 import '../../../../recognition/htr_channel.dart';
+import '../../../../recognition/text_polish.dart';
 import '../../../../recognition/word_image.dart';
 import '../../../settings/convert_style_prefs.dart';
 import '../../editor_controller.dart';
@@ -23,7 +23,10 @@ import 'word_crop.dart';
 ///
 /// The sheet starts with [initialStyle] (the look last used) and reports the
 /// look used through [onStyleChosen] when the user converts; corrected words
-/// go to [learner]; [sampleShare] sends the "Share samples" file.
+/// go to [learner]; [sampleShare] sends the "Share samples" file. With
+/// [autoFix] (the setting "Fix spelling automatically") the suggested spelling
+/// and grammar fixes are already in the text, each with an Undo chip; without,
+/// they are offered as chips.
 Future<void> showConvertSheet(
   BuildContext context,
   EditorController controller, {
@@ -35,6 +38,7 @@ Future<void> showConvertSheet(
   WordLearner? learner,
   SampleShareService sampleShare = const DefaultSampleShareService(),
   String appVersion = 'unknown',
+  bool autoFix = false,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final session = ConvertSession(
@@ -45,6 +49,7 @@ Future<void> showConvertSheet(
     onStyleChosen: onStyleChosen,
     learner: learner,
     appVersion: appVersion,
+    autoFix: autoFix,
   );
   unawaited(session.start());
   final outcome = await showModalBottomSheet<ConvertOutcome>(
@@ -279,6 +284,25 @@ class _LineEntry extends _Entry {
   final PlannedLine line;
 }
 
+/// What the "Show what the recognizer saw" section lists: a block per line
+/// (the pictures the model read), each followed by a row per word.
+sealed class _DebugEntry {}
+
+class _DebugLine extends _DebugEntry {
+  _DebugLine(this.lineIndex, this.line);
+  final int lineIndex;
+  final PlannedLine line;
+}
+
+class _DebugWord extends _DebugEntry {
+  _DebugWord(this.index, this.line, this.wordIndex);
+
+  /// Counted over the words of all lines.
+  final int index;
+  final PlannedLine line;
+  final int wordIndex;
+}
+
 class _Review extends StatefulWidget {
   const _Review({
     required this.session,
@@ -325,6 +349,20 @@ class _ReviewState extends State<_Review> {
     });
   }
 
+  /// A suggestion was accepted or an automatic fix undone: rebuild the rows
+  /// (their text fields follow the lines) and the "Fix all" button.
+  void _changed() => setState(() {});
+
+  /// Accepts every pending suggestion of [lines].
+  void _fixAll(List<PlannedLine> lines) {
+    for (final line in lines) {
+      for (final s in _pendingFixes(line)) {
+        _acceptFix(_s, line, s);
+      }
+    }
+    _changed();
+  }
+
   @override
   Widget build(BuildContext context) {
     final plans = _s.plans;
@@ -337,13 +375,24 @@ class _ReviewState extends State<_Review> {
         entries.add(_LineEntry(index++, line));
       }
     }
-    final words = <(int, PlannedLine, int)>[
+    final lines = [
       for (final e in entries)
-        if (e is _LineEntry)
-          for (var i = 0; i < e.line.words.length; i++) (e.index, e.line, i),
+        if (e is _LineEntry) e.line,
     ];
+    final debug = <_DebugEntry>[];
+    if (_showWords) {
+      var wordIndex = 0;
+      for (final e in entries) {
+        if (e is! _LineEntry) continue;
+        debug.add(_DebugLine(e.index, e.line));
+        for (var i = 0; i < e.line.words.length; i++) {
+          debug.add(_DebugWord(wordIndex++, e.line, i));
+        }
+      }
+    }
     final convertCount = _s.includedCount;
     final stay = _s.stayCount;
+    final pending = lines.fold<int>(0, (n, l) => n + _pendingFixes(l).length);
 
     return Column(
       children: [
@@ -353,13 +402,26 @@ class _ReviewState extends State<_Review> {
               SliverToBoxAdapter(child: _Controls(session: _s)),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-                  child: Text(
-                    stay == 0
-                        ? 'Every line will be converted.'
-                        : '$stay ${stay == 1 ? 'line' : 'lines'} will stay as handwriting',
-                    key: const ValueKey('convert-stay-count'),
-                    style: Theme.of(context).textTheme.labelLarge,
+                  padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          stay == 0
+                              ? 'Every line will be converted.'
+                              : '$stay ${stay == 1 ? 'line' : 'lines'} will stay as handwriting',
+                          key: const ValueKey('convert-stay-count'),
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                      ),
+                      if (pending > 0)
+                        TextButton.icon(
+                          key: const ValueKey('convert-fix-all'),
+                          icon: const Icon(Icons.auto_fix_high, size: 18),
+                          label: Text('Fix all ($pending)'),
+                          onPressed: () => _fixAll(lines),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -378,6 +440,7 @@ class _ReviewState extends State<_Review> {
                         session: _s,
                         line: e.line,
                         index: e.index,
+                        onChanged: _changed,
                       ),
                   };
                 },
@@ -393,16 +456,24 @@ class _ReviewState extends State<_Review> {
               ),
               if (_showWords)
                 SliverList.builder(
-                  itemCount: words.length,
-                  itemBuilder: (context, i) => _WordRow(
-                    key: ValueKey('convert-word-$i'),
-                    index: i,
-                    lineIndex: words[i].$1,
-                    word: words[i].$2.words[words[i].$3],
-                    renderer: widget.renderer,
-                    onPick: (alt) =>
-                        _s.replaceWord(words[i].$2, words[i].$3, alt),
-                  ),
+                  itemCount: debug.length,
+                  itemBuilder: (context, i) {
+                    final e = debug[i];
+                    return switch (e) {
+                      _DebugLine() => _LineDebug(
+                          key: ValueKey('convert-line-${e.lineIndex}'),
+                          lineIndex: e.lineIndex,
+                          line: e.line,
+                        ),
+                      _DebugWord() => _WordRow(
+                          key: ValueKey('convert-word-${e.index}'),
+                          index: e.index,
+                          word: e.line.words[e.wordIndex],
+                          onPick: (alt) =>
+                              _s.replaceWord(e.line, e.wordIndex, alt),
+                        ),
+                    };
+                  },
                 ),
               SliverToBoxAdapter(
                 child: _ShareSamples(
@@ -581,19 +652,89 @@ class _Controls extends StatelessWidget {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Suggested fixes
+
+/// What a word is made of: letters, digits and apostrophes.
+final RegExp _wordChar = RegExp("[\\p{L}\\p{N}'’]", unicode: true);
+
+/// True when [word] is in [text] as a whole word (not inside a longer one).
+/// The same rule as `PlannedLine.acceptSuggestion` uses to find it, so a chip
+/// is only shown when tapping it can work.
+bool _hasWholeWord(String text, String word) {
+  if (word.isEmpty) return false;
+  var from = 0;
+  while (true) {
+    final at = text.indexOf(word, from);
+    if (at < 0) return false;
+    final end = at + word.length;
+    final joinedBefore = at > 0 &&
+        _wordChar.hasMatch(word[0]) &&
+        _wordChar.hasMatch(text[at - 1]);
+    final joinedAfter = end < text.length &&
+        _wordChar.hasMatch(word[word.length - 1]) &&
+        _wordChar.hasMatch(text[end]);
+    if (!joinedBefore && !joinedAfter) return true;
+    from = at + 1;
+  }
+}
+
+/// The pending suggestions of [line] that still apply to its text. Typing
+/// the fix by hand makes the suggestion go away.
+List<PolishSuggestion> _pendingFixes(PlannedLine line) => [
+      for (final s in line.suggestions)
+        if (_hasWholeWord(line.text, s.original)) s,
+    ];
+
+/// The automatic fixes of [line] that can still be undone: the fixed word is
+/// still in the text.
+List<PolishSuggestion> _undoableFixes(PlannedLine line) => [
+      for (final s in line.autoApplied)
+        if (_hasWholeWord(line.text, s.replacement)) s,
+    ];
+
+/// Accepts [s] in [line]'s text. A suggestion that no longer fits (the user
+/// changed the text) is dropped.
+void _acceptFix(ConvertSession session, PlannedLine line, PolishSuggestion s) {
+  if (!session.acceptSuggestion(line, s)) line.suggestions.remove(s);
+}
+
+/// Undoes the automatic fix [s] in [line]'s text; it becomes a pending
+/// suggestion again. A fix that no longer fits is dropped.
+void _undoFix(ConvertSession session, PlannedLine line, PolishSuggestion s) {
+  if (!session.revertAutoFix(line, s)) line.autoApplied.remove(s);
+}
+
+/// "Nuerons → Neurons"; a suggestion that removes a word says so.
+String _swapLabel(PolishSuggestion s) =>
+    '${s.original} → ${s.replacement.isEmpty ? '(remove)' : s.replacement}';
+
+IconData _kindIcon(PolishKind kind) => switch (kind) {
+      PolishKind.spelling => Icons.spellcheck,
+      PolishKind.contraction => Icons.format_quote_outlined,
+      PolishKind.capitalization => Icons.text_fields,
+      PolishKind.grammar => Icons.rule,
+    };
+
 /// One recognised line: include checkbox, editable text in the chosen look,
-/// "Not sure" badge for doubtful readings.
+/// "Not sure" badge for doubtful readings, and under the text the spelling
+/// fixes: chips to accept the suggested ones, and to undo the ones that were
+/// applied automatically.
 class _LineRow extends StatefulWidget {
   const _LineRow({
     super.key,
     required this.session,
     required this.line,
     required this.index,
+    required this.onChanged,
   });
 
   final ConvertSession session;
   final PlannedLine line;
   final int index;
+
+  /// A fix was accepted or undone (the line's text changed).
+  final VoidCallback onChanged;
 
   @override
   State<_LineRow> createState() => _LineRowState();
@@ -609,12 +750,53 @@ class _LineRowState extends State<_LineRow> {
     super.dispose();
   }
 
+  Widget _fixes(BuildContext context, List<PolishSuggestion> pending,
+      List<PolishSuggestion> applied) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        key: ValueKey('convert-fixes-${widget.index}'),
+        spacing: 6,
+        runSpacing: 2,
+        children: [
+          for (var k = 0; k < pending.length; k++)
+            ActionChip(
+              key: ValueKey('convert-suggest-${widget.index}-$k'),
+              tooltip: pending[k].reason,
+              avatar: Icon(_kindIcon(pending[k].kind), size: 16),
+              label: Text(_swapLabel(pending[k])),
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                _acceptFix(widget.session, widget.line, pending[k]);
+                widget.onChanged();
+              },
+            ),
+          for (var k = 0; k < applied.length; k++)
+            ActionChip(
+              key: ValueKey('convert-undo-${widget.index}-$k'),
+              tooltip: 'Undo: ${applied[k].reason}',
+              avatar: const Icon(Icons.undo, size: 16),
+              label: Text('Fixed: ${_swapLabel(applied[k])} · Undo'),
+              backgroundColor: scheme.surfaceContainerHighest,
+              side: BorderSide.none,
+              visualDensity: VisualDensity.compact,
+              onPressed: () {
+                _undoFix(widget.session, widget.line, applied[k]);
+                widget.onChanged();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.session;
     final line = widget.line;
     // The text can change from outside the field (an alternative reading was
-    // picked in "what the recognizer saw").
+    // picked in "what the recognizer saw", or a fix was accepted).
     if (_text.text != line.text) {
       _text.value = TextEditingValue(
           text: line.text,
@@ -625,6 +807,8 @@ class _LineRowState extends State<_LineRow> {
     final color = s.colorOverride != null
         ? Color(s.colorOverride!)
         : (ink.computeLuminance() < 0.6 ? ink : scheme.onSurface);
+    final pending = _pendingFixes(line);
+    final applied = _undoableFixes(line);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 2, 20, 2),
       child: Row(
@@ -636,35 +820,45 @@ class _LineRowState extends State<_LineRow> {
             onChanged: (v) => s.setInclude(line, v ?? false),
           ),
           Expanded(
-            child: TextField(
-              key: ValueKey('convert-text-${widget.index}'),
-              controller: _text,
-              onChanged: (v) => s.setText(line, v),
-              minLines: 1,
-              maxLines: 4,
-              style: TextStyle(
-                fontFamily: s.font.family,
-                fontSize: 17,
-                fontWeight: s.bold ? FontWeight.w700 : FontWeight.w400,
-                fontStyle: s.italic ? FontStyle.italic : FontStyle.normal,
-                color: line.include ? color : color.withValues(alpha: 0.55),
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                border: const OutlineInputBorder(),
-                suffixIcon: line.lowConfidence
-                    ? Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Chip(
-                          key: ValueKey('convert-notsure-${widget.index}'),
-                          label: const Text('Not sure'),
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor: scheme.tertiaryContainer,
-                        ),
-                      )
-                    : null,
-                suffixIconConstraints: const BoxConstraints(),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  key: ValueKey('convert-text-${widget.index}'),
+                  controller: _text,
+                  // Typing a fix by hand also dismisses its chip: the
+                  // session notifies and the row is built again.
+                  onChanged: (v) => s.setText(line, v),
+                  minLines: 1,
+                  maxLines: 4,
+                  style: TextStyle(
+                    fontFamily: s.font.family,
+                    fontSize: 17,
+                    fontWeight: s.bold ? FontWeight.w700 : FontWeight.w400,
+                    fontStyle: s.italic ? FontStyle.italic : FontStyle.normal,
+                    color: line.include ? color : color.withValues(alpha: 0.55),
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                    suffixIcon: line.lowConfidence
+                        ? Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Chip(
+                              key:
+                                  ValueKey('convert-notsure-${widget.index}'),
+                              label: const Text('Not sure'),
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: scheme.tertiaryContainer,
+                            ),
+                          )
+                        : null,
+                    suffixIconConstraints: const BoxConstraints(),
+                  ),
+                ),
+                if (pending.isNotEmpty || applied.isNotEmpty)
+                  _fixes(context, pending, applied),
+              ],
             ),
           ),
         ],
@@ -673,42 +867,116 @@ class _LineRowState extends State<_LineRow> {
   }
 }
 
-/// One word of the "what the recognizer saw" section: the 128x32 crop and
-/// the raw and corrected reading with its confidence.
-class _WordRow extends StatefulWidget {
+// -----------------------------------------------------------------------------
+// What the recognizer saw
+
+/// One line of the "what the recognizer saw" section: its number, how sure
+/// the reading is, and the picture(s) the model was given (more than one only
+/// for a very wide line, cut into parts).
+class _LineDebug extends StatelessWidget {
+  const _LineDebug({super.key, required this.lineIndex, required this.line});
+
+  final int lineIndex;
+  final PlannedLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final images = line.images;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Line ${lineIndex + 1}  ·  ${(line.confidence * 100).round()}% sure',
+              key: ValueKey('convert-line-text-$lineIndex'),
+              style: theme.textTheme.titleSmall,
+            ),
+            for (var k = 0; k < images.length; k++) ...[
+              const SizedBox(height: 6),
+              if (images.length > 1)
+                Text('part ${k + 1} of ${images.length}',
+                    style: theme.textTheme.bodySmall),
+              _LineImageStrip(
+                cropKey: ValueKey('convert-crop-$lineIndex-$k'),
+                image: images[k],
+                available: constraints.maxWidth,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The grey picture the model read, scaled up a little and scrolling
+/// sideways when it is wider than the sheet.
+class _LineImageStrip extends StatelessWidget {
+  const _LineImageStrip({
+    required this.cropKey,
+    required this.image,
+    required this.available,
+  });
+
+  final Key cropKey;
+  final WordImage image;
+  final double available;
+
+  /// Shown at most this much larger than the model's pixels, and never
+  /// smaller than they are (a wide line scrolls instead).
+  static const double maxScale = 1.5;
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = image.width <= 0
+        ? 1.0
+        : (available / image.width).clamp(1.0, maxScale).toDouble();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: RepaintBoundary(
+        child: Container(
+          width: image.width * scale + 2,
+          height: image.height * scale + 2,
+          decoration: BoxDecoration(
+            border:
+                Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          ),
+          child: CustomPaint(
+            key: cropKey,
+            painter: WordCropPainter.of(image, scale: scale),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One word of the "what the recognizer saw" section: the model's raw
+/// reading, the word as read, its confidence and the other readings to pick.
+class _WordRow extends StatelessWidget {
   const _WordRow({
     super.key,
     required this.index,
-    required this.lineIndex,
     required this.word,
-    required this.renderer,
     required this.onPick,
   });
 
   final int index;
-  final int lineIndex;
   final WordResult word;
-  final WordImageRenderer renderer;
 
   /// An alternative reading was tapped: use it in the line's text.
   final void Function(String alternative) onPick;
 
-  @override
-  State<_WordRow> createState() => _WordRowState();
-}
-
-class _WordRowState extends State<_WordRow> {
-  late final Future<WordImage> _image =
-      renderWordImage(widget.word.group, renderer: widget.renderer);
-
   /// Up to [maxAlternatives] other readings of the word (best first), without
   /// the one already used or repeats.
   List<String> get alternatives {
-    final w = widget.word;
     final out = <String>[];
-    for (final a in w.alternatives) {
+    for (final a in word.alternatives) {
       final t = a.trim();
-      if (t.isEmpty || t == w.text.trim() || out.contains(t)) continue;
+      if (t.isEmpty || t == word.text.trim() || out.contains(t)) continue;
       out.add(t);
       if (out.length == maxAlternatives) break;
     }
@@ -717,65 +985,35 @@ class _WordRowState extends State<_WordRow> {
 
   @override
   Widget build(BuildContext context) {
-    final w = widget.word;
+    final w = word;
+    final alts = alternatives;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          FutureBuilder<WordImage>(
-            future: _image,
-            builder: (context, snap) {
-              final img = snap.data;
-              if (img == null) {
-                return const SizedBox(width: 96, height: wordImageHeight * 1.5);
-              }
-              // Word images are as wide as the word; wide ones are shown
-              // smaller so a row never gets too wide.
-              final scale = math.min(1.5, 240 / img.width);
-              return Container(
-                width: img.width * scale + 2,
-                height: img.height * scale + 2,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant),
-                ),
-                child: CustomPaint(
-                  key: ValueKey('convert-crop-${widget.index}'),
-                  painter: WordCropPainter.of(img, scale: scale),
-                ),
-              );
-            },
+          Text(
+            'raw "${w.raw}"  read "${w.text}"  '
+            'confidence ${w.confidence.toStringAsFixed(2)}',
+            key: ValueKey('convert-word-text-$index'),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'line ${widget.lineIndex + 1}  raw "${w.raw}"  read "${w.text}"  '
-                  'confidence ${w.confidence.toStringAsFixed(2)}',
-                  key: ValueKey('convert-word-text-${widget.index}'),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                if (alternatives.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(
-                      spacing: 6,
-                      children: [
-                        for (var a = 0; a < alternatives.length; a++)
-                          ActionChip(
-                            key: ValueKey('convert-alt-${widget.index}-$a'),
-                            label: Text(alternatives[a]),
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => widget.onPick(alternatives[a]),
-                          ),
-                      ],
+          if (alts.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: 6,
+                children: [
+                  for (var a = 0; a < alts.length; a++)
+                    ActionChip(
+                      key: ValueKey('convert-alt-$index-$a'),
+                      label: Text(alts[a]),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => onPick(alts[a]),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

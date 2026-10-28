@@ -149,6 +149,43 @@ void main() {
         isTrue);
   });
 
+  testWidgets('"Fix spelling automatically" has a switch, off by default',
+      (tester) async {
+    final c = await pumpSettings(tester);
+    const key = ValueKey('settings-auto-fix-spelling');
+    expect(find.byKey(key), findsOneWidget);
+    expect(find.text('Fix spelling automatically'), findsOneWidget);
+    expect(find.textContaining('corrections are suggested in the review sheet'),
+        findsOneWidget);
+    expect(find.textContaining('you can undo each one'), findsOneWidget);
+    expect(tester.widget<SwitchListTile>(find.byKey(key)).value, isFalse);
+    expect(settingsOf(c).autoFixSpelling, isFalse);
+
+    await toggle(tester, 'settings-auto-fix-spelling');
+    expect(settingsOf(c).autoFixSpelling, isTrue);
+    expect(settingsOf(c).autoConvert, isFalse, reason: 'a separate setting');
+    expect(tester.widget<SwitchListTile>(find.byKey(key)).value, isTrue);
+    expect(prefs.getString(AppSettings.prefsKey)!,
+        contains('"autoFixSpelling":true'));
+
+    await toggle(tester, 'settings-auto-fix-spelling');
+    expect(settingsOf(c).autoFixSpelling, isFalse);
+  });
+
+  testWidgets('the fix-spelling switch shows the saved value', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      AppSettings.prefsKey: '{"autoFixSpelling": true}',
+    });
+    prefs = await SharedPreferences.getInstance();
+    await pumpSettings(tester);
+    expect(
+        tester
+            .widget<SwitchListTile>(
+                find.byKey(const ValueKey('settings-auto-fix-spelling')))
+            .value,
+        isTrue);
+  });
+
   testWidgets('tidy settings are gone', (tester) async {
     await pumpSettings(tester);
     for (final k in [

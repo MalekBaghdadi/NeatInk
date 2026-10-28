@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../document/font_kind.dart';
 import '../../../../recognition/htr_channel.dart';
+import '../../../../recognition/text_polish.dart';
 import '../../../../recognition/word_image.dart';
 import '../../../settings/convert_style_prefs.dart';
 import '../../editor_controller.dart';
@@ -49,6 +50,7 @@ class ConvertSession extends ChangeNotifier {
     this.learner,
     this.onStyleChosen,
     this.appVersion = 'unknown',
+    this.autoFix = false,
     DateTime Function()? clock,
   })  : _uuid = uuid ?? const Uuid(),
         _clock = clock ?? DateTime.now {
@@ -79,6 +81,11 @@ class ConvertSession extends ChangeNotifier {
 
   /// Written into shared sample files.
   final String appVersion;
+
+  /// The setting "Fix spelling automatically": the spelling and grammar fixes
+  /// the recogniser suggests are applied to the text as it is read (each can
+  /// be taken back in the sheet). Off: they are only offered.
+  final bool autoFix;
 
   ConvertPhase _phase = ConvertPhase.reading;
   double _progress = 0;
@@ -182,6 +189,7 @@ class ConvertSession extends ChangeNotifier {
           missing,
           recognizer,
           cancel: token,
+          autoFix: autoFix,
           onProgress: (done, total) {
             if (run != _run || _closed) return;
             _progress = total == 0 ? 1 : (done / total).clamp(0.0, 1.0);
@@ -367,32 +375,61 @@ class ConvertSession extends ChangeNotifier {
 
   /// Words the user corrected in the lines that will be converted: what the
   /// personal dictionary should learn (see [correctedWords]).
+  ///
+  /// Corrections are measured against the recognised text WITH the polish
+  /// fixes that are in it ([PlannedLine.polishedText]), and a word that is the
+  /// replacement of a polish suggestion is never taught: taking a spelling
+  /// fix is not a correction of what the recogniser read.
   List<String> wordsToLearn() {
     final out = <String>{};
     for (final line in allLines) {
       if (!line.willConvert) continue;
-      out.addAll(correctedWords(
-        recognised: [for (final w in line.words) w.text],
+      final polish = {
+        for (final s in [...line.suggestions, ...line.autoApplied, ...line.accepted])
+          stripPunctuation(s.replacement),
+      };
+      for (final w in correctedWords(
+        recognised: splitWords(line.polishedText),
         finalText: line.text,
-      ));
+      )) {
+        if (!polish.contains(w)) out.add(w);
+      }
     }
     return out.toList();
+  }
+
+  /// Applies the suggested fix [s] to the text of [line] (see
+  /// [PlannedLine.acceptSuggestion]) and tells the sheet. False when the
+  /// word is no longer in the text.
+  bool acceptSuggestion(PlannedLine line, PolishSuggestion s) {
+    final done = line.acceptSuggestion(s);
+    if (done) _notify();
+    return done;
+  }
+
+  /// Takes back the automatic fix [s] of [line] (see
+  /// [PlannedLine.revertAutoFix]) and tells the sheet.
+  bool revertAutoFix(PlannedLine line, PolishSuggestion s) {
+    final done = line.revertAutoFix(s);
+    if (done) _notify();
+    return done;
   }
 
   // ---------------------------------------------------------------------------
   // Samples
 
-  /// The JSON of every recognised word in scope with the text as it stands
+  /// The JSON of every recognised line in scope with the text as it stands
   /// in the review sheet, for sharing handwriting samples (see
-  /// [buildSamplesJson]). Renders each word with [renderer] exactly as the
-  /// recogniser saw it.
-  Future<String> buildSamples(WordImageRenderer renderer) async {
+  /// [buildSamplesJson]). The pictures are the ones the recogniser was given
+  /// ([PlannedLine.images]); a line without any is drawn with [renderer].
+  Future<String> buildSamples([WordImageRenderer? renderer]) async {
     final lines = <SampleLineInput>[];
     for (final plan in plans) {
       for (final line in plan.lines) {
-        final images = <WordImage>[];
-        for (final w in line.words) {
-          images.add(await renderWordImage(w.group, renderer: renderer));
+        var images = line.images;
+        if (images.isEmpty && renderer != null) {
+          images = await renderLineImages(line.line,
+              renderer: renderer, config: recognitionLineImageConfig);
         }
         lines.add(SampleLineInput(
             line: line, pageIndex: plan.pageIndex, images: images));

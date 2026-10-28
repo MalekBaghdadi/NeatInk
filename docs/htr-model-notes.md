@@ -17,6 +17,49 @@ Files in `assets/htr/`:
 
 The APK is about 5 MB smaller than with the old model (13 MB -> 7.8 MB asset).
 
+## v1.3.0: whole lines instead of words (current pipeline)
+
+The owner's real samples (2026-10-27, app 1.2.1) read "Nuerons are in the brain"
+as "3 erons are A the e b ri U" (about 49% character error). The model was not
+the main problem: the word splitter cut this print-like hand (letter gaps up to
+8 pt, word gaps 17-22 pt) into letters, i-dots became words, two written lines
+were merged into one word (the line splitter tried one valley and never
+retried), and the word rescorer replaced correct unknown readings with frequent
+words (`Malek -> Male`, `Isut -> Sat`). The same model fed whole lines reads
+them at about 7-10% character error (greedy).
+
+Pipeline now:
+
+1. `stroke_grouping.dart`: peak-first line splitting, per-line x-height, dots
+   and bars go to the line of the stroke under them. `RecognizedLine.inkStrokes`
+   keeps every stroke of the line.
+2. `word_image.dart` `renderLineImages`: one 48 px image per line (chunks only
+   above 2400 px), ink bbox fitted with a 15% white margin, 2.0 px pen. In the
+   recognition picture only, i-dots are moved over their stem (`snapDots`; this
+   writer's dots sit 3-8 pt left of the stem and the model then misses the i).
+3. `HtrPlugin.kt` runs the model (max width 2400 px); the space class is kept.
+4. `line_decoder.dart`: beam search per stretch between confident spaces,
+   then coordinate ascent over candidates (look-alike lexicon neighbours,
+   personal words, apostrophe-less contractions, splits and merges), each scored
+   as the CTC likelihood of the whole string plus 0.55 x word priors. Unknown
+   readings get a rare-word prior (rank 30,000), not a penalty, so names and
+   misspellings survive unless the evidence for a listed word is nearly as good.
+   Word frame ranges cut the line's strokes into word groups
+   (`assignStrokesToSpans`).
+5. `text_polish.dart`: conservative suggestions (spelling, apostrophes,
+   capitals, a/an, repeated word). Shown as chips in the review sheet; applied
+   automatically only with Settings > "Fix spelling automatically".
+
+On the owner's 4 stroke lines and 7 word crops (19 renderings), character error,
+case-insensitive: greedy 8.6%, decoded 7.3%, decoded with Malek / Baghdadi /
+Mariam in My words 0.4%. This is a smoke test, not a benchmark: collect 100+
+lines with the format-2 Share samples export before tuning further. Confidence
+thresholds (0.35 badge, 0.5 auto-convert) are still uncalibrated; a confidently
+misread unknown word (`Malck`) scores about 0.95.
+
+The sections below describe the v1.2 word-level path (`recognizeWords`, kept as
+a fallback) and the model facts, which still hold.
+
 ## Why this model (benchmark of 2026-10-27)
 
 Nine real word crops cut from a screenshot of the owner's handwriting on the

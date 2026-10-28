@@ -19,7 +19,7 @@ import java.util.concurrent.RejectedExecutionException
 import org.json.JSONObject
 
 /**
- * Offline word recognition with ONNX Runtime, driven from Dart over the
+ * Offline handwriting recognition (whole lines) with ONNX Runtime, driven from Dart over the
  * `neatink/htr` MethodChannel (see `lib/recognition/htr_channel.dart`, which
  * is the other half of this protocol; change both together).
  *
@@ -34,11 +34,12 @@ import org.json.JSONObject
  * | `recognize`    | {images: List<Map>}                   | List<Map>, one per image      |
  * | `info`         | none                                  | Map (model facts)             |
  *
- * `recognize` image map: `width` Int (16..800), `height` Int (must be 48) and
+ * `recognize` image map: `width` Int (16..2400), `height` Int (must be 48) and
  * `pixels` Uint8List/ByteArray of `width * height` bytes, row-major, 0..255,
  * white paper = 255, dark ink = low. The images are sent as they are (the
- * width follows the word's aspect ratio): each image is **one** ORT call, no
- * batching and no padding, because padding changes what the model reads.
+ * width follows the aspect ratio of the line or word, up to 2400 px for a
+ * whole line): each image is **one** ORT call, no batching and no padding,
+ * because padding changes what the model reads.
  * Kotlin turns a pixel v into (v / 255 - 0.5) / 0.5 and copies it to the
  * three channels.
  *
@@ -269,7 +270,7 @@ class HtrPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         const val ASSET_DIR = "flutter_assets/assets/htr"
         const val HEIGHT = 48
         const val MIN_WIDTH = 16
-        const val MAX_WIDTH = 800
+        const val MAX_WIDTH = 2400
         const val DEFAULT_CLASSES = 438
         const val INTRA_OP_THREADS = 2
         val NOT_IMPLEMENTED = Any()

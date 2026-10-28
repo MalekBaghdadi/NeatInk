@@ -133,6 +133,80 @@ void main() {
     });
   });
 
+  group('autoFixSpelling', () {
+    test('is off by default', () async {
+      final c = await containerWith({});
+      expect(c.read(settingsProvider).autoFixSpelling, isFalse);
+      expect(const AppSettings().autoFixSpelling, isFalse);
+    });
+
+    test('copyWith changes only it', () {
+      const base = AppSettings(autoConvert: true, lockAfterSeconds: 60);
+      final on = base.copyWith(autoFixSpelling: true);
+      expect(on.autoFixSpelling, isTrue);
+      expect(on.autoConvert, isTrue);
+      expect(on.lockAfterSeconds, 60);
+      expect(on.copyWith(autoConvert: false).autoFixSpelling, isTrue,
+          reason: 'other changes keep it');
+      expect(on.copyWith(autoFixSpelling: false).autoFixSpelling, isFalse);
+    });
+
+    test('JSON round trip under the key autoFixSpelling', () {
+      expect(const AppSettings().toJson()['autoFixSpelling'], isFalse);
+      expect(const AppSettings(autoFixSpelling: true).toJson()['autoFixSpelling'],
+          isTrue);
+      expect(
+          AppSettings.fromJson(
+                  const AppSettings(autoFixSpelling: true).toJson())
+              .autoFixSpelling,
+          isTrue);
+      expect(
+          AppSettings.fromJson(const AppSettings().toJson()).autoFixSpelling,
+          isFalse);
+    });
+
+    test('settings saved before it existed load with it off', () async {
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({
+          'themeMode': 'dark',
+          'autoConvert': true,
+        }),
+      });
+      final s = c.read(settingsProvider);
+      expect(s.autoFixSpelling, isFalse);
+      expect(s.autoConvert, isTrue);
+      expect(s.themeMode, AppThemeMode.dark);
+    });
+
+    test('a value of the wrong type falls back to off', () async {
+      final c = await containerWith({
+        AppSettings.prefsKey: jsonEncode({'autoFixSpelling': 'yes'}),
+      });
+      expect(c.read(settingsProvider).autoFixSpelling, isFalse);
+    });
+
+    test('is independent of autoConvert', () async {
+      final c = await containerWith({});
+      c
+          .read(settingsProvider.notifier)
+          .update((s) => s.copyWith(autoFixSpelling: true));
+      expect(c.read(settingsProvider).autoConvert, isFalse);
+      c
+          .read(settingsProvider.notifier)
+          .update((s) => s.copyWith(autoConvert: true));
+      expect(c.read(settingsProvider).autoFixSpelling, isTrue);
+    });
+
+    test('survives a restart', () async {
+      final c = await containerWith({});
+      c
+          .read(settingsProvider.notifier)
+          .update((s) => s.copyWith(autoFixSpelling: true));
+      final again = restart(c.read(sharedPreferencesProvider));
+      expect(again.read(settingsProvider).autoFixSpelling, isTrue);
+    });
+  });
+
   test('listeners see each update', () async {
     final c = await containerWith({});
     final seen = <bool>[];

@@ -48,6 +48,7 @@ const List<String> _confusablePairs = [
   'ao', 'ou', 'oe', 'ec', 'ea', 'nu', 'nr', 'nm', 'mw', 'uv', 'vw', 'vy',
   'il', 'lt', 'it', 'fl', 'ft', 'hb', 'hk', 'gq', 'gy', 'pq', 'ij', 'cl',
   'ds', 'rs', 'sz', 'xz', 'kx', 'lk', 'ck', 'ra', 'rn', 'bd', 'dl', 'sa',
+  'nh', 'rv',
 ];
 
 final Set<int> _confusable = {
@@ -88,6 +89,112 @@ double weightedEditDistance(String a, String b) {
     cur = tmp;
   }
   return prev[b.length];
+}
+
+/// Optimal-string-alignment (restricted Damerau-Levenshtein) distance: like
+/// [levenshtein], but swapping two neighbouring letters (`Nuerons` ->
+/// `Neurons`) costs 1 instead of 2.
+int damerauLevenshtein(String a, String b) {
+  if (a == b) return 0;
+  if (a.isEmpty) return b.length;
+  if (b.isEmpty) return a.length;
+  final w = b.length + 1;
+  final d = List<int>.filled((a.length + 1) * w, 0);
+  for (var i = 0; i <= a.length; i++) {
+    d[i * w] = i;
+  }
+  for (var j = 0; j <= b.length; j++) {
+    d[j] = j;
+  }
+  for (var i = 1; i <= a.length; i++) {
+    for (var j = 1; j <= b.length; j++) {
+      final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+      var v = math.min(
+        d[(i - 1) * w + j - 1] + cost,
+        math.min(d[(i - 1) * w + j] + 1, d[i * w + j - 1] + 1),
+      );
+      if (i > 1 &&
+          j > 1 &&
+          a.codeUnitAt(i - 1) == b.codeUnitAt(j - 2) &&
+          a.codeUnitAt(i - 2) == b.codeUnitAt(j - 1)) {
+        v = math.min(v, d[(i - 2) * w + j - 2] + 1);
+      }
+      d[i * w + j] = v;
+    }
+  }
+  return d[a.length * w + b.length];
+}
+
+// Contractions that people write without the apostrophe, as (plain, full,
+// ln probability). The word list has none of them (it is lowercase letters
+// plus a few apostrophes, and "don't" sits at rank 40k), so the decoder takes
+// their priors from here: the first tier is about as frequent as a top-300
+// word, the last about a top-3000 word, which is what they are in notes and
+// chat-style writing. Forms that are also ordinary words (its, were, well, ill,
+// id, hell, shell, shed, wed, lets) are left out on purpose: "its" is far
+// more often right than "it's" would be.
+const List<(String, String, double)> _contractionData = [
+  ('dont', "don't", -8.0),
+  ('cant', "can't", -8.0),
+  ('im', "I'm", -8.0),
+  ('thats', "that's", -8.0),
+  ('didnt', "didn't", -8.0),
+  ('isnt', "isn't", -8.0),
+  ('doesnt', "doesn't", -8.8),
+  ('wasnt', "wasn't", -8.8),
+  ('ive', "I've", -8.8),
+  ('youre', "you're", -8.8),
+  ('arent', "aren't", -8.8),
+  ('wont', "won't", -8.8),
+  ('couldnt', "couldn't", -8.8),
+  ('wouldnt', "wouldn't", -8.8),
+  ('whats', "what's", -8.8),
+  ('theres', "there's", -8.8),
+  ('shouldnt', "shouldn't", -9.5),
+  ('havent', "haven't", -9.5),
+  ('hasnt', "hasn't", -9.5),
+  ('hadnt', "hadn't", -9.5),
+  ('werent', "weren't", -9.5),
+  ('theyre', "they're", -9.5),
+  ('youve', "you've", -9.5),
+  ('youll', "you'll", -9.5),
+  ('theyve', "they've", -9.5),
+  ('theyll', "they'll", -9.5),
+  ('weve', "we've", -9.5),
+  ('shes', "she's", -9.5),
+  ('hes', "he's", -9.5),
+  ('itll', "it'll", -9.5),
+  ('heres', "here's", -9.5),
+  ('wheres', "where's", -9.5),
+  ('whos', "who's", -9.5),
+  ('hows', "how's", -9.5),
+  ('couldve', "could've", -9.5),
+  ('wouldve', "would've", -9.5),
+  ('shouldve', "should've", -9.5),
+  ('mustve', "must've", -9.5),
+  ('oclock', "o'clock", -9.5),
+];
+
+final Map<String, (String, double)> _contractionsByPlain = {
+  for (final (plain, full, lp) in _contractionData) plain: (full, lp),
+};
+final Map<String, (String, double)> _contractionsByFull = {
+  for (final (_, full, lp) in _contractionData) full.toLowerCase(): (full, lp),
+};
+
+/// The plain (apostrophe-less) spellings of the contraction table.
+Iterable<String> get contractionPlainForms => _contractionsByPlain.keys;
+
+/// The contraction a writer meant by [word] (lowercase, no apostrophe):
+/// `isnt` -> `isn't`, `im` -> `I'm`. Null when [word] is not a contraction
+/// written without its apostrophe.
+String? contractionOf(String word) => _contractionsByPlain[word.toLowerCase()]?.$1;
+
+/// ln probability of a contraction given as its plain form (`isnt`) or with
+/// the apostrophe (`isn't`), any case; null for anything else.
+double? contractionLogProb(String word) {
+  final w = word.toLowerCase();
+  return (_contractionsByPlain[w] ?? _contractionsByFull[w])?.$2;
 }
 
 /// A dictionary word near a query, with its corpus count.
@@ -166,11 +273,22 @@ class Lexicon {
     return c == null ? null : math.log(c / _total);
   }
 
-  /// ln(probability) of the rarest listed word. Unknown words are scored
-  /// below this (see `RescoreConfig.oovPenalty`).
+  /// ln(probability) of the rarest listed word.
   late final double minLogProb = _words.isEmpty
       ? math.log(1e-9)
       : math.log(_counts.reduce(math.min) / _total);
+
+  late final List<int> _sortedCounts = (List<int>.of(_counts)..sort((a, b) => b.compareTo(a)));
+
+  /// ln(probability) of the word at [rank] (0 = the most frequent). A rank
+  /// beyond the list gives the rarest listed word. This is the reference for
+  /// words the list does not know: a name or a misspelling is about as likely
+  /// as a rare but real word (see `LineDecodeConfig.oovRank`).
+  double logProbAtRank(int rank) {
+    if (_words.isEmpty) return math.log(1e-9);
+    final r = rank.clamp(0, _sortedCounts.length - 1);
+    return math.log(_sortedCounts[r] / _total);
+  }
 
   _BkNode _tree() {
     final existing = _root;

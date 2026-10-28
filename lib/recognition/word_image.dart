@@ -2,7 +2,9 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../beautify/resample.dart';
 import '../ink/ink_point.dart';
+import '../ink/ink_rect.dart';
 import '../ink/stroke.dart';
 import 'stroke_grouping.dart';
 
@@ -271,4 +273,459 @@ Future<WordImage> renderWordImage(
     scale: sy,
     strokeWidthPx: stroke,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Whole lines
+// ---------------------------------------------------------------------------
+
+/// Tuning numbers for [renderLineImages].
+class LineImageConfig {
+  const LineImageConfig({
+    this.strokePx = 2.0,
+    this.marginFrac = 0.15,
+    this.minWidth = 16,
+    this.maxWidth = 2400,
+    this.maxScale = 10.0,
+    this.snapDots = false,
+    this.minExtentFactor = 0.3,
+    this.dotMaxFactor = 0.6,
+    this.dotFloatFactor = 0.7,
+    this.stemMinFactor = 0.4,
+    this.stemMaxWidthFactor = 1.2,
+    this.stemTopFraction = 0.2,
+    this.markFactor = 0.6,
+    this.reachX = 1.2,
+    this.reachY = 2.0,
+  });
+
+  /// Pen width in image pixels (at 48 px of image height).
+  final double strokePx;
+
+  /// White margin on every side of the ink, as a fraction of the image
+  /// height. The recogniser reads a line with some air around it better
+  /// than one that touches the edges.
+  final double marginFrac;
+
+  final int minWidth;
+
+  /// A line wider than this (in pixels, at the scale that fits its height)
+  /// is cut at its widest gaps into several images. Lines are never
+  /// squeezed.
+  final int maxWidth;
+
+  /// Largest enlargement in pixels per point. A lone dot or dash is not
+  /// blown up to fill the image; it stays small, centred on white.
+  final double maxScale;
+
+  /// For images made only for recognition: move every i-dot sideways so it
+  /// sits over the stem under it. This writer puts the dot 3 to 8 points
+  /// left of the stem, which makes the model miss the 'i'. Ink on the page
+  /// is never moved; only the rendering is, and the image is laid out as if
+  /// nothing had moved (same size, scale and alignment).
+  final bool snapDots;
+
+  /// The ink is taken to be at least this many x-heights high when the
+  /// scale is chosen, so a flat scribble is not enlarged to fill the image.
+  final double minExtentFactor;
+
+  /// A stroke whose box diagonal is at most this many x-heights is a dot
+  /// candidate for [snapDots] ...
+  final double dotMaxFactor;
+
+  /// ... when it also floats: its lower edge is at least this many x-heights
+  /// above the baseline (an i-dot is above the x-height, inside the letters
+  /// there is no room for one).
+  final double dotFloatFactor;
+
+  /// A stem under a dot is at least this many x-heights tall ...
+  final double stemMinFactor;
+
+  /// ... and at most this many x-heights wide (not a whole letter blob).
+  final double stemMaxWidthFactor;
+
+  /// The stem's x is the mean x of the samples in this top fraction of its
+  /// height (the top of an i, whatever its tail does).
+  final double stemTopFraction;
+
+  /// In [assignStrokesToSpans]: strokes whose box diagonal is at most this
+  /// many x-heights are marks (dots, commas) that follow the stroke they
+  /// belong to instead of being placed by their own overlap.
+  final double markFactor;
+
+  /// How far a dot may be from the stem or stroke it belongs to: this many
+  /// x-heights sideways and [reachY] vertically (see [nearestSupport]).
+  final double reachX;
+  final double reachY;
+}
+
+/// A line rendered for the recogniser: the whole line (or, for very wide
+/// ones, a chunk of it) in one image.
+///
+/// All the geometry needed to map the model's output back onto the ink is
+/// kept: a pixel column [px] corresponds to the levelled x [levelledX], and
+/// the strokes drawn in the image are listed in [strokes].
+///
+/// The levelled frame is the page frame rotated by [angle] about the page
+/// origin: `x' = x cos a + y sin a`, `y' = y cos a - x sin a`, so a line of
+/// slope `tan a` runs horizontally in it.
+class LineImage extends WordImage {
+  LineImage({
+    required super.pixels,
+    required super.scale,
+    required super.strokeWidthPx,
+    super.width,
+    super.height,
+    required this.strokes,
+    required this.angle,
+    required this.originX,
+    List<double>? shifts,
+  }) : shifts = shifts ?? List.filled(strokes.length, 0.0);
+
+  /// The strokes drawn in this image (the original page strokes), in input
+  /// order. A stroke cut by a forced chunk boundary is in both chunks.
+  final List<Stroke> strokes;
+
+  /// Levelling rotation in radians (`atan` of the line's baseline slope).
+  final double angle;
+
+  /// Levelled x, in page points, at pixel column 0.
+  final double originX;
+
+  /// Per stroke of [strokes]: how far (levelled points, along the line) it
+  /// was moved in this image by `LineImageConfig.snapDots`; mostly zero.
+  final List<double> shifts;
+
+  /// Levelled x (page points) at pixel column [px]. Horizontal and vertical
+  /// scales are equal, so this is `originX + px / scale`.
+  double levelledX(double px) => originX + px / scale;
+
+  /// Pixel column of levelled x [x]; the inverse of [levelledX].
+  double pixelOf(double x) => (x - originX) * scale;
+}
+
+/// A stroke in the levelled frame.
+class _Levelled {
+  _Levelled(this.stroke, this.xs, this.ys)
+      : left = xs.reduce(math.min),
+        right = xs.reduce(math.max),
+        top = ys.reduce(math.min),
+        bottom = ys.reduce(math.max);
+
+  final Stroke stroke;
+  final List<double> xs;
+  final List<double> ys;
+  final double left, right, top, bottom;
+
+  /// Sideways shift applied in the rendering (levelled points).
+  double shift = 0;
+
+  double get shiftedLeft => left + shift;
+  double get shiftedRight => right + shift;
+
+  /// Extent used to lay the image out: the stroke where it was written and
+  /// where it was drawn, so a moved dot never changes the size or the
+  /// alignment of the image (a rendering with and without
+  /// `LineImageConfig.snapDots` then differs only in the dots).
+  double get layoutLeft => math.min(left, shiftedLeft);
+  double get layoutRight => math.max(right, shiftedRight);
+  double get diagonal => math.sqrt((right - left) * (right - left) + (bottom - top) * (bottom - top));
+  double get height => bottom - top;
+  double get width => right - left;
+
+  LevelBox get box => (left: shiftedLeft, top: top, right: shiftedRight, bottom: bottom);
+}
+
+List<_Levelled> _levelStrokes(Iterable<Stroke> strokes, double angle) {
+  final c = math.cos(angle), s = math.sin(angle);
+  final out = <_Levelled>[];
+  for (final st in strokes) {
+    final xs = <double>[], ys = <double>[];
+    for (final p in st.points) {
+      if (!p.isFinite) continue;
+      xs.add(p.x * c + p.y * s);
+      ys.add(p.y * c - p.x * s);
+    }
+    if (xs.isEmpty) continue;
+    out.add(_Levelled(st, xs, ys));
+  }
+  return out;
+}
+
+/// Renders [line] as ONE image (several only for very wide lines): levelled
+/// by the line's baseline slope, thin dark ink on white, [wordImageHeight]
+/// pixels high.
+///
+/// The ink's bounding box is scaled to fill `1 - 2 * marginFrac` of the
+/// height (at most [LineImageConfig.maxScale] pixels per point) and sits in
+/// the middle of the image, so there is a white margin of
+/// `marginFrac * 48` pixels on every side. The width follows the aspect
+/// ratio. A line wider than [LineImageConfig.maxWidth] is cut into chunks at
+/// its widest horizontal gaps (between words, as a rule), left to right,
+/// each at the same scale and height: the letters are never squeezed.
+///
+/// Every pen stroke of the line ([RecognizedLine.inkStrokes]) is drawn.
+Future<List<LineImage>> renderLineImages(
+  RecognizedLine line, {
+  WordImageRenderer renderer = const UiWordImageRenderer(),
+  LineImageConfig config = const LineImageConfig(),
+}) async {
+  final angle = math.atan(line.baselineSlope);
+  final pieces = _levelStrokes(line.inkStrokes, angle);
+  const height = wordImageHeight;
+  if (pieces.isEmpty) {
+    final blank = await renderer.rasterize(const [], width: config.minWidth);
+    return [
+      LineImage(
+        pixels: blank,
+        width: config.minWidth,
+        scale: 1,
+        strokeWidthPx: 0,
+        strokes: const [],
+        angle: angle,
+        originX: 0,
+      ),
+    ];
+  }
+  if (config.snapDots) _snapDots(line, pieces, angle, config);
+
+  var minX = double.infinity, maxX = double.negativeInfinity;
+  var minY = double.infinity, maxY = double.negativeInfinity;
+  for (final p in pieces) {
+    if (p.layoutLeft < minX) minX = p.layoutLeft;
+    if (p.layoutRight > maxX) maxX = p.layoutRight;
+    if (p.top < minY) minY = p.top;
+    if (p.bottom > maxY) maxY = p.bottom;
+  }
+  final inkHeight = math.max(maxY - minY, config.minExtentFactor * line.xHeight);
+  final margin = config.marginFrac * height;
+  final scale = math.min(config.maxScale, (height - 2 * margin) / inkHeight);
+  final midY = (minY + maxY) / 2;
+
+  // Merge the horizontal extents of the strokes; the gaps between them are
+  // where a too wide line may be cut.
+  final extents = [
+    for (final p in pieces) (start: p.layoutLeft, end: p.layoutRight),
+  ]..sort((a, b) => a.start.compareTo(b.start));
+  final merged = <({double start, double end})>[];
+  for (final e in extents) {
+    if (merged.isNotEmpty && e.start <= merged.last.end) {
+      if (e.end > merged.last.end) merged[merged.length - 1] = (start: merged.last.start, end: e.end);
+    } else {
+      merged.add(e);
+    }
+  }
+  final ranges = _chunkRanges(merged, scale, margin, config.maxWidth);
+
+  final images = <LineImage>[];
+  for (final range in ranges) {
+    final inside = [
+      for (final p in pieces)
+        if (p.shiftedRight >= range.start - 1e-9 && p.shiftedLeft <= range.end + 1e-9) p,
+    ];
+    final inkWidthPx = (range.end - range.start) * scale;
+    final width = (inkWidthPx + 2 * margin).round().clamp(config.minWidth, config.maxWidth);
+    // Ink centred horizontally (matters when the minimum width pads it).
+    final originX = (range.start + range.end) / 2 - width / (2 * scale);
+    final placed = <Stroke>[
+      for (final p in inside)
+        Stroke(
+          id: p.stroke.id,
+          tool: StrokeTool.pen,
+          color: 0xFF000000,
+          size: config.strokePx,
+          raw: [
+            for (var i = 0; i < p.xs.length; i++)
+              InkPoint(
+                (p.xs[i] + p.shift - originX) * scale,
+                height / 2 + (p.ys[i] - midY) * scale,
+                0.5,
+                0,
+              ),
+          ],
+        ),
+    ];
+    images.add(
+      LineImage(
+        pixels: await renderer.rasterize(placed, width: width, height: height),
+        width: width,
+        scale: scale,
+        strokeWidthPx: config.strokePx,
+        strokes: [for (final p in inside) p.stroke],
+        angle: angle,
+        originX: originX,
+        shifts: [for (final p in inside) p.shift],
+      ),
+    );
+  }
+  return images;
+}
+
+/// Cuts the merged ink [extents] (sorted, with gaps between them) into
+/// ranges that fit [maxWidth] pixels at [scale] plus two [margin]s: always at
+/// the widest gap of a range that is still too wide. A single extent that is
+/// too wide on its own has no gap; it is cut in the middle (such writing is
+/// larger than any page).
+List<({double start, double end})> _chunkRanges(
+  List<({double start, double end})> extents,
+  double scale,
+  double margin,
+  int maxWidth,
+) {
+  if (extents.isEmpty) return const [];
+  final lo = extents.first.start, hi = extents.last.end;
+  if ((hi - lo) * scale + 2 * margin <= maxWidth) return [(start: lo, end: hi)];
+  if (extents.length == 1) {
+    final mid = (lo + hi) / 2;
+    return [
+      ..._chunkRanges([(start: lo, end: mid)], scale, margin, maxWidth),
+      ..._chunkRanges([(start: mid, end: hi)], scale, margin, maxWidth),
+    ];
+  }
+  var cut = 0;
+  var widest = -1.0;
+  for (var i = 0; i + 1 < extents.length; i++) {
+    final gap = extents[i + 1].start - extents[i].end;
+    if (gap > widest) {
+      widest = gap;
+      cut = i;
+    }
+  }
+  return [
+    ..._chunkRanges(extents.sublist(0, cut + 1), scale, margin, maxWidth),
+    ..._chunkRanges(extents.sublist(cut + 1), scale, margin, maxWidth),
+  ];
+}
+
+/// Moves every i-dot sideways onto the stem under it (see
+/// [LineImageConfig.snapDots]). Only [_Levelled.shift] changes.
+void _snapDots(RecognizedLine line, List<_Levelled> pieces, double angle, LineImageConfig config) {
+  final xh = line.xHeight;
+  // Baseline in the levelled frame (a level line after the rotation).
+  final c = math.cos(angle), s = math.sin(angle);
+  final bx = line.left, by = line.baselineY;
+  final baseline = by * c - bx * s;
+  final stems = <_Levelled>[];
+  final dots = <_Levelled>[];
+  for (final p in pieces) {
+    if (p.diagonal <= config.dotMaxFactor * xh && p.bottom <= baseline - config.dotFloatFactor * xh) {
+      dots.add(p);
+    } else if (p.height >= config.stemMinFactor * xh && p.width <= config.stemMaxWidthFactor * xh) {
+      stems.add(p);
+    }
+  }
+  if (dots.isEmpty || stems.isEmpty) return;
+  final boxes = [for (final st in stems) st.box];
+  for (final d in dots) {
+    final k = nearestSupport(d.box, boxes, u: xh, reachX: config.reachX, reachY: config.reachY, underOnly: true);
+    if (k == null) continue;
+    final stem = stems[k];
+    // x of the stem's top: where the i's dot belongs.
+    final topLimit = stem.top + config.stemTopFraction * stem.height;
+    var sum = 0.0, n = 0;
+    for (var i = 0; i < stem.xs.length; i++) {
+      if (stem.ys[i] <= topLimit) {
+        sum += stem.xs[i];
+        n++;
+      }
+    }
+    final stemX = n == 0 ? (stem.left + stem.right) / 2 : sum / n;
+    d.shift = stemX - (d.left + d.right) / 2;
+  }
+}
+
+/// Distributes the strokes drawn in [image] over the horizontal [pixelSpans]
+/// (for example the words the recogniser found, as pixel column ranges of
+/// the image). Returns one entry per span: the strokes that belong to it as
+/// a [WordGroup] (strokes left to right, with the line's baseline slope and
+/// x-height), or null when no stroke falls in it.
+///
+/// Every stroke of `image.strokes` goes to exactly one span. A stroke goes to
+/// the span its levelled x-range overlaps most, or to the nearest span when
+/// it overlaps none. Marks (dots, commas: see [LineImageConfig.markFactor])
+/// follow the stroke they belong to ([nearestSupport]) instead, so a dot
+/// written beside its stem still joins the stem's word.
+List<WordGroup?> assignStrokesToSpans(
+  RecognizedLine line,
+  LineImage image,
+  List<({double start, double end})> pixelSpans, {
+  LineImageConfig config = const LineImageConfig(),
+}) {
+  final n = pixelSpans.length;
+  final out = List<WordGroup?>.filled(n, null);
+  if (n == 0) return out;
+
+  final pieces = _levelStrokes(image.strokes, image.angle);
+  // _levelStrokes drops strokes without finite points; keep the pairing with
+  // image.shifts by matching on identity.
+  final shiftOf = <Stroke, double>{
+    for (var i = 0; i < image.strokes.length; i++) image.strokes[i]: image.shifts[i],
+  };
+  for (final p in pieces) {
+    p.shift = shiftOf[p.stroke] ?? 0;
+  }
+
+  final xh = line.xHeight;
+  final spanOf = <_Levelled, int>{};
+
+  int bySpan(_Levelled p) {
+    final a = image.pixelOf(p.shiftedLeft), b = image.pixelOf(p.shiftedRight);
+    var best = 0;
+    var bestOverlap = -1.0;
+    var bestGap = double.infinity;
+    for (var i = 0; i < n; i++) {
+      final sp = pixelSpans[i];
+      final overlap = math.min(b, sp.end) - math.max(a, sp.start);
+      if (overlap > 0) {
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          best = i;
+        }
+      } else if (bestOverlap <= 0) {
+        final gap = math.max(sp.start - b, a - sp.end);
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = i;
+        }
+      }
+    }
+    return best;
+  }
+
+  final bigs = [
+    for (final p in pieces)
+      if (p.diagonal > config.markFactor * xh) p,
+  ];
+  for (final p in bigs) {
+    spanOf[p] = bySpan(p);
+  }
+  final boxes = [for (final p in bigs) p.box];
+  for (final p in pieces) {
+    if (spanOf.containsKey(p)) continue;
+    final k = bigs.isEmpty ? null : nearestSupport(p.box, boxes, u: xh, reachX: config.reachX, reachY: config.reachY);
+    spanOf[p] = k != null ? spanOf[bigs[k]]! : bySpan(p);
+  }
+
+  final groups = List.generate(n, (_) => <_Levelled>[]);
+  for (final p in pieces) {
+    groups[spanOf[p]!].add(p);
+  }
+  for (var i = 0; i < n; i++) {
+    final g = groups[i];
+    if (g.isEmpty) continue;
+    g.sort((a, b) => a.shiftedLeft.compareTo(b.shiftedLeft));
+    InkRect? bounds;
+    for (final p in g) {
+      final b = finiteBounds(p.stroke.points);
+      if (b == null) continue;
+      bounds = bounds == null ? b : bounds.union(b);
+    }
+    out[i] = WordGroup(
+      strokes: [for (final p in g) p.stroke],
+      bounds: bounds!,
+      baselineSlope: line.baselineSlope,
+      xHeight: line.xHeight,
+    );
+  }
+  return out;
 }

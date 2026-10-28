@@ -20,11 +20,14 @@ import 'user_lexicon.dart';
 class RescoreConfig {
   const RescoreConfig({
     this.lambda = 0.6,
-    this.oovPenalty = 1.0,
+    this.oovRank = 30000,
+    this.oovPenalty = 0.0,
     this.userLogProb = -7.0,
     this.userMinAdvantage = 3.0,
     this.knownBonus = 1.5,
-    this.unknownBonus = 0.0,
+    this.unknownBonus = 1.0,
+    this.doubtfulProb = 0.6,
+    this.clearProb = 0.9,
     this.maxCandidates = 150,
     this.beamWidth = 5,
     this.beamNeighbours = 2,
@@ -40,8 +43,13 @@ class RescoreConfig {
   /// Weight of the language prior against the image evidence.
   final double lambda;
 
-  /// Words that are neither listed nor in the personal dictionary get a prior
-  /// this many nats below the rarest listed word.
+  /// Words that are neither listed nor in the personal dictionary (a name, a
+  /// misspelling) get the prior of the word at this rank of the list: a rare
+  /// but real word. A prior below the rarest listed word (what this used to
+  /// be) made the rescorer replace clear unknown readings by frequent words.
+  final int oovRank;
+
+  /// Extra nats below that prior (0 = none).
   final double oovPenalty;
 
   /// ln prior of a personal-dictionary word (roughly the frequency of a word
@@ -58,9 +66,18 @@ class RescoreConfig {
   /// it. Correcting a right word is worse than leaving a wrong one.
   final double knownBonus;
 
-  /// Same, when the greedy reading is not a known word (negative values make
-  /// the app change unknown words more readily).
+  /// Same, when the greedy reading is not a known word. Positive: a clear
+  /// unknown reading (a name) is replaced only when the evidence for the
+  /// replacement is nearly as good (negative values make the app change
+  /// unknown words more readily).
   final double unknownBonus;
+
+  /// [unknownBonus] counts in full only for a CLEAR reading: one whose
+  /// weakest letter has at least [clearProb]. It shrinks linearly to nothing
+  /// at [doubtfulProb] and below, so a reading the model itself doubts is
+  /// repaired as readily as before.
+  final double doubtfulProb;
+  final double clearProb;
 
   /// Dictionary words examined per recognised word.
   final int maxCandidates;
@@ -102,7 +119,7 @@ class RescoreConfig {
 
   static const List<String> defaultConfusablePairs = [
     'ec', 'rs', 'ao', 'au', 'nu', 'nr', 'nm', 'mw', 'uv', 'vy', 'il', 'lt', 'it', 'ft', 'hb', 'hk',
-    'gq', 'gy', 'pq', 'kx', 'sz', 'ij', 'do', 'cl', 'ck', 'eo', 'ae',
+    'gq', 'gy', 'pq', 'kx', 'sz', 'ij', 'do', 'cl', 'ck', 'eo', 'ae', 'nh', 'uo', 'rv',
   ];
 
   /// Lowercase acronyms that stay in capitals when the recogniser reads them
@@ -192,18 +209,25 @@ class LexiconRescorer {
   static final RegExp _letters = RegExp(r"^[A-Za-z]+(?:'[A-Za-z]+)?$");
 
   bool _isKnown(String lower) =>
-      (userLexicon?.contains(lower) ?? false) || (lexicon?.contains(lower) ?? false);
+      (userLexicon?.contains(lower) ?? false) ||
+      (lexicon?.contains(lower) ?? false) ||
+      contractionLogProb(lower) != null;
 
-  double get _oovPrior => (lexicon?.minLogProb ?? math.log(1e-9)) - config.oovPenalty;
+  late final double _oovPrior =
+      (lexicon?.logProbAtRank(config.oovRank) ?? math.log(1e-9)) - config.oovPenalty;
 
   double _priorOf(String lower) {
     final user = userLexicon?.contains(lower) ?? false;
-    final base = lexicon?.logProb(lower);
+    // Being listed never hurts: a word rarer than the unknown-string prior
+    // is scored like an unknown string.
+    var base = math.max(lexicon?.logProb(lower) ?? _oovPrior, _oovPrior);
+    final contraction = contractionLogProb(lower);
+    if (contraction != null) base = math.max(base, contraction);
     if (user) {
       final prior = math.max(config.userLogProb, _oovPrior + config.userMinAdvantage);
-      return base == null ? prior : math.max(prior, base);
+      return math.max(prior, base);
     }
-    return base ?? _oovPrior;
+    return base;
   }
 
   /// Class indices of each confusable pair: (letter a in both cases, letter
@@ -347,7 +371,9 @@ class LexiconRescorer {
     if (greedyCand == null) return _passThrough(lp, greedy, beams);
     final ranked = cands.values.toList()..sort((a, b) => b.score.compareTo(a.score));
     var best = ranked.first;
-    final bonus = greedyCand.known ? config.knownBonus : config.unknownBonus;
+    final weakest = greedy.charProbs.isEmpty ? 0.0 : greedy.charProbs.reduce(math.min);
+    final clarity = ((weakest - config.doubtfulProb) / (config.clearProb - config.doubtfulProb)).clamp(0.0, 1.0);
+    final bonus = greedyCand.known ? config.knownBonus : config.unknownBonus * clarity;
     if (best.word == coreLower || best.score <= greedyCand.score + bonus) best = greedyCand;
 
     String render(_Candidate c) {
@@ -429,11 +455,16 @@ class LexiconRescorer {
     return beams.where((b) => b.logProb >= floor);
   }
 
-  /// [lower] written with the capitalisation rules of the class comment.
+  /// [lower] written with the capitalisation rules of the class comment. A
+  /// replacement (a word different from the raw reading) copies the case
+  /// pattern of the raw reading only when the first letters agree: a raw
+  /// `Isut` that the language layer turns into `Sat` is no sentence start, so
+  /// the replacement stays lowercase.
   String _applyCase(String lower, String rawCore) {
     final user = userLexicon?.formOf(lower);
     if (user != null) return user;
     if (lower.isEmpty || rawCore.isEmpty) return lower;
+    if (lower != rawCore.toLowerCase() && rawCore[0].toLowerCase() != lower[0]) return lower;
     final upperFirst = rawCore[0] != rawCore[0].toLowerCase();
     if (lower.length == 1) return upperFirst ? lower.toUpperCase() : lower;
     final shouting = rawCore.length >= 2 && rawCore == rawCore.toUpperCase();

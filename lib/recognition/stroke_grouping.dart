@@ -24,18 +24,31 @@ class GroupingConfig {
     this.wordGapJumpRatio = 2.5,
     this.fragmentWidthFactor = 1.2,
     this.fragmentMergeFactor = 1.5,
+    this.markReachX = 1.2,
+    this.markReachY = 2.0,
+    this.markAboveWeight = 4.0,
+    this.markDirectX = 0.5,
+    this.markDirectY = 1.2,
+    this.minXHeightStrokes = 3,
+    this.flatStrokeFactor = 0.4,
+    this.xHeightQuantile = 0.35,
+    this.xHeightBandLow = 0.6,
+    this.xHeightBandHigh = 1.4,
   });
 
   /// Page lines are searched within ±this many degrees of horizontal.
   final double maxSkewDeg;
 
-  /// Two lines are never closer than this (baseline to baseline would need
-  /// to be larger still); a cut between lines leaves at least this much ink
-  /// height on each side.
+  /// Two line bodies (peaks of the ink density across the page) are never
+  /// closer than this; a smaller peak nearer than this to a stronger one is
+  /// a hump of the same line (a descender tail, a row of i-dots).
   final double minLineHeightFactor;
 
-  /// A cut is made where the ink density between two lines drops below this
-  /// fraction of the sparser line's peak density.
+  /// Two neighbouring line bodies are separate lines only when the ink
+  /// density in the valley between them drops to at most this fraction of
+  /// the sparser body's peak density. The cut is then made at the deepest
+  /// valley between the two peaks (never at a valley inside a descender
+  /// tail, which is deeper but is not between two lines).
   final double lineValleyRatio;
 
   /// Strokes whose box diagonal is below this are dots and bars (i-dots,
@@ -81,6 +94,44 @@ class GroupingConfig {
   /// A fragment is merged into its nearer neighbour when that neighbour is
   /// within this many split thresholds.
   final double fragmentMergeFactor;
+
+  /// A dot or bar (i-dot, comma, full stop) belongs to the line of the
+  /// nearest bigger stroke that is no further than this many x-heights away
+  /// sideways ...
+  final double markReachX;
+
+  /// ... and this many x-heights vertically (see [nearestSupport]).
+  final double markReachY;
+
+  /// A stroke entirely above a mark counts this many times its gap (a stroke
+  /// under the mark is the likelier owner of an i-dot).
+  final double markAboveWeight;
+
+  /// A stroke starting under a mark within this many x-heights sideways ...
+  final double markDirectX;
+
+  /// ... and this many x-heights down owns the mark whatever else is near
+  /// (the stem under an i-dot).
+  final double markDirectY;
+
+  /// A line needs at least this many bigger strokes before its x-height is
+  /// estimated from them; fewer and the page-wide value is the best guess.
+  final int minXHeightStrokes;
+
+  /// Strokes flatter than this fraction of the line's median stroke height
+  /// (t-bars, hyphens, underlines) are not counted as letters when the
+  /// line's x-height is estimated.
+  final double flatStrokeFactor;
+
+  /// The first guess of a line's x-height is this lower quantile of its
+  /// letter heights (about half of English letters are x-height only).
+  final double xHeightQuantile;
+
+  /// The x-height is the median of the strokes whose height is within
+  /// [xHeightBandLow] and [xHeightBandHigh] times that first guess (tall
+  /// letters and descenders are left out).
+  final double xHeightBandLow;
+  final double xHeightBandHigh;
 }
 
 /// The strokes of one written word, ready to be rendered and recognised.
@@ -105,8 +156,13 @@ class WordGroup {
   final double? xHeight;
 }
 
-/// One line of handwriting: words in reading order on a (possibly slanted)
-/// baseline `y = baselineY + baselineSlope * (x - left)`.
+/// One line of handwriting: a (possibly slanted) baseline
+/// `y = baselineY + baselineSlope * (x - left)` and every pen stroke on it.
+///
+/// [inkStrokes] is the authority: it holds every stroke of the line, whatever
+/// the word splitter made of them. [words] is the legacy word grouping
+/// (geometric, fragile for loosely spaced writing); the recogniser reads the
+/// whole line and derives its own word groups from the model's spaces.
 class RecognizedLine {
   RecognizedLine({
     required this.words,
@@ -115,7 +171,8 @@ class RecognizedLine {
     required this.left,
     required this.right,
     required this.xHeight,
-  });
+    List<Stroke>? inkStrokes,
+  }) : inkStrokes = inkStrokes ?? [for (final w in words) ...w.strokes];
 
   final List<WordGroup> words;
 
@@ -124,30 +181,57 @@ class RecognizedLine {
   final double baselineSlope;
   final double left;
   final double right;
+
+  /// x-height of this line in points (estimated from the line's own
+  /// strokes whenever they give evidence).
   final double xHeight;
+
+  /// Every pen stroke of the line, in input (writing) order. Dots, bars and
+  /// stray marks included.
+  final List<Stroke> inkStrokes;
 
   double baselineAt(double x) => baselineY + baselineSlope * (x - left);
 
-  Iterable<Stroke> get strokes => words.expand((w) => w.strokes);
+  Iterable<Stroke> get strokes => inkStrokes;
+
+  /// The same line with other [words] (for example the word groups the
+  /// recogniser found); the ink, baseline and size stay.
+  RecognizedLine copyWith({List<WordGroup>? words}) => RecognizedLine(
+        words: words ?? this.words,
+        baselineY: baselineY,
+        baselineSlope: baselineSlope,
+        left: left,
+        right: right,
+        xHeight: xHeight,
+        inkStrokes: inkStrokes,
+      );
 }
 
-/// Splits pen strokes into lines and words.
+/// Splits pen strokes into lines (and, as a fallback, words).
 ///
 /// 1. Estimate the writing size `u` (x-height) from the stroke heights, or
 ///    take [expectedXHeight].
 /// 2. Find the dominant page slope: the angle at which the ink's vertical
 ///    profile is peakiest (ruled lines pile up into sharp peaks).
-/// 3. In the levelled frame, cut the vertical ink profile at its valleys:
-///    each region between cuts is one line.
-/// 4. Fit every line's own baseline with [analyzeWord].
-/// 5. Along each line, merge strokes that overlap horizontally into letter
+/// 3. In the levelled frame, find the line bodies as peaks of the vertical
+///    ink density, and cut at the deepest valley between neighbouring
+///    peaks. Peaks too close to a stronger one, or not separated by a deep
+///    enough valley ([GroupingConfig.lineValleyRatio]), are one line.
+/// 4. Every stroke goes to a line: letters by where their ink lies, dots and
+///    bars (i-dots, full stops) to the line of the stroke they sit over or
+///    beside ([nearestSupport]), never by their own, ambiguous height.
+/// 5. Fit every line's own baseline with [analyzeWord] and estimate its own
+///    x-height.
+/// 6. Along each line, merge strokes that overlap horizontally into letter
 ///    blocks, then join blocks closer than the line's word-gap threshold
 ///    (adaptive: see [GroupingConfig.wordGapRatio]); dots and bars attach to
 ///    the nearest word, and a lone narrow letter written a little apart from
 ///    its word is merged back into it ([GroupingConfig.fragmentWidthFactor]).
+///    These [RecognizedLine.words] are only a fallback: the recogniser reads
+///    whole lines ([RecognizedLine.inkStrokes]).
 ///
 /// Highlighter strokes and shapes are ignored. Lines come top to bottom,
-/// words left to right.
+/// words left to right; every pen stroke ends up in exactly one line.
 List<RecognizedLine> groupStrokes(
   List<Stroke> strokes, {
   double? expectedXHeight,
@@ -158,7 +242,7 @@ List<RecognizedLine> groupStrokes(
     if (s.tool != StrokeTool.pen || s.shape != null) continue;
     final b = finiteBounds(s.points);
     if (b == null) continue;
-    items.add(_Item(s, b));
+    items.add(_Item(s, b, items.length));
   }
   if (items.isEmpty) return const [];
 
@@ -178,18 +262,33 @@ List<RecognizedLine> groupStrokes(
   return out;
 }
 
+/// An axis-aligned box in a levelled frame (x along the line, y across it).
+typedef LevelBox = ({double left, double top, double right, double bottom});
+
 class _Item {
-  _Item(this.stroke, this.bounds);
+  _Item(this.stroke, this.bounds, this.index);
 
   final Stroke stroke;
   final InkRect bounds;
+
+  /// Position in the input list (the strokes of a line keep this order).
+  final int index;
   List<Vec2> samples = const [];
 
-  /// Mean sample position in the levelled page frame (set by line search).
-  double meanLevelY = 0;
+  /// A dot or bar next to the writing (set by the line search, judged
+  /// against the page-wide size).
+  bool tiny = false;
+
+  /// Box of the samples in the levelled page frame (set by the line search).
+  double lvLeft = 0, lvRight = 0, lvTop = 0, lvBottom = 0;
+
+  /// Median sample height in the levelled page frame.
+  double medianLevelY = 0;
 
   // Horizontal extent along the line (set per line).
   double xl = 0, xr = 0;
+
+  LevelBox get levelBox => (left: lvLeft, top: lvTop, right: lvRight, bottom: lvBottom);
 }
 
 /// Rotation by −[angle]: x runs along a line of slope tan(angle), y is the
@@ -258,22 +357,43 @@ double _estimatePageAngle(List<_Item> items, double u, GroupingConfig config) {
 
 List<List<_Item>> _splitLines(List<_Item> items, double angle, double u, GroupingConfig config) {
   final c = math.cos(angle), s = math.sin(angle);
-  var lo = double.infinity, hi = double.negativeInfinity;
   for (final it in items) {
-    var sum = 0.0;
+    var l = double.infinity, r = double.negativeInfinity;
+    var t = double.infinity, b = double.negativeInfinity;
+    final ys = <double>[];
     for (final p in it.samples) {
-      final y = _levelY(p, c, s);
-      sum += y;
-      if (y < lo) lo = y;
-      if (y > hi) hi = y;
+      final x = _levelX(p, c, s), y = _levelY(p, c, s);
+      if (x < l) l = x;
+      if (x > r) r = x;
+      if (y < t) t = y;
+      if (y > b) b = y;
+      ys.add(y);
     }
-    it.meanLevelY = it.samples.isEmpty ? 0 : sum / it.samples.length;
+    it.lvLeft = l;
+    it.lvRight = r;
+    it.lvTop = t;
+    it.lvBottom = b;
+    it.medianLevelY = median(ys) ?? 0;
+    it.tiny = it.bounds.diagonal < config.tinyFactor * u;
   }
 
+  // The line bodies are found from the letters; dots and bars would only add
+  // small humps. A page of nothing but dots is still a page of lines.
+  final letters = [
+    for (final it in items)
+      if (!it.tiny) it,
+  ];
+  final body = letters.isEmpty ? items : letters;
+
+  var lo = double.infinity, hi = double.negativeInfinity;
+  for (final it in body) {
+    if (it.lvTop < lo) lo = it.lvTop;
+    if (it.lvBottom > hi) hi = it.lvBottom;
+  }
   final bh = math.max(u / 6, 0.25);
   final nb = ((hi - lo) / bh).floor() + 1;
   final hist = List<double>.filled(nb, 0);
-  for (final it in items) {
+  for (final it in body) {
     for (final p in it.samples) {
       hist[((_levelY(p, c, s) - lo) / bh).floor().clamp(0, nb - 1)] += 1;
     }
@@ -290,52 +410,85 @@ List<List<_Item>> _splitLines(List<_Item> items, double angle, double u, Groupin
   }
 
   final minBins = (config.minLineHeightFactor * u / bh).ceil();
-  final cutBins = <int>[];
-  final pending = <(int, int)>[(0, nb)];
-  while (pending.isNotEmpty) {
-    final (a, b) = pending.removeLast();
-    final from = a + minBins, to = b - minBins;
-    if (to < from) continue;
-    var minV = double.infinity;
-    var at = from;
-    for (var i = from; i <= to; i++) {
-      if (sm[i] < minV) {
-        minV = sm[i];
-        at = i;
-      }
+  final peaks = _linePeaks(sm, minBins, config.lineValleyRatio);
+  final cutBins = [
+    for (var k = 0; k + 1 < peaks.length; k++) _valleyBetween(sm, peaks[k], peaks[k + 1]),
+  ];
+  final cutYs = [for (final k in cutBins) lo + (k + 0.5) * bh];
+
+  int regionOf(double y) {
+    var idx = 0;
+    while (idx < cutYs.length && y > cutYs[idx]) {
+      idx++;
     }
-    // Centre of the flat valley floor around the first minimum.
-    var l = at, r = at;
-    while (l - 1 >= from && sm[l - 1] <= minV + 1e-9) {
+    return idx;
+  }
+
+  // The body of a line: the stretch around its peak where the density is at
+  // least half the peak, kept between the cuts.
+  final bodies = <({double lo, double hi})>[];
+  for (var k = 0; k < peaks.length; k++) {
+    var l = peaks[k], r = peaks[k];
+    final half = sm[peaks[k]] / 2;
+    final from = k == 0 ? 0 : cutBins[k - 1] + 1;
+    final to = k == peaks.length - 1 ? nb - 1 : cutBins[k];
+    while (l - 1 >= from && sm[l - 1] >= half) {
       l--;
     }
-    while (r + 1 <= to && sm[r + 1] <= minV + 1e-9) {
+    while (r + 1 <= to && sm[r + 1] >= half) {
       r++;
     }
-    final cut = (l + r) ~/ 2;
-    var leftMax = 0.0, rightMax = 0.0;
-    for (var i = a; i < cut; i++) {
-      leftMax = math.max(leftMax, sm[i]);
+    bodies.add((lo: lo + l * bh, hi: lo + (r + 1) * bh));
+  }
+
+  // A letter belongs to the line whose body holds most of its ink. (Not to
+  // the side of the cut its median falls on: the long tail of a y reaches
+  // beyond the cut, and a tall l starts above it, and each belongs to the
+  // line where it has its body.)
+  int lineOf(_Item it) {
+    final byMedian = regionOf(it.medianLevelY);
+    if (bodies.length < 2) return byMedian;
+    var best = byMedian;
+    var bestCount = 0;
+    for (var k = 0; k < bodies.length; k++) {
+      var count = 0;
+      for (final p in it.samples) {
+        final y = _levelY(p, c, s);
+        if (y >= bodies[k].lo && y < bodies[k].hi) count++;
+      }
+      if (count > bestCount || (count == bestCount && count > 0 && k == byMedian)) {
+        bestCount = count;
+        best = k;
+      }
     }
-    for (var i = cut + 1; i < b; i++) {
-      rightMax = math.max(rightMax, sm[i]);
-    }
-    if (minV <= config.lineValleyRatio * math.min(leftMax, rightMax)) {
-      cutBins.add(cut);
-      pending.add((a, cut));
-      pending.add((cut + 1, b));
+    return best;
+  }
+
+  final region = <_Item, int>{for (final it in items) it: lineOf(it)};
+  // Dots and bars follow the stroke they belong to: an i-dot hovers over its
+  // stem and may well be nearer to the neighbouring line's descender, or to
+  // the cut, than to its own line's body.
+  if (letters.isNotEmpty) {
+    final boxes = [for (final it in letters) it.levelBox];
+    for (final it in items) {
+      if (!it.tiny) continue;
+      final k = nearestSupport(
+        it.levelBox,
+        boxes,
+        u: u,
+        reachX: config.markReachX,
+        reachY: config.markReachY,
+        aboveWeight: config.markAboveWeight,
+        directX: config.markDirectX,
+        directY: config.markDirectY,
+      );
+      if (k != null) region[it] = region[letters[k]]!;
     }
   }
-  cutBins.sort();
-  final cutYs = [for (final k in cutBins) lo + (k + 0.5) * bh];
 
   final groups = List.generate(cutYs.length + 1, (_) => <_Item>[]);
   for (final it in items) {
-    var idx = 0;
-    while (idx < cutYs.length && it.meanLevelY > cutYs[idx]) {
-      idx++;
-    }
-    groups[idx].add(it);
+    groups[region[it]!].add(it);
   }
   return [
     for (final g in groups)
@@ -343,35 +496,205 @@ List<List<_Item>> _splitLines(List<_Item> items, double angle, double u, Groupin
   ];
 }
 
+/// Local maxima of the ink density [sm] that are line bodies, as bin indices
+/// from top to bottom. Starting from all local maxima, the weaker of two
+/// neighbouring peaks is dropped while they are closer than [minBins] or the
+/// valley between them is shallower than [ratio] of the weaker one's height
+/// (the weakest offender first). What remains is separated by real valleys.
+List<int> _linePeaks(List<double> sm, int minBins, double ratio) {
+  const eps = 1e-9;
+  final nb = sm.length;
+  final peaks = <int>[];
+  var i = 0;
+  while (i < nb) {
+    var j = i;
+    while (j + 1 < nb && (sm[j + 1] - sm[i]).abs() <= eps) {
+      j++;
+    }
+    final risesBefore = i == 0 || sm[i - 1] < sm[i] - eps;
+    final fallsAfter = j == nb - 1 || sm[j + 1] < sm[i] - eps;
+    if (sm[i] > eps && risesBefore && fallsAfter) peaks.add((i + j) ~/ 2);
+    i = j + 1;
+  }
+
+  double valleyOf(int a, int b) {
+    var v = double.infinity;
+    for (var k = a; k <= b; k++) {
+      if (sm[k] < v) v = sm[k];
+    }
+    return v;
+  }
+
+  while (peaks.length > 1) {
+    var worst = -1;
+    var worstHeight = double.infinity;
+    for (var k = 0; k + 1 < peaks.length; k++) {
+      final a = peaks[k], b = peaks[k + 1];
+      final weaker = math.min(sm[a], sm[b]);
+      final tooClose = b - a < minBins;
+      final tooShallow = valleyOf(a, b) > ratio * weaker;
+      if ((tooClose || tooShallow) && weaker < worstHeight) {
+        worst = k;
+        worstHeight = weaker;
+      }
+    }
+    if (worst < 0) break;
+    peaks.removeAt(sm[peaks[worst]] >= sm[peaks[worst + 1]] ? worst + 1 : worst);
+  }
+  return peaks;
+}
+
+/// Centre of the flat floor of the deepest valley between bins [a] and [b].
+int _valleyBetween(List<double> sm, int a, int b) {
+  var minV = double.infinity;
+  var at = a;
+  for (var i = a; i <= b; i++) {
+    if (sm[i] < minV) {
+      minV = sm[i];
+      at = i;
+    }
+  }
+  var l = at, r = at;
+  while (l - 1 >= a && sm[l - 1] <= minV + 1e-9) {
+    l--;
+  }
+  while (r + 1 <= b && sm[r + 1] <= minV + 1e-9) {
+    r++;
+  }
+  return (l + r) ~/ 2;
+}
+
+/// Index into [candidates] of the stroke a small [mark] (an i-dot, a comma,
+/// a full stop) belongs to, or null when no stroke is near enough.
+///
+/// 1. A stroke directly under the mark (starting at or below its lower
+///    edge, no more than [directX] x-heights [u] sideways and [directY]
+///    x-heights down) owns it: the stem of an i. The nearest such stroke
+///    wins. Nothing else may take an i-dot from its stem, not even the
+///    descender tail of the line above that happens to pass next to it.
+/// 2. Otherwise the nearest stroke within [reachX] x-heights sideways and
+///    [reachY] vertically wins, with the distance scaled by those reaches
+///    (an i-dot hovers well above its stem, but a word on the same line is
+///    not that close sideways). A candidate overlapping the mark in height
+///    (the letter before a full stop) counts at its real gap; one entirely
+///    above it counts [aboveWeight] times its gap (a full stop written a
+///    hair under the baseline still finds the letter above it).
+///
+/// [underOnly] skips the second step's candidates that are not under the
+/// mark.
+int? nearestSupport(
+  LevelBox mark,
+  List<LevelBox> candidates, {
+  required double u,
+  double reachX = 1.2,
+  double reachY = 2.0,
+  double aboveWeight = 4.0,
+  double directX = 0.5,
+  double directY = 1.2,
+  bool underOnly = false,
+}) {
+  int? best;
+  var bestCost = double.infinity;
+  int? direct;
+  var directCost = double.infinity;
+  final rx = reachX * u, ry = reachY * u;
+  final dxx = directX * u, dyy = directY * u;
+  for (var k = 0; k < candidates.length; k++) {
+    final c = candidates[k];
+    final dx = math.max(0.0, math.max(c.left - mark.right, mark.left - c.right));
+    final double dy;
+    if (c.top >= mark.bottom) {
+      dy = c.top - mark.bottom;
+      if (dx <= dxx && dy <= dyy) {
+        final cost = (dx / dxx) * (dx / dxx) + (dy / dyy) * (dy / dyy);
+        if (cost < directCost) {
+          directCost = cost;
+          direct = k;
+        }
+      }
+    } else if (underOnly) {
+      continue;
+    } else if (c.bottom <= mark.top) {
+      dy = aboveWeight * (mark.top - c.bottom);
+    } else {
+      dy = 0;
+    }
+    if (dx > rx || dy > ry) continue;
+    final cost = (dx / rx) * (dx / rx) + (dy / ry) * (dy / ry);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = k;
+    }
+  }
+  return direct ?? best;
+}
+
+/// The x-height of a line from the heights of its bigger strokes, or null
+/// when the line has too few of them. Flat strokes (bars) are ignored; the
+/// first guess is a low quantile of the letter heights, refined to the
+/// median of the strokes of about that height (tall letters and descenders
+/// are left out), see [GroupingConfig.xHeightQuantile].
+double? _strokeXHeight(List<_Item> items, GroupingConfig config) {
+  final heights = [
+    for (final it in items)
+      if (!it.tiny) it.lvBottom - it.lvTop,
+  ];
+  if (heights.length < config.minXHeightStrokes) return null;
+  final med = median(heights) ?? 0;
+  if (med <= 0) return null;
+  final letters = [
+    for (final h in heights)
+      if (h >= config.flatStrokeFactor * med) h,
+  ];
+  final guess = lowerQuantile(letters, config.xHeightQuantile);
+  if (guess == null || guess <= 0) return null;
+  final band = [
+    for (final h in heights)
+      if (h >= config.xHeightBandLow * guess && h <= config.xHeightBandHigh * guess) h,
+  ];
+  return median(band) ?? guess;
+}
+
 RecognizedLine _buildLine(
-  List<_Item> items,
+  List<_Item> lineItems,
   double pageAngle,
   double u,
   double? expectedXHeight,
   GroupingConfig config,
 ) {
+  final items = [...lineItems]..sort((a, b) => a.index.compareTo(b.index));
   final strokes = [for (final it in items) it.stroke];
+
+  // The line's own size, from its own strokes, steers the baseline fit; the
+  // page-wide size is only a last resort.
+  final own = _strokeXHeight(items, config);
+  final hint = expectedXHeight ?? own ?? u;
   final analysis = analyzeWord(
     strokes,
     context: FeatureContext(
       lineSkew: pageAngle,
-      scaleHintPt: u,
+      scaleHintPt: hint,
       expectedXHeight: expectedXHeight,
     ),
     useRaw: false,
   );
 
   var slope = math.tan(pageAngle);
-  double? xHeight;
+  double? fittedXHeight;
   if (analysis != null) {
     final fitted = analysis.baseline.line.slope;
     if (fitted.isFinite && math.atan(fitted).abs() < degToRad(config.maxSkewDeg + 10)) {
       slope = fitted;
     }
+    // The letter tops above the fitted baseline are the best evidence, even
+    // when they are all of one kind (a line of capitals: the analysis then
+    // derives the x-height from the cap height).
     final xh = analysis.xHeight;
-    if (xh.reliable && xh.xHeight >= 0.4 * u && xh.xHeight <= 2.5 * u) xHeight = xh.xHeight;
+    if ((xh.reliable || xh.topCount >= 2) && xh.xHeight.isFinite && xh.xHeight > 0) {
+      fittedXHeight = xh.xHeight;
+    }
   }
-  final lineU = expectedXHeight ?? xHeight ?? u;
+  final lineU = expectedXHeight ?? fittedXHeight ?? own ?? u;
 
   final phi = math.atan(slope);
   final c = math.cos(phi), s = math.sin(phi);
@@ -388,9 +711,9 @@ RecognizedLine _buildLine(
 
   final words = _splitWords(items, lineU, slope, config);
   var left = double.infinity, right = double.negativeInfinity;
-  for (final w in words) {
-    if (w.bounds.left < left) left = w.bounds.left;
-    if (w.bounds.right > right) right = w.bounds.right;
+  for (final it in items) {
+    if (it.bounds.left < left) left = it.bounds.left;
+    if (it.bounds.right > right) right = it.bounds.right;
   }
 
   // Baseline: the analysis' fit when it exists, else the bottom of the ink.
@@ -411,6 +734,7 @@ RecognizedLine _buildLine(
     left: left,
     right: right,
     xHeight: lineU,
+    inkStrokes: strokes,
   );
 }
 

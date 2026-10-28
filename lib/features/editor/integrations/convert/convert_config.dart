@@ -6,9 +6,10 @@ import '../../../../document/font_kind.dart';
 /// guesses to be tuned on the tablet with the "Show what the recognizer saw"
 /// section of the convert sheet.
 abstract final class ConvertConfig {
-  /// A recognised line whose mean word confidence is below this starts
-  /// UNCHECKED in the review sheet (with a "Not sure" badge) and so stays
-  /// handwriting unless the user ticks it.
+  /// A recognised line whose confidence (the least sure of its words, see
+  /// `LineReading.confidence`) is below this starts UNCHECKED in the review
+  /// sheet (with a "Not sure" badge) and so stays handwriting unless the user
+  /// ticks it.
   ///
   /// UNCALIBRATED: the confidences come from the CTC / lexicon rescoring in
   /// `lib/recognition` and were never compared with real student handwriting.
@@ -74,9 +75,10 @@ abstract final class ConvertConfig {
   /// Extra width on a single-line box so rounding never wraps it (points).
   static const double lineSlack = 4;
 
-  /// Words recognised per chunk (progress and Cancel are checked between
-  /// chunks).
-  static const int chunkWords = 24;
+  /// Lines recognised per chunk (progress and Cancel are checked between
+  /// chunks). A line is one picture for the model, so a chunk is a handful of
+  /// pictures; the chunks of a page follow each other.
+  static const int chunkLines = 4;
 
   // ---------------------------------------------------------------------------
   // Auto-convert (like the Freenote app): the handwriting turns into text by
@@ -87,11 +89,13 @@ abstract final class ConvertConfig {
   /// of one letter or word, so it never fires mid-word.
   static const int autoIdleMs = 1000;
 
-  /// Auto-convert only types a line when EVERY word was read with at least
-  /// this confidence (and none was unreadable). Stricter than
+  /// Auto-convert only types a line whose confidence (the least sure of its
+  /// words) is at least this and which has text. Stricter than
   /// [lowConfidenceThreshold], which only pre-ticks lines in the review
   /// sheet: here nobody checks the result first. UNCALIBRATED: tune on the
-  /// tablet together with [lowConfidenceThreshold].
+  /// tablet together with [lowConfidenceThreshold]. Beware: an unknown word
+  /// that is misread with confidence (a name written like 'Malck') still
+  /// passes; only the personal dictionary can catch those.
   static const double autoMinConfidence = 0.5;
 
   /// A pass that has not finished reading after this long is given up as a

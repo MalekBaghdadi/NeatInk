@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/document/page_items.dart';
 import 'package:neatink/features/editor/integrations/convert/auto_convert_merge.dart';
 import 'package:neatink/features/editor/integrations/convert/auto_convert_session.dart';
+import 'package:neatink/features/editor/integrations/convert/convert_config.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_layout.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_plan.dart';
-import 'package:neatink/recognition/htr_channel.dart';
-import 'package:neatink/recognition/stroke_grouping.dart';
+import 'package:neatink/recognition/text_polish.dart';
 
 import 'harness.dart';
 
@@ -23,30 +23,14 @@ class _Metrics extends ConvertTextMetrics {
   double heightOf(TextItem item) => item.fontSize * 1.2;
 }
 
-PlannedLine lineWith(List<(String, double)> words) {
-  final strokes = writeLine('a', [for (final _ in words) 'hello'], y: 104);
-  final line = groupStrokes(strokes).single;
-  expect(line.words, hasLength(words.length));
-  return plannedLineFrom(
-    id: 'p/0',
-    pageId: 'p',
-    line: line,
-    words: [
-      for (var i = 0; i < words.length; i++)
-        WordResult(
-          group: line.words[i],
-          text: words[i].$1,
-          confidence: words[i].$2,
-          raw: words[i].$1,
-          alternatives: const [],
-        ),
-    ],
-  );
-}
+PlannedLine lineWith(List<(String, double)> words,
+        {double? confidence, List<PolishSuggestion> suggestions = const [], bool autoFix = false}) =>
+    plannedLineOf(words,
+        confidence: confidence, suggestions: suggestions, autoFix: autoFix);
 
 void main() {
   group('autoConvertsLine', () {
-    test('every word must reach the minimum confidence', () {
+    test('the line must reach the minimum confidence (that of its least sure word)', () {
       expect(autoConvertsLine(lineWith([('hello', 0.9)])), isTrue);
       expect(autoConvertsLine(lineWith([('hello', 0.9), ('there', 0.5)])), isTrue,
           reason: 'exactly the minimum is enough');
@@ -54,11 +38,28 @@ void main() {
           autoConvertsLine(lineWith([('hello', 0.9), ('there', 0.499)])), isFalse);
       expect(autoConvertsLine(lineWith([('hello', 0.2), ('there', 0.99)])), isFalse,
           reason: 'one doubtful word is enough to keep the line as ink');
+      expect(ConvertConfig.autoMinConfidence, 0.5);
+    });
+
+    test('it is the confidence of the line that counts, not of its words', () {
+      // Every word looks sure, but the recogniser is not sure of the line.
+      final unsure = lineWith([('hello', 0.9), ('there', 0.9)], confidence: 0.4);
+      expect(unsure.confidence, 0.4);
+      expect(autoConvertsLine(unsure), isFalse);
+      final sure = lineWith([('hello', 0.9), ('there', 0.9)], confidence: 0.5);
+      expect(autoConvertsLine(sure), isTrue);
     });
 
     test('a line with an unreadable word never converts', () {
       expect(autoConvertsLine(lineWith([('hello', 0.9), ('', 0.99)])), isFalse);
       expect(autoConvertsLine(lineWith([('  ', 0.99)])), isFalse);
+    });
+
+    test('a line without any text never converts', () {
+      final line = lineWith([('hello', 0.9)]);
+      line.text = '   ';
+      expect(autoConvertsLine(line), isFalse);
+      expect(autoConvertsLine(lineWith([('', 0.9)])), isFalse);
     });
 
     test('the minimum can be changed', () {
@@ -69,6 +70,27 @@ void main() {
 
     test('a confidence that is not a number does not convert', () {
       expect(autoConvertsLine(lineWith([('hello', double.nan)])), isFalse);
+    });
+
+    test('spelling fixes are typed only when "Fix spelling automatically" is on', () {
+      const slip = PolishSuggestion(
+        original: 'helo',
+        replacement: 'hello',
+        kind: PolishKind.spelling,
+        reason: 'Spelling',
+        start: 0,
+        end: 4,
+      );
+      final off = lineWith([('helo', 0.9), ('there', 0.9)], suggestions: [slip]);
+      expect(autoConvertsLine(off), isTrue);
+      expect(off.text, 'helo there', reason: 'suggestions are never applied silently');
+      expect(off.suggestions, [slip]);
+
+      final on = lineWith([('helo', 0.9), ('there', 0.9)],
+          suggestions: [slip], autoFix: true);
+      expect(autoConvertsLine(on), isTrue);
+      expect(on.text, 'hello there');
+      expect(on.autoApplied, [slip]);
     });
   });
 
