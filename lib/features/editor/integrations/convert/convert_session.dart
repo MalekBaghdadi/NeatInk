@@ -52,6 +52,7 @@ class ConvertSession extends ChangeNotifier {
     this.onStyleChosen,
     this.appVersion = 'unknown',
     this.autoFix = false,
+    this.onKeep,
     DateTime Function()? clock,
   })  : _uuid = uuid ?? const Uuid(),
         _clock = clock ?? DateTime.now {
@@ -77,6 +78,11 @@ class ConvertSession extends ChangeNotifier {
 
   /// Written into shared sample files.
   final String appVersion;
+
+  /// Told about the lines converted, with the text the user checked or
+  /// fixed for them, when a conversion is applied ("Keep my corrections").
+  /// Null: nothing is kept.
+  final void Function(List<SampleLineInput> lines)? onKeep;
 
   /// The setting "Autocorrect": the spelling and grammar fixes
   /// the recogniser suggests are applied to the text as it is read (each can
@@ -380,6 +386,11 @@ class ConvertSession extends ChangeNotifier {
         learner?.learnWord(w);
       }
       onStyleChosen?.call(style.toPrefs());
+      onKeep?.call([
+        for (final plan in plans)
+          for (final line in plan.lines)
+            if (line.willConvert) SampleLineInput(line: line, pageIndex: plan.pageIndex, images: const []),
+      ]);
     }
     return outcome;
   }

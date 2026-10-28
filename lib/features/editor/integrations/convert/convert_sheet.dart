@@ -13,6 +13,7 @@ import 'convert_layout.dart' show PageRuling, evenFontSize;
 import 'convert_plan.dart';
 import 'convert_session.dart';
 import 'convert_style_controls.dart';
+import 'sample_export.dart' show SampleLineInput;
 import 'sample_share.dart';
 import 'user_lexicon.dart';
 import 'word_crop.dart';
@@ -39,6 +40,7 @@ Future<void> showConvertSheet(
   SampleShareService sampleShare = const DefaultSampleShareService(),
   String appVersion = 'unknown',
   bool autoFix = false,
+  void Function(List<SampleLineInput> lines)? onKeep,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final session = ConvertSession(
@@ -50,6 +52,7 @@ Future<void> showConvertSheet(
     learner: learner,
     appVersion: appVersion,
     autoFix: autoFix,
+    onKeep: onKeep,
   );
   unawaited(session.start());
   final outcome = await showModalBottomSheet<ConvertOutcome>(

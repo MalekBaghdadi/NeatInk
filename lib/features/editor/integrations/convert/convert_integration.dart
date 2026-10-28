@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,10 +17,12 @@ import 'convert_layout.dart';
 import 'convert_providers.dart';
 import 'convert_scope.dart';
 import 'convert_sheet.dart';
+import 'kept_corrections.dart';
 import 'sample_share.dart';
 import 'user_lexicon.dart';
 
 export 'convert_providers.dart' show htrRecognizerProvider, wordImageRendererProvider;
+export 'kept_corrections.dart' show keptCorrectionsProvider;
 export 'sample_share.dart' show sampleShareServiceProvider;
 export 'user_lexicon.dart' show userLexiconProvider;
 
@@ -69,6 +73,13 @@ final EditorIntegration convertIntegration = (controller, ref) {
       sampleShare: ref.read(sampleShareServiceProvider),
       appVersion: '${AppInfo.version}+${AppInfo.buildNumber}',
       autoFix: ref.read(settingsProvider).autocorrect,
+      onKeep: ref.read(settingsProvider).keepCorrections
+          ? (lines) {
+              final kept = ref.read(keptCorrectionsProvider);
+              unawaited(kept.addAll(keptLineEntries(lines, DateTime.now())).catchError(
+                  (Object e) => debugPrint('NeatInk: keeping corrections failed: $e')));
+            }
+          : null,
     );
   }
 

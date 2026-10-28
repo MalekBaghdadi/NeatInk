@@ -17,6 +17,7 @@ import 'package:neatink/features/editor/editor_tool.dart';
 import 'package:neatink/features/editor/stroke_events.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_integration.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_plan.dart';
+import 'package:neatink/features/editor/integrations/convert/kept_corrections.dart';
 import 'package:neatink/features/editor/integrations/erase_select/erase_select_integration.dart';
 import 'package:neatink/features/editor/integrations/erase_select/lasso_handler.dart';
 import 'package:neatink/features/editor/integrations/convert/sample_share.dart';
@@ -234,7 +235,7 @@ class _FlakyRepository extends InMemoryNotebookRepository {
 /// `flutter_tester`).
 class ConvertHarness {
   ConvertHarness._(this.tester, this.controller, this.recognizer,
-      this.container, this.share, this.learner);
+      this.container, this.share, this.learner, this.kept);
 
   final WidgetTester tester;
   final EditorController controller;
@@ -242,6 +243,9 @@ class ConvertHarness {
   final ProviderContainer container;
   final FakeShare share;
   final InMemoryWordLearner learner;
+
+  /// "Keep my corrections" (on in the app and here).
+  final InMemoryKeptCorrections kept;
 
   static Future<ConvertHarness> open(
     WidgetTester tester, {
@@ -305,7 +309,9 @@ class ConvertHarness {
     EditorController? captured;
     final share = FakeShare();
     final learner = InMemoryWordLearner();
+    final kept = InMemoryKeptCorrections();
     final container = ProviderContainer(overrides: [
+      keptCorrectionsProvider.overrideWithValue(kept),
       sharedPreferencesProvider.overrideWithValue(prefs),
       sampleShareServiceProvider.overrideWithValue(share),
       userLexiconProvider.overrideWithValue(learner),
@@ -325,7 +331,7 @@ class ConvertHarness {
       child: MaterialApp(home: EditorScreen(notebookId: meta.id)),
     ));
     await tester.pumpAndSettle();
-    final h = ConvertHarness._(tester, captured!, fake, container, share, learner);
+    final h = ConvertHarness._(tester, captured!, fake, container, share, learner, kept);
     expect(h.controller.isReady, isTrue);
     return h;
   }

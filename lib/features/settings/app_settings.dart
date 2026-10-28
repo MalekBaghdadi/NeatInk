@@ -18,6 +18,7 @@ class AppSettings {
     this.shapeSnapEnabled = true,
     this.tidyHighlighter = true,
     this.scribbleToDelete = true,
+    this.keepCorrections = true,
     this.pdfMargins = PdfMargins.none,
     this.exportPaperLines = true,
     this.autoConvert = false,
@@ -40,6 +41,7 @@ class AppSettings {
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
         tidyHighlighter: j['tidyHighlighter'] is bool ? j['tidyHighlighter'] as bool : true,
         scribbleToDelete: j['scribbleToDelete'] is bool ? j['scribbleToDelete'] as bool : true,
+        keepCorrections: j['keepCorrections'] is bool ? j['keepCorrections'] as bool : true,
         pdfMargins: PdfMargins.byName(j['pdfMargins']),
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
@@ -82,6 +84,11 @@ class AppSettings {
   /// Scribble over handwriting or typed text with the pen to delete it (see
   /// `scribbleIntegration`). On by default.
   final bool scribbleToDelete;
+
+  /// "Keep my corrections": lines converted from the review sheet are kept
+  /// on the tablet with the text the user checked, to measure and improve
+  /// recognition (see `KeptCorrections`). On by default; nothing is sent.
+  final bool keepCorrections;
 
   /// Writing margins last chosen when importing a PDF (the next import
   /// offers the same).
@@ -139,6 +146,7 @@ class AppSettings {
     bool? shapeSnapEnabled,
     bool? tidyHighlighter,
     bool? scribbleToDelete,
+    bool? keepCorrections,
     PdfMargins? pdfMargins,
     bool? exportPaperLines,
     bool? autoConvert,
@@ -160,6 +168,7 @@ class AppSettings {
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
         tidyHighlighter: tidyHighlighter ?? this.tidyHighlighter,
         scribbleToDelete: scribbleToDelete ?? this.scribbleToDelete,
+        keepCorrections: keepCorrections ?? this.keepCorrections,
         pdfMargins: pdfMargins ?? this.pdfMargins,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
@@ -183,6 +192,7 @@ class AppSettings {
         'shapeSnapEnabled': shapeSnapEnabled,
         'tidyHighlighter': tidyHighlighter,
         'scribbleToDelete': scribbleToDelete,
+        'keepCorrections': keepCorrections,
         'pdfMargins': pdfMargins.name,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,

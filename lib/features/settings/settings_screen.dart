@@ -11,6 +11,7 @@ import 'settings_controller.dart';
 import 'widgets/backup_settings.dart';
 import 'widgets/paper_defaults_editor.dart';
 import 'widgets/security_settings.dart';
+import 'widgets/kept_corrections_settings.dart';
 import 'widgets/settings_section.dart';
 
 /// Settings: appearance, writing, new-notebook defaults, export, security,
@@ -147,6 +148,7 @@ class SettingsScreen extends ConsumerWidget {
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => MyWordsScreen.open(context),
                 ),
+                const KeptCorrectionsSettings(),
                 SwitchListTile(
                   key: const ValueKey('settings-draw-with-finger'),
                   secondary: const Icon(Icons.touch_app_outlined),
