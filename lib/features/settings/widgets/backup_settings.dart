@@ -63,11 +63,14 @@ Future<void> runBackup(BuildContext context, WidgetRef ref) async {
   final settings = ref.read(settingsProvider.notifier);
   final clock = ref.read(clockProvider);
   final lexicon = ref.read(myWordsLexiconProvider);
+  final current = ref.read(settingsProvider);
+  final toolPrefs = ToolPrefsStore(ref.read(sharedPreferencesProvider)).load();
+  final convertStyle = ref.read(convertStylePrefsProvider);
   await lexicon.load();
   final appData = BackupAppData.collect(
-    settings: ref.read(settingsProvider),
-    toolPrefs: ToolPrefsStore(ref.read(sharedPreferencesProvider)).load(),
-    convertStyle: ref.read(convertStylePrefsProvider),
+    settings: current,
+    toolPrefs: toolPrefs,
+    convertStyle: convertStyle,
     myWords: lexicon.words,
   );
   if (!context.mounted) return;
