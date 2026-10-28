@@ -45,7 +45,10 @@ class _DocumentViewState extends State<DocumentView>
 
   /// A pan that started this shortly before the pen landed was the palm:
   /// it is undone.
-  static const Duration _palmPanUndoWindow = Duration(milliseconds: 400);
+  /// A pan by touches that are still down when the pen lands is undone if it
+  /// began at most this long before (a resting palm that moved the page);
+  /// v1.6.0: was 400 ms, while a hand rests for seconds.
+  static const Duration _palmPanUndoWindow = Duration(seconds: 3);
 
   /// Pen-down this close to a page edge (logical pixels) still starts on
   /// that page.
@@ -59,6 +62,10 @@ class _DocumentViewState extends State<DocumentView>
 
   final Map<int, _ToolPointer> _toolPointers = {};
   final Set<int> _ignored = {};
+
+  /// Touches being ignored as a palm (a subset of [_ignored]): while one
+  /// is down after the pen was used, new touches are ignored too.
+  final Set<int> _palms = {};
 
   /// A finger that went down alone to navigate: lifted quickly where it
   /// went down, it is a tap ([EditorExtensions.handleTap]).
@@ -214,6 +221,7 @@ class _DocumentViewState extends State<DocumentView>
       buttons: e.buttons,
       timeStamp: e.timeStamp,
       touchInUse: touchBusy,
+      palmResting: _palms.isNotEmpty,
     );
     switch (intent) {
       case PointerIntent.tool:
@@ -236,6 +244,7 @@ class _DocumentViewState extends State<DocumentView>
         _startNavigation(e);
       case PointerIntent.ignore:
         _ignored.add(e.pointer);
+        if (_isTouch(e.kind)) _palms.add(e.pointer);
     }
   }
 
@@ -297,7 +306,9 @@ class _DocumentViewState extends State<DocumentView>
           penDownTime - start < _palmPanUndoWindow) {
         _viewport.restore(view);
       }
-      _ignored.addAll(_nav.cancel());
+      final cancelled = _nav.cancel();
+      _ignored.addAll(cancelled);
+      _palms.addAll(cancelled);
     }
     final palms = [
       for (final entry in _toolPointers.entries)
@@ -307,6 +318,7 @@ class _DocumentViewState extends State<DocumentView>
       _toolPointers.remove(entry.key);
       entry.value.handler.onPointerCancel(entry.value.last);
       _ignored.add(entry.key);
+      _palms.add(entry.key);
     }
   }
 
@@ -327,6 +339,7 @@ class _DocumentViewState extends State<DocumentView>
   void _onPointerUp(PointerUpEvent e) {
     _controller.inputRouter.observe(e);
     _ignored.remove(e.pointer);
+    _palms.remove(e.pointer);
     final tp = _toolPointers.remove(e.pointer);
     if (tp != null) {
       tp.handler.onPointerUp(_canvasEvent(e, eraserButton: tp.last.isEraserButton));
@@ -352,6 +365,7 @@ class _DocumentViewState extends State<DocumentView>
     _controller.inputRouter.observe(e);
     if (_tap?.pointer == e.pointer) _tap = null;
     _ignored.remove(e.pointer);
+    _palms.remove(e.pointer);
     final tp = _toolPointers.remove(e.pointer);
     if (tp != null) {
       tp.handler.onPointerCancel(_canvasEvent(e, eraserButton: tp.last.isEraserButton));

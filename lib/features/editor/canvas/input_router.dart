@@ -58,13 +58,19 @@ double normalizedPressureOf(PointerEvent e) => normalizePressure(
 ///   (useful on the emulator).
 /// * Palm rejection: while a pen is down or hovering, and for
 ///   [palmRejectionWindow] after its last event, new touches are ignored
-///   entirely: they neither draw nor pan/zoom.
+///   entirely: they neither draw nor pan/zoom. Once a pen has been used, a
+///   touch that lands while a rejected one (the resting palm) is still down
+///   is ignored too ([classifyDown]'s `palmResting`).
 ///
 /// Times are pointer event timestamps (one monotonic clock per device).
 class InputRouter {
   InputRouter({
-    this.palmRejectionWindow = const Duration(milliseconds: 300),
+    this.palmRejectionWindow = const Duration(milliseconds: 1000),
   });
+
+  // v1.6.0: 300 ms let the hand scroll the page between words and lines
+  // (Mariam: "the screen is moving as much my hand moves"); the palm lands
+  // again well after the pen lifted.
 
   final Duration palmRejectionWindow;
 
@@ -76,6 +82,9 @@ class InputRouter {
 
   /// True while any pen pointer is in contact.
   bool get stylusDown => _stylusDown.isNotEmpty;
+
+  /// True once a pen has been seen (since the last [reset]).
+  bool get penUsed => _lastStylusEvent != null;
 
   /// Feeds every pointer event (including hover) so pen activity is known.
   void observe(PointerEvent e) {
@@ -100,12 +109,14 @@ class InputRouter {
   }
 
   /// Classifies a new pointer. [touchInUse] is true when another touch
-  /// pointer is already using the tool or navigating.
+  /// pointer is already using the tool or navigating; [palmResting] when a
+  /// touch that was rejected as a palm is still down.
   PointerIntent classifyDown({
     required PointerDeviceKind kind,
     required int buttons,
     required Duration timeStamp,
     bool touchInUse = false,
+    bool palmResting = false,
   }) {
     switch (kind) {
       case PointerDeviceKind.stylus:
@@ -118,6 +129,7 @@ class InputRouter {
       case PointerDeviceKind.touch:
       case PointerDeviceKind.unknown:
         if (rejectsTouchAt(timeStamp)) return PointerIntent.ignore;
+        if (palmResting && penUsed) return PointerIntent.ignore;
         if (drawWithFinger && !touchInUse) return PointerIntent.tool;
         return PointerIntent.navigate;
       case PointerDeviceKind.mouse:

@@ -289,4 +289,80 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(EditorScreen), findsNothing);
   });
+
+  group('palm rejection', () {
+    Offset offsetOf(WidgetTester tester) =>
+        tester.widget<DocumentView>(find.byType(DocumentView)).controller.viewport.offset;
+
+    Future<void> penStroke(WidgetTester tester, Offset at, Duration t) async {
+      final g = await tester.createGesture(kind: PointerDeviceKind.stylus, pointer: 50);
+      await g.down(at, timeStamp: t);
+      for (var i = 1; i <= 5; i++) {
+        await g.moveTo(at + Offset(i * 10.0, 0), timeStamp: t + Duration(milliseconds: i * 10));
+        await tester.pump();
+      }
+      await g.up(timeStamp: t + const Duration(milliseconds: 60));
+      await tester.pump();
+    }
+
+    /// A touch at [at] from [t], dragged up by [dy] in small steps; left down
+    /// unless [lift].
+    Future<TestGesture> drag(WidgetTester tester, Offset at, Duration t,
+        {int pointer = 60, double dy = 150, bool lift = true}) async {
+      final g = await tester.createGesture(kind: PointerDeviceKind.touch, pointer: pointer);
+      await g.down(at, timeStamp: t);
+      for (var i = 1; i <= 10; i++) {
+        await g.moveTo(at - Offset(0, dy * i / 10), timeStamp: t + Duration(milliseconds: 20 * i));
+        await tester.pump();
+      }
+      if (lift) {
+        await g.up(timeStamp: t + const Duration(milliseconds: 220));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 2)); // let any fling end
+      }
+      return g;
+    }
+
+    testWidgets('a hand landing within a second after the pen does not scroll the page', (tester) async {
+      await pumpEditor(tester);
+      final center = tester.getCenter(find.byType(DocumentView));
+      await penStroke(tester, center - const Offset(100, 100), Duration.zero);
+      final before = offsetOf(tester);
+      await drag(tester, center + const Offset(0, 200), const Duration(milliseconds: 700));
+      expect(offsetOf(tester), before, reason: 'the hand moving to the next line');
+
+      // Later, a finger scrolls as usual.
+      await drag(tester, center + const Offset(0, 200), const Duration(seconds: 3), pointer: 61);
+      expect(offsetOf(tester), isNot(before));
+    });
+
+    testWidgets('a palm that moved the page before the pen landed is undone', (tester) async {
+      await pumpEditor(tester);
+      final center = tester.getCenter(find.byType(DocumentView));
+      final before = offsetOf(tester);
+      // The hand rests first and drags the page while the pen approaches.
+      final palm = await drag(tester, center + const Offset(0, 200), Duration.zero, lift: false);
+      expect(offsetOf(tester), isNot(before));
+      await penStroke(tester, center - const Offset(100, 100), const Duration(milliseconds: 1500));
+      expect(offsetOf(tester), before);
+      await palm.up(timeStamp: const Duration(milliseconds: 1700));
+      await tester.pump();
+    });
+
+    testWidgets('while the palm rests, more of the hand does not scroll either', (tester) async {
+      await pumpEditor(tester);
+      final center = tester.getCenter(find.byType(DocumentView));
+      // Resting palm, ignored because the pen was just used.
+      await penStroke(tester, center - const Offset(100, 100), Duration.zero);
+      final palm = await tester.createGesture(kind: PointerDeviceKind.touch, pointer: 70);
+      await palm.down(center + const Offset(50, 250), timeStamp: const Duration(milliseconds: 200));
+      await tester.pump();
+      final before = offsetOf(tester);
+      // Two seconds later another part of the hand touches and moves.
+      await drag(tester, center + const Offset(-50, 200), const Duration(seconds: 2), pointer: 71);
+      expect(offsetOf(tester), before);
+      await palm.up(timeStamp: const Duration(seconds: 3));
+      await tester.pump();
+    });
+  });
 }

@@ -53,9 +53,12 @@ StrokeOptions strokeOptionsFor(Stroke s, {bool isComplete = true}) {
   }
   switch (s.penStyle) {
     case PenStyle.ballpoint:
+      // Pressing harder draws a visibly thicker line (about 0.7x to 1.3x the
+      // width between light and firm pressure). v1.6.0: was 0.25, which
+      // Mariam could not see ("no thicker lines if I pressed harder").
       return StrokeOptions(
         size: s.size,
-        thinning: 0.25,
+        thinning: 0.5,
         smoothing: 0.6,
         streamline: 0.35,
         simulatePressure: simulate,

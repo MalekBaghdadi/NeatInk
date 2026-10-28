@@ -9,7 +9,7 @@ enum StrokeTool { pen, highlighter }
 
 /// How a pen stroke is rendered. Highlighters ignore this.
 enum PenStyle {
-  /// Even width with light pressure response.
+  /// Round ends, width follows pressure (firmer is thicker).
   ballpoint,
 
   /// Strong pressure response and tapered ends.
