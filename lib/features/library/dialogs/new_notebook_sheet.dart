@@ -6,6 +6,7 @@ import '../library_naming.dart';
 import '../widgets/color_swatch_button.dart';
 import '../widgets/paper_preview.dart';
 import 'name_dialog.dart' show maxNameLength;
+import '../../../app/insets.dart';
 
 /// What the user chose in the new-notebook sheet.
 class NewNotebookRequest {
@@ -105,7 +106,8 @@ class _NewNotebookSheetState extends State<NewNotebookSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    // The keyboard while typing the title, else the system navigation bar.
+    final bottomInset = bottomSafeSpace(context, extra: 8);
 
     Widget section(String label, Widget child) => Padding(
           padding: const EdgeInsets.only(top: 20),

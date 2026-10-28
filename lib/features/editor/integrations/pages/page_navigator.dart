@@ -4,6 +4,7 @@ import '../../editor_controller.dart';
 import 'page_ops.dart';
 import 'page_thumbnail.dart';
 import 'paper_picker.dart';
+import '../../../../app/insets.dart';
 
 /// Opens the page grid as a bottom sheet.
 Future<void> showPageNavigator(
@@ -97,7 +98,9 @@ class _PageNavigatorState extends State<PageNavigator> {
               Expanded(
                 child: GridView.builder(
                   key: const ValueKey('page-grid'),
-                  padding: const EdgeInsets.all(16),
+                  padding: _showUndo
+                      ? const EdgeInsets.all(16)
+                      : withBottomSafeSpace(context, const EdgeInsets.all(16)),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 180,
                     mainAxisSpacing: 16,
@@ -119,17 +122,21 @@ class _PageNavigatorState extends State<PageNavigator> {
   Widget _undoBar(BuildContext context) {
     return Material(
       color: Theme.of(context).colorScheme.inverseSurface,
-      child: ListTile(
-        key: const ValueKey('nav-undo-bar'),
-        textColor: Theme.of(context).colorScheme.onInverseSurface,
-        title: const Text('Page deleted'),
-        trailing: TextButton(
-          key: const ValueKey('nav-undo'),
-          onPressed: () {
-            if (_c.canUndo) _c.undo();
-            setState(() => _showUndo = false);
-          },
-          child: const Text('Undo'),
+      // The bar is the last thing in the sheet: clear of the navigation bar.
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomSafeSpace(context)),
+        child: ListTile(
+          key: const ValueKey('nav-undo-bar'),
+          textColor: Theme.of(context).colorScheme.onInverseSurface,
+          title: const Text('Page deleted'),
+          trailing: TextButton(
+            key: const ValueKey('nav-undo'),
+            onPressed: () {
+              if (_c.canUndo) _c.undo();
+              setState(() => _showUndo = false);
+            },
+            child: const Text('Undo'),
+          ),
         ),
       ),
     );

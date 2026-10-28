@@ -10,6 +10,7 @@ import 'widgets/library_content.dart';
 import 'widgets/library_empty_state.dart';
 import 'widgets/library_side_panel.dart';
 import 'widgets/library_title.dart';
+import '../../app/insets.dart';
 
 /// Screen width from which the navigation sits in a side panel instead of
 /// a drawer. Low enough that a tablet in portrait gets the panel too.
@@ -202,6 +203,9 @@ class _NewButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MenuAnchor(
+        // The menu opens over the button near the bottom edge: keep it clear
+        // of the system navigation bar.
+        reservedPadding: menuSafePadding(context),
         menuChildren: [
           MenuItemButton(
             leadingIcon: const Icon(Icons.note_add_outlined),

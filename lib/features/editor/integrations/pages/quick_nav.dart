@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../editor_controller.dart';
 import 'page_ops.dart';
+import '../../../../app/insets.dart';
 
 /// Small floating pill: previous page, "n / total" (tap to jump to a page
 /// number), next page.
@@ -24,7 +25,7 @@ class QuickPageNav extends StatelessWidget {
         return Align(
           alignment: Alignment.bottomLeft,
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: withBottomSafeSpace(context, const EdgeInsets.all(12)),
             child: Material(
               key: const ValueKey('quick-nav'),
               elevation: 3,

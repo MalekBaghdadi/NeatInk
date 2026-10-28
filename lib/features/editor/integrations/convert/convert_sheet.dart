@@ -17,6 +17,7 @@ import 'convert_session.dart';
 import 'sample_share.dart';
 import 'user_lexicon.dart';
 import 'word_crop.dart';
+import '../../../../app/insets.dart';
 
 /// Opens the "Convert to text" sheet and, when the user converts, shows the
 /// confirmation with an Undo action. Resolves when the sheet is gone.
@@ -488,7 +489,8 @@ class _ReviewState extends State<_Review> {
         ),
         const Divider(height: 1),
         Padding(
-          padding: const EdgeInsets.all(12),
+          // Clear of the system navigation bar (the app is drawn edge to edge).
+          padding: withBottomSafeSpace(context, const EdgeInsets.all(12), extra: 4),
           child: SizedBox(
             width: double.infinity,
             child: FilledButton(

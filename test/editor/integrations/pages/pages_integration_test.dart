@@ -54,6 +54,16 @@ Future<EditorController> openEditor(WidgetTester tester,
 }
 
 void main() {
+  testWidgets('the page pill stays above the system navigation bar', (tester) async {
+    await openEditor(tester);
+    // Android draws the app edge to edge, under a 48 px navigation bar.
+    tester.view.padding = const FakeViewPadding(bottom: 48);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+    await tester.pump();
+    final pill = tester.getRect(find.byKey(const ValueKey('quick-nav')));
+    expect(pill.bottom, lessThanOrEqualTo(1400 - 48 - 12));
+  });
+
   testWidgets('delete is undoable and keeps the ink', (tester) async {
     final c = await openEditor(tester);
     final ops = PageOps(c);
