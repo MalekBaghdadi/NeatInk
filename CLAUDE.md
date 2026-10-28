@@ -189,14 +189,14 @@ Implement in Kotlin with PdfBox-Android, called from Dart through a `MethodChann
 Mark them `[x]` here as you finish them. After each milestone, build an APK and list what the owner should test on the tablet.
 
 - [x] **M0 — Project setup.** In *this* folder (it already holds CLAUDE.md and docs/, so keep them): `flutter create --org com.neatink --project-name neatink --platforms=android .`, add lints (`flutter_lints`, strict analysis options), folder structure, Riverpod, remove `INTERNET` from the release manifest, landscape + portrait. Builds a release APK.
-- [ ] **M1 — Ink canvas.** One blank page; stylus drawing with `perfect_freehand`; pressure; pen/finger separation; pan/zoom; a debug screen that shows raw pointer info from the M-Pencil.
-- [ ] **M2 — Notebooks & storage.** Library screen, create/rename/delete, multiple pages, paper types, autosave/load, atomic writes, thumbnails.
-- [ ] **M3 — Tools.** Highlighter, stroke eraser, lasso (move/resize/delete/recolor), colors/widths, undo/redo command stack.
-- [ ] **M4 — Tidy, part 1 (geometry).** Pure-Dart `beautify/` package: resampling, word segmentation, baseline/skew, x-height, slant estimation, with unit tests on synthetic words. Debug overlay showing what was detected. **No changes to the ink yet.**
-- [ ] **M5 — Tidy, part 2 (apply).** Deskew, slant correction, size normalization, baseline snapping, per-stroke alignment, spacing, animation, undo integration, toggle and strength settings, "Restore original".
-- [ ] **M6 — PDF import & viewing.** pdfrx backgrounds, lazy page rendering, ink on PDFs, tidy in blank-paper mode.
-- [ ] **M7 — PDF export.** Kotlin PdfBox channel, vector ink, highlighter alpha, rotation handling, save/share.
-- [ ] **M8 — Polish.** Performance pass on the device, app icon, empty states, error messages, settings screen, final release APK.
+- [x] **M1 — Ink canvas.** One blank page; stylus drawing with `perfect_freehand`; pressure; pen/finger separation; pan/zoom; a debug screen that shows raw pointer info from the M-Pencil.
+- [x] **M2 — Notebooks & storage.** Library screen, create/rename/delete, multiple pages, paper types, autosave/load, atomic writes, thumbnails.
+- [x] **M3 — Tools.** Highlighter, stroke eraser, lasso (move/resize/delete/recolor), colors/widths, undo/redo command stack.
+- [x] ~~**M4 — Tidy, part 1 (geometry).**~~ Built, then the tidy pipeline was removed in session 4 (replaced by Convert to text); the geometry helpers stay for recognition. Pure-Dart `beautify/` package: resampling, word segmentation, baseline/skew, x-height, slant estimation, with unit tests on synthetic words. Debug overlay showing what was detected. **No changes to the ink yet.**
+- [x] ~~**M5 — Tidy, part 2 (apply).**~~ Built, then removed in session 4. Deskew, slant correction, size normalization, baseline snapping, per-stroke alignment, spacing, animation, undo integration, toggle and strength settings, "Restore original".
+- [x] **M6 — PDF import & viewing.** pdfrx backgrounds, lazy page rendering, ink on PDFs, tidy in blank-paper mode.
+- [x] **M7 — PDF export.** Kotlin PdfBox channel, vector ink, highlighter alpha, rotation handling, save/share.
+- [x] **M8 — Polish.** Performance pass on the device, app icon, empty states, error messages, settings screen, final release APK. (Everything except the on-device performance pass: nothing has been run on the MatePad yet, see "Start here".)
 
 ## Testing & definition of done
 
@@ -241,7 +241,26 @@ Signing: for now, the default Flutter template signs release builds with the deb
 
 **Session 4 (2026-10-27): auto-tidy was removed.** After alpha testing, the owner replaced it with a planned "convert handwriting to typed text" feature (v1.1, plan in `~/.claude/plans/shimmering-kindling-thacker.md`). Removed: `integrations/tidy/`, the toolbar `TidyToggle`, the settings `tidyEnabled`/`tidyStrength`/`slantMode`/`debugOverlay`, `Stroke.wordId` and `TidyInfo`, and the tidy pipeline files in `lib/beautify/` (`tidy_pipeline`, `transform`, `smoothing`, `word_segmenter`, `line_context`). Kept: `lib/beautify/{features,stats,resample,tidy_config}.dart` (reused by recognition) and their tests. Old saved prefs and page JSON that contain the removed keys still load (unknown keys are ignored). Sections below that describe tidy are historical.
 
-_Last updated 2026-10-28 by Claude (session 7). Keep this section current: update it whenever something here changes._
+_Last updated 2026-10-28 by Claude (end of session 7). Keep this section current: update it whenever something here changes._
+
+## Start here (state at the end of session 7)
+
+- **Released: v1.5.0** (pubspec `1.5.0+7`, `AppInfo`), published 2026-10-28 17:03 UTC. Download: `https://github.com/MalekBaghdadi/NeatInk/releases/latest/download/MariamsNotes.apk` (arm64, 43 MB; `MariamsNotes-armeabi-v7a.apk` and `SHA256SUMS.txt` beside it). `main` = the released code. The app is **Mariam's Notes**, used by the owner's cousin Mariam (neuroscience/psychology student) on the MatePad.
+- **What the app has** (v1.0-1.5): notebooks with 7 paper types, pens/highlighter/erasers/lasso/shapes, text boxes and pictures, folders/tags/search/PIN lock/dark mode, PDF import + margins + export, Convert to text (PP-OCRv5 line recogniser + decoder + My words), Auto-convert (delay setting, held unsure lines, joins sentences), Autocorrect with tap-to-undo, Typed text settings (even size, join lines), tidy highlighter, notebook covers. Details per version in the session sections below.
+- **NOTHING has been verified on the tablet** from v1.0 to v1.5 (the owner had not reported a full test yet). Treat every feature as unverified on the device; the riskiest are PDF export (PdfBox-Android, margins only checked on the JVM with Apache PDFBox), ONNX Runtime speed on the Huawei device, M-Pencil pressure/palm rejection, autocorrect taps and the line-joining thresholds.
+- **Working in a cloud session** (no PC): Flutter 3.47.8 is not preinstalled; unpack it to `/opt/flutter` and call `/opt/flutter/bin/flutter` (`~/.bashrc` edits are blocked). `flutter analyze` and `flutter test --timeout 60s` run in the real project (gcc builds pdfrx's PDFium hook): **1303 pass, 2 skipped** at v1.5.0. There is no Android SDK, so no local APK builds; Kotlin can be checked on the JVM with Gradle + Apache PDFBox (same API as PdfBox-Android, package `org.apache.pdfbox`; see the session-7 margins note). Visual checks: render widgets to PNG in a temporary test with real fonts loaded by `FontLoader` (delete before committing).
+- **How to release from a cloud session**: the git proxy answers 403 to tag pushes, so (1) bump `version:` in pubspec.yaml and `AppInfo` (keep the build number increasing), (2) push `main`, (3) start `release.yml` by hand with the GitHub MCP tool `actions_run_trigger` (`run_workflow`, `ref: main`, `inputs: {"version": "vX.Y.Z"}`). The workflow checks the version against pubspec, builds and signs the split APKs, creates the tag with the release. From the PC, pushing a `vX.Y.Z` tag still works. Never move or delete a published tag.
+- Commits from session 7 went to branch `claude/v1.4.0-mariam` first and were fast-forwarded into `main` for each release.
+
+## Next steps (suggested to the owner at the end of session 7, in order)
+
+1. **Tablet test pass with Mariam.** Write one combined ~20-minute checklist covering v1.0-1.5 (M-Pencil pressure, palm rejection, eraser end; autosave after swiping the app away; PIN lock; PDF import, margins and export opened in another app with text still selectable; Convert and Auto-convert accuracy and speed; autocorrect tap/undo/keep; joining a sentence over 2-3 lines and that short list lines are NOT joined; even size on lined paper; covers incl. photo; tidy highlighter; a 50-page notebook scrolling). Fix what she finds before adding features.
+2. **Backup & restore (recommended; the owner declined it earlier, so ask again).** All notes live only in the app's private storage on one tablet: uninstalling, a broken tablet, or an update signed with another key loses everything, and PDF export cannot be brought back as editable notes. Proposal: Settings > "Back up all notebooks" writes one file (a zip of `notebooks/` + `library.json` + settings) through the Storage Access Framework save dialog; "Restore from backup" reads it back (merge by notebook id, never overwrite silently). Fully offline. Also remind the owner to back up the signing keystore (`~/Documents/MariamNotes-keystore/` on the PC): without it no update can install over the current app.
+3. **Calibrate recognition on Mariam's real writing.** Ask for 2-3 pages she corrects in the review sheet (exactly what she wrote) and shares with "Share samples" (format 2). Measure CER/WER on 100+ lines (desktop pipeline in the session-6 notes), then tune `ConvertConfig.autoMinConfidence`, `lowConfidenceThreshold`, the decoder weights and the join thresholds (`ConvertConfig.join*`); fine-tune the 7.8 MB recogniser on her lines only if accuracy is still short.
+4. **Local diagnostics.** An offline error log (caught exceptions, failed exports, recogniser errors; capped size, in app storage) and a "Share diagnostics" button in Settings that the user sends herself. Nothing leaves the device automatically, so the offline rule holds.
+5. **Run the tests in CI.** `release.yml` runs `flutter analyze` but not `flutter test`; add the test step (with `--timeout`) before the build so a broken version cannot be published.
+6. **A short Tips screen** (shown once, then in Settings): pen writes / finger scrolls, Auto and the Typed text button next to it, tap an underlined word to undo autocorrect, lasso "Restore original", PDF margins in the editor menu.
+7. Smaller: PDF export drops the source PDF's bookmarks and form fields; PDF page thumbnails in the page grid are white (no PDF render); the convert size slider stays active-looking while "Even size" is chosen (could be dimmed).
 
 ## Owner decisions so far
 
@@ -286,7 +305,7 @@ _Last updated 2026-10-28 by Claude (session 7). Keep this section current: updat
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
-## Session 7 (2026-10-28, cloud session): v1.4.0 Mariam's first page, auto-convert, system bars (read this first)
+## Session 7 (2026-10-28, cloud session): v1.4.0 and v1.5.0 (details; the summary is in "Start here")
 
 - **v1.3.0 was released** (tag `v1.3.0`, GitHub Release published 2026-10-28 09:43 UTC).
 - **Environment**: this session ran in a Linux cloud container, not on the owner's PC. Flutter 3.47.8 was unpacked to `/opt/flutter` (call `/opt/flutter/bin/flutter`; `~/.bashrc` edits are blocked); no test mirror is needed there because gcc/clang build pdfrx's PDFium hook, so `flutter test` runs in the real project (1212 pass, 2 skipped). There is no Android SDK, so APKs come only from the tag workflow. The container is wiped between sessions: the owner can add the Flutter download to the environment's setup script. Desktop ONNX checks used a Python venv (numpy, pillow, onnxruntime) in the session scratchpad.
@@ -300,7 +319,7 @@ _Last updated 2026-10-28 by Claude (session 7). Keep this section current: updat
   - *Covers*: library menu "Cover…" and the new-notebook sheet open a cover sheet (16 colours, 9 patterns, 16 science pictures in 4 subjects drawn in code in `render/cover_painter.dart`, or a photo normalised to 1200 px).
   - *PDF margins*: None / Narrow (25% of the PDF page width per side) / Wide (50%), asked at import (last choice remembered in `AppSettings.pdfMargins`) and changeable from the editor menu ("PDF margins…", one undo step, notes move with their page, asks before hiding notes). Export grows the imported page's visible box on the displayed sides (`PdfMargins.kt`, `PdfCoords.withSideMargins`, mirrored and tested in `pdf_coords.dart`) and clips the original content to its old box; verified on the JVM with Apache PDFBox 2.0.32 + PDFium render for 0/90/270 degree pages and an offset CropBox, NOT on the device (PdfBox-Android).
   - Full suite: 1272 pass, 2 skipped. Not verified on the tablet: all of the above.
-  - Release: `main` was pushed from the cloud session, but its git proxy answers **403 to tag pushes**, so the owner pushes the tag from the PC (`git fetch origin && git tag v1.4.0 origin/main && git push origin v1.4.0`).
+  - Release: the cloud session's git proxy answers **403 to tag pushes**; `release.yml` got a manual start with a `version` input that creates the tag (see "Start here"). v1.4.0 was released that way.
 - **v1.5.0 Typed text (owner request after trying auto-convert)**: `ConvertStylePrefs.sizeMode` (`ConvertSizeMode.even` default / `handwriting` / `custom`; old saved 'auto' reads as even) and `joinLines` (default on). Even size = `evenFontSize(ruling)`: ruling x `ConvertConfig.evenSizeOfRuling` (0.62: 26 pt lines -> 16 pt), 16 pt without lines; even and custom sizes wrap at the right margin instead of shrinking (only a collision with the line below still shrinks). Joining: `continuesOnNextLine` (no sentence end, ink within max(20% page width, 8 x-heights) of the right edge, next line starts within 4 x-heights of the left, at most 1.6 rulings / 5.5 x-heights lower) merges lines in `layoutPage` (`LaidOutLine.members`) and, across auto-convert passes, `planMerge(joinLines:)` appends to the box above (wrapping). The "Typed text" sheet (`convert_style_sheet.dart`, shared `ConvertStyleControls`) opens from the tune button next to Auto (`EditorExtensions.convertSettings`) and Settings > Typed text, with nothing to convert too; it also holds Auto-convert on/off, the wait and Autocorrect. Thresholds untested on real writing: ask Mariam whether list items get joined by mistake.
 - **v1.5.0 Autocorrect (iPad style, owner request)**: Settings > "Autocorrect" (`AppSettings.autocorrect`, JSON key `autocorrect`, ON by default; it replaces "Fix spelling automatically"/`autoFixSpelling`, whose old saved value is ignored, so everyone starts with it on). Fixes from `TextPolisher` (spelling, apostrophes, capitals, a/an both ways, `could of` -> `could have`, `their is` -> `there is`, `alot`, repeated words) are applied when handwriting becomes text (sheet and auto-convert); every non-capital fix is recorded on its box (`TextItem.corrections`, `locateCorrections` in `convert_plan.dart`, carried through auto-convert merges). The text layer draws a dotted blue underline (screen only). A pen tap or quick finger tap on the word (`EditorExtensions.pageTapHandlers`, tap detection in `InkToolHandler` and `DocumentView`) opens a bubble (`integrations/autocorrect/`): "undo-arrow + written word" puts it back (one undo step, and a spelling fix taken back is learned in My words), the tick keeps it and removes the mark. Not verified on the tablet.
 
@@ -378,29 +397,6 @@ Commits: `c72d25b` project brief; `6a7126b` M0 scaffold and shared contracts; th
 - Each agent checks only its own files with `flutter analyze <paths>` and runs only its own tests.
 - Partial work from an agent that was cut off is continued, not rewritten: read what exists first.
 
-## Next steps (in order)
+## Original build plan (session 1)
 
-1. Install the NDK (see Toolchain) and get `flutter build apk --debug` building.
-2. Make `flutter test` work in the real project (VS Build Tools C++ is approved), then run every existing test.
-3. Finish the wave-1 areas with Sonnet agents, 2–3 at a time, each continuing the partial work in its own folders:
-   - the tidy engine, built in full and passing every test in the spec's table;
-   - `EditorScreen` and the editor tests;
-   - the tool-logic fixes and tests;
-   - the Kotlin `PdfExportPlugin`, its registration, and `test/pdf`;
-   - shell and library tests passing.
-4. Integration gate: whole-project `flutter analyze` with 0 issues, all tests passing, a debug APK that builds, and the app launching (an emulator is optional; the network is slow).
-5. Wave 2: the editor features listed in the table.
-6. Review pass:
-   - no `INTERNET` permission in the **merged release** manifest (check the built APK with `apkanalyzer manifest permissions`) and no storage permissions;
-   - every dependency's license is allowed;
-   - never-lose-ink paths (raw kept, atomic saves, flush on pause);
-   - performance (lazy pages, cached pictures).
-7. Release:
-   - app icon and version 1.0.0;
-   - signing (see above);
-   - `flutter build apk --release --split-per-abi` plus a universal APK;
-   - a README with a big "Download APK" link;
-   - create the public repo and push (ask first);
-   - a GitHub Release with the APK assets (stable asset name for `releases/latest/download/NeatInk.apk`);
-   - `.github/workflows/release.yml` (needs the `workflow` scope).
-8. Give the owner a "test this on the tablet" checklist covering the M-Pencil (pressure, palm rejection, eraser end), tidy, PDF import and export, autosave after swiping the app away, and the app lock.
+Done: NDK, tests in the real project, waves 1 and 2, the review pass and the v1.0.0 release (sessions 2-3). The current next steps are in "Start here" at the top of this section.
