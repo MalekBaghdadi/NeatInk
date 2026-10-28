@@ -601,11 +601,73 @@ void main() {
         final h = await twoLines(tester, join: false);
         expect(texts(h), ['hello online fire when they reach threshold', 'second']);
       });
+
+      // Like the owner's page (v1.6.0): short lines, big writing two ruled
+      // lines apart, written one after the other.
+      Future<ConvertHarness> shortLines(WidgetTester tester, String first, String second) async {
+        final h = await ConvertHarness.open(tester,
+            recognizer: reader({'aw0': (first, 0.9), 'bw0': (second, 0.9)}),
+            autoConvert: true,
+            prefsValues: {
+              ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs().toJson()),
+            });
+        await h.write(writeLine('a', ['hello'], y: 104));
+        await wait(tester, 1100);
+        await h.write(writeLine('b', ['hello'], y: 156));
+        await wait(tester, 1100);
+        return h;
+      }
+
+      testWidgets('a short line joins the box above when the words carry on', (tester) async {
+        final h = await shortLines(tester, 'I am the danger. When', 'a man gets knocked');
+        expect(texts(h), ['I am the danger. When a man gets knocked']);
+      });
+
+      testWidgets('a list written one word per line stays a list', (tester) async {
+        final h = await shortLines(tester, 'brain', 'neurons');
+        expect(texts(h), ['brain', 'neurons']);
+      });
+    });
+
+    testWidgets('text appended on a line never covers the line below it', (tester) async {
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader({
+            'aw0': ('Small case', 0.9),
+            'bw0': ('Okay this time', 0.9),
+            'cw0': ('why is there no spacing we need to add more words here to wrap', 0.9),
+          }),
+          autoConvert: true,
+          prefsValues: {
+            ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs().toJson()),
+          });
+      final first = writeLine('a', ['hello'], y: 104);
+      await h.write(first);
+      await wait(tester, 1100);
+      await h.write(writeLine('b', ['hello'], y: 130));
+      await wait(tester, 1100);
+      expect(texts(h), ['Small case', 'Okay this time']);
+      // Goes on on the first line: joined there, the text would wrap onto
+      // the second line, over "Okay this time".
+      await h.write(writeLine('c', ['hello'], x: rightOf(first) + 16, y: 104));
+      await wait(tester, 1100);
+      final boxes = h.page.texts;
+      for (var i = 0; i < boxes.length; i++) {
+        for (var j = i + 1; j < boxes.length; j++) {
+          final a = boxes[i], b = boxes[j];
+          final overlap = Rect.fromLTWH(a.x, a.y, a.width, a.height)
+              .deflate(0.5)
+              .overlaps(Rect.fromLTWH(b.x, b.y, b.width, b.height).deflate(0.5));
+          expect(overlap, isFalse, reason: '"${a.text}" and "${b.text}"');
+        }
+      }
+      expect(boxes.map((t) => t.text), contains('Okay this time'));
+      expect(h.page.strokes, isEmpty);
     });
 
     testWidgets('a word on another baseline starts a box of its own',
         (tester) async {
-      final h = await twoWords(tester, y2: 116);
+      // One ruled line lower (12 points lower is still the same ruled line).
+      final h = await twoWords(tester, y2: 130);
       await wait(tester, 1100);
       expect(texts(h), ['hello', 'second']);
     });
@@ -1005,8 +1067,9 @@ void main() {
       await tester.pump();
       await tester.tap(key('convert-close'));
       await tester.pump(const Duration(milliseconds: 400));
+      // As the harness set it up (joining off), nothing else.
       expect(h.container.read(convertStylePrefsProvider),
-          const ConvertStylePrefs());
+          const ConvertStylePrefs(joinLines: false));
     });
   });
 }

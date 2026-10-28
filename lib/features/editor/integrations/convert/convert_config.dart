@@ -48,20 +48,27 @@ abstract final class ConvertConfig {
   /// (the default) give 16 pt text, about as big as handwriting on them.
   static const double evenSizeOfRuling = 0.62;
 
-  /// Joining lines into sentences: a line continues on the next when its
-  /// writing ends closer to the right page edge than this fraction of the
-  /// page width (or this many x-heights, if more)...
+  /// Joining lines into sentences (`continuesOnNextLine`): the next line
+  /// starts at most this many x-heights right of where the line started...
+  static const double joinIndentXHeights = 4;
+
+  /// ...its baseline is at most this many rulings (or x-heights on paper
+  /// without lines) lower: 2.6 lets a writer skip one ruled line between
+  /// lines, as Mariam and the owner do with big handwriting (v1.6.0; it was
+  /// 1.6 and 5.5, so their sentences never joined)...
+  static const double joinMaxRulings = 2.6;
+  static const double joinMaxXHeights = 8;
+
+  /// ...and either the writing ended closer to the right page edge than
+  /// this fraction of the page width (or this many x-heights, if more)...
   static const double joinEdgeFraction = 0.2;
   static const double joinEdgeXHeights = 8;
 
-  /// ...the next line starts at most this many x-heights right of where the
-  /// line started...
-  static const double joinIndentXHeights = 4;
-
-  /// ...and its baseline is at most this many rulings (or x-heights on
-  /// paper without lines) lower.
-  static const double joinMaxRulings = 1.6;
-  static const double joinMaxXHeights = 5.5;
+  /// ...or the words carry on (`textCarriesOn`): the line ends on a word no
+  /// sentence ends on, or the next line starts in lowercase and the lines
+  /// have at least this many words (fewer is a list: `brain` / `neurons`).
+  static const int joinMinWords = 3;
+  static const int joinMinNextWords = 2;
 
   /// Space kept free at the right page edge (points).
   static const double rightMargin = 24;
@@ -130,17 +137,27 @@ abstract final class ConvertConfig {
 
   /// A new auto-converted line is appended to a text box on the page instead
   /// of starting a second one when it sits on the same baseline (within this
-  /// many x-heights)...
-  static const double mergeBaselineTol = 0.6;
+  /// many x-heights, or on the same ruled line)...
+  ///
+  /// v1.6.0: 0.6 -> 1.0 and 2.5 -> 4: on the tablet a short word's baseline
+  /// and the end of the earlier writing were too uncertain for the tight
+  /// numbers, so the next words of a sentence got a box of their own with a
+  /// gap ("the gap is still here").
+  static const double mergeBaselineTol = 1.0;
 
-  /// ...and starts this close (x-heights) after where the box's typed text
-  /// ends (or, for a box auto-convert made, where the handwriting it
-  /// replaced ended)...
-  static const double mergeMaxGap = 2.5;
+  /// ...and starts at most this many x-heights after where the handwriting
+  /// the box replaced ended (anywhere over the space it left is fine)...
+  static const double mergeMaxGap = 4;
 
-  /// ...or at most this far over its last letter (the pen lands a little
+  /// ...and at most this far over the typed text's last letter, or this far
+  /// over where the replaced handwriting ended (the pen lands a little
   /// early).
   static const double mergeOverlap = 0.5;
+  static const double mergeInkOverlap = 1.5;
+
+  /// For a box whose handwriting end is not remembered, the writing is
+  /// assumed at most this many times wider than its typed text.
+  static const double maxInkWidthScale = 3;
 
   /// Ink colour overrides offered next to "Keep my ink colour".
   static const List<int> colorChoices = [

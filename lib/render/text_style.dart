@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/painting.dart';
 
 import '../document/page_items.dart';
@@ -19,8 +21,10 @@ import '../document/page_items.dart';
 /// lacks a file for the requested style does the engine fake it.
 String fontFamilyFor(FontKind font) => font.family;
 
-/// The text style of [item]: font size in points, colour, bold, italic and
-/// underline.
+/// The text style of [item]: font size in points, colour, bold, italic,
+/// underline, and the line spacing when the box has one
+/// ([TextItem.lineSpacing]; never tighter than the font size, so lines
+/// cannot overlap).
 ///
 /// [TextStyle.inherit] is false on purpose: the box must not pick up the
 /// ambient `DefaultTextStyle` (Material's body style adds letter spacing and
@@ -32,6 +36,10 @@ TextStyle textStyleFor(TextItem item) {
     color: color,
     fontFamily: fontFamilyFor(item.font),
     fontSize: item.fontSize,
+    height: switch (item.lineSpacing) {
+      final double s when item.fontSize > 0 => math.max(s / item.fontSize, 1.0),
+      _ => null,
+    },
     fontWeight: item.bold ? FontWeight.w700 : FontWeight.w400,
     fontStyle: item.italic ? FontStyle.italic : FontStyle.normal,
     letterSpacing: 0,

@@ -100,6 +100,7 @@ class TextItem {
     this.font = FontKind.sans,
     this.background = 0x00000000,
     this.corrections = const [],
+    this.lineSpacing,
   });
 
   factory TextItem.fromJson(Map<String, dynamic> j) => TextItem(
@@ -122,6 +123,10 @@ class TextItem {
             if (c is Map<String, dynamic> && c['at'] is num && c['from'] is String && c['to'] is String)
               TextCorrection.fromJson(c),
         ],
+        lineSpacing: switch (j['lineSpacing']) {
+          final num v when v.isFinite && v > 0 => v.toDouble(),
+          _ => null,
+        },
       );
 
   final String id;
@@ -151,6 +156,11 @@ class TextItem {
   /// Words autocorrect changed (see [TextCorrection]); use
   /// [liveCorrections], which skips any the text no longer holds.
   final List<TextCorrection> corrections;
+
+  /// Distance between the baselines of wrapped lines, in points, or null for
+  /// the font's own line height (v1.6.0). Handwriting converted on ruled
+  /// paper uses the ruling, so every wrapped line sits on a ruled line.
+  final double? lineSpacing;
 
   /// The [corrections] still in [text].
   List<TextCorrection> get liveCorrections => [
@@ -193,6 +203,7 @@ class TextItem {
     FontKind? font,
     int? background,
     List<TextCorrection>? corrections,
+    double? lineSpacing,
   }) =>
       TextItem(
         id: id ?? this.id,
@@ -214,6 +225,7 @@ class TextItem {
             (text == null || text == this.text
                 ? this.corrections
                 : remapCorrections(this.text, text, this.corrections)),
+        lineSpacing: lineSpacing ?? this.lineSpacing,
       );
 
   Map<String, dynamic> toJson() => {
@@ -233,6 +245,7 @@ class TextItem {
         'background': colorToHex(background),
         if (liveCorrections.isNotEmpty)
           'corrections': [for (final c in liveCorrections) c.toJson()],
+        if (lineSpacing != null) 'lineSpacing': lineSpacing,
       };
 }
 

@@ -155,20 +155,55 @@ void main() {
       expect(p.before.text, 'hello');
     });
 
-    test('the gap must be from 0 up to 2.5 x-heights', () {
+    test('it starts after the typed text (or a little over where the ink ended), up to 4 x-heights after the ink', () {
+      // Typed text ends at 140, the ink ended at 200: the writer may go on
+      // anywhere from just after the text to 40 after the ink.
       expect(plan(line(left: 200)), isNotNull, reason: 'touching');
-      expect(plan(line(left: 224.9)), isNotNull);
-      expect(plan(line(left: 225)), isNull);
-      expect(plan(line(left: 199.9)), isNull, reason: 'starts before the end');
+      expect(plan(line(left: 150)), isNotNull, reason: 'over the space the ink left');
+      expect(plan(line(left: 239.9)), isNotNull);
+      expect(plan(line(left: 240)), isNull);
+      expect(plan(line(left: 134.9)), isNull, reason: 'starts over the typed text');
       // The tolerance follows the x-height of the new writing.
-      expect(plan(line(left: 240, xHeight: 20)), isNotNull);
+      expect(plan(line(left: 270, xHeight: 20)), isNotNull);
     });
 
-    test('the baselines must agree within 0.6 x-heights', () {
-      expect(plan(line(baseline: 105.9)), isNotNull);
-      expect(plan(line(baseline: 94.1)), isNotNull);
-      expect(plan(line(baseline: 106)), isNull);
-      expect(plan(line(baseline: 94)), isNull);
+    test('the baselines must agree within 1 x-height (of the ink or of the typed text)', () {
+      // Ink baseline 100, typed baseline 96.8.
+      expect(plan(line(baseline: 109.9)), isNotNull);
+      expect(plan(line(baseline: 86.9)), isNotNull);
+      expect(plan(line(baseline: 110)), isNull);
+      expect(plan(line(baseline: 86.7)), isNull);
+    });
+
+    test('on ruled paper the same ruled line is the same line', () {
+      const ruling = PageRuling([100, 126, 152], 26);
+      MergePlan? ruled(double baseline) => planMerge(
+            boxes: [box()],
+            liveItem: (_) => item(),
+            line: line(baseline: baseline),
+            text: 'world',
+            pageWidth: pageWidth,
+            metrics: metrics,
+            ruling: ruling,
+          );
+      expect(ruled(111), isNotNull, reason: 'more than an x-height off, still nearest rule 100');
+      expect(ruled(115), isNull, reason: 'nearer the next ruled line');
+    });
+
+    test('another box between the text and the new writing stops it', () {
+      // Centred, so it cannot be continued itself.
+      const between = TextItem(
+          id: 'other', x: 160, y: 84, width: 30, height: 19.2, text: 'x', fontSize: 16, align: TextAlignKind.center);
+      final p = planMerge(
+        boxes: [box()],
+        liveItem: (id) => id == 'i1' ? item() : between,
+        pageTexts: [item(), between],
+        line: line(left: 200),
+        text: 'world',
+        pageWidth: pageWidth,
+        metrics: metrics,
+      );
+      expect(p, isNull);
     });
 
     test('a box that already took a line this pass is skipped', () {
@@ -191,7 +226,8 @@ void main() {
       // The live box is the grown one: compared with where its ink ended.
       expect(plan(line(left: 310), boxes: [b], live: (_) => grown)!.after.text,
           'hello world world');
-      expect(plan(line(left: 220), boxes: [b], live: (_) => grown), isNull);
+      // Compared with the grown box: its typed text ends at 188.
+      expect(plan(line(left: 150), boxes: [b], live: (_) => grown), isNull);
     });
 
     group('any one-line box on the page', () {
@@ -210,7 +246,9 @@ void main() {
         final p = onPage(line(left: 150), item())!;
         expect(p.after.text, 'hello world');
         expect(p.after.x, 100);
-        expect(onPage(line(left: 150), item())!.base.inkRight, 140);
+        // Where its ink ended is estimated: writing with x-height 10 is
+        // 10 / (16 * 0.52) times as wide as the 40 points of typed text.
+        expect(p.base.inkRight, closeTo(100 + 40 * 10 / (16 * 0.52), 1e-9));
       });
 
       test('exactly one space between the old and the new text', () {
@@ -218,16 +256,18 @@ void main() {
         expect(p.after.text, 'hello world');
       });
 
-      test('from half an x-height over the last letter to 2.5 after it', () {
-        expect(onPage(line(left: 136), item()), isNotNull);
-        expect(onPage(line(left: 130), item()), isNull);
-        expect(onPage(line(left: 164), item()), isNotNull);
-        expect(onPage(line(left: 166), item()), isNull);
+      test('from a little over the estimated end of its ink to 4 x-heights after it', () {
+        // Estimated ink end 148.08: from 133.08 to 188.08.
+        expect(onPage(line(left: 133.1), item()), isNotNull);
+        expect(onPage(line(left: 133), item()), isNull);
+        expect(onPage(line(left: 188), item()), isNotNull);
+        expect(onPage(line(left: 188.1), item()), isNull);
       });
 
-      test('on its baseline (y + first baseline = 84 + 12.8)', () {
+      test('on its baseline (y + first baseline = 84 + 12.8), within an x-height', () {
         expect(onPage(line(left: 150, baseline: 96.8), item()), isNotNull);
-        expect(onPage(line(left: 150, baseline: 104), item()), isNull);
+        expect(onPage(line(left: 150, baseline: 106.7), item()), isNotNull);
+        expect(onPage(line(left: 150, baseline: 106.8), item()), isNull);
       });
 
       test('centred, right-aligned, gone or taken boxes are left alone', () {
@@ -297,7 +337,7 @@ void main() {
     test('a slanted baseline is compared where the new line starts', () {
       // The baseline at the left edge is what counts, not further along.
       expect(plan(line(slope: 0.5)), isNotNull);
-      expect(plan(line(slope: 0.5, baseline: 107)), isNull);
+      expect(plan(line(slope: 0.5, baseline: 110.1)), isNull);
     });
   });
 }

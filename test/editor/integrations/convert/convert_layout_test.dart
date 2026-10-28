@@ -24,7 +24,7 @@ class FakeMetrics extends ConvertTextMetrics {
   @override
   double heightOf(TextItem item) {
     final lines = (naturalWidth(item) / item.width).ceil().clamp(1, 1 << 20);
-    return lines * lh * item.fontSize;
+    return lines * (item.lineSpacing ?? lh * item.fontSize);
   }
 }
 
@@ -285,31 +285,72 @@ void main() {
       expect(out[0].collides, isFalse);
     });
 
-    test('a stack of tight lines never overlaps', () {
+    test('a stack of tight lines never overlaps: matching the handwriting it shrinks', () {
       final lines = [
         for (var i = 0; i < 6; i++)
           input('l$i', 'some words of text number $i',
               geo(baseline: 200.0 + i * 22, xHeight: 12)),
       ];
-      final out = layout(lines, style: const ConvertStyle(fixedSize: 30));
+      final out = layout(lines);
       expect(out, hasLength(6));
       for (var i = 0; i + 1 < out.length; i++) {
         final a = out[i].item, b = out[i + 1].item;
         expect(a.y + a.height, lessThanOrEqualTo(b.y + 0.01), reason: 'line $i');
         expect(out[i].collides, isFalse);
       }
-      expect(out.any((l) => l.item.fontSize < 30), isTrue);
     });
 
-    test('a line stays clear of an unchecked line below it', () {
+    test('a stack of tight lines never overlaps: a chosen size stays and the boxes move down', () {
+      final lines = [
+        for (var i = 0; i < 6; i++)
+          input('l$i', 'some words of text number $i',
+              geo(baseline: 200.0 + i * 22, xHeight: 12)),
+      ];
+      for (final style in const [ConvertStyle(fixedSize: 30), ConvertStyle(evenSize: true)]) {
+        final out = layout(lines, style: style);
+        expect(out, hasLength(6));
+        expect(out.map((l) => l.item.fontSize).toSet(), hasLength(1), reason: 'one size');
+        for (var i = 0; i + 1 < out.length; i++) {
+          final a = out[i].item, b = out[i + 1].item;
+          expect(a.y + a.height, lessThanOrEqualTo(b.y + 0.01), reason: 'line $i');
+          expect(out[i].collides, isFalse);
+        }
+      }
+    });
+
+    test('pushed down on ruled paper, a box lands on the next free ruled line', () {
+      final ruling = lined();
+      final r = ruling.baselines;
+      final out = layout([
+        input('a', 'x' * 60, geo(baseline: r[4], left: 100)),
+        input('b', 'next line', geo(baseline: r[5], left: 100)),
+      ], style: const ConvertStyle(evenSize: true), ruling: ruling);
+      expect(out[0].fit, ConvertFit.wrapped);
+      expect(out[0].item.height, closeTo(2 * ruling.spacing, 1e-9), reason: 'two lines, one ruling apart');
+      expect(out[1].baselineY, r[6], reason: 'the wrapped line took rule 5');
+      expect(out[1].snapped, isTrue);
+    });
+
+    test('a line stays clear of an unchecked line below it (matching the handwriting)', () {
       final lines = [
         input('a', 'hello there', geo(baseline: 300, xHeight: 12)),
         input('b', 'ink stays', geo(baseline: 318, xHeight: 12, inkTop: 306), include: false),
       ];
-      final out = layout(lines, style: const ConvertStyle(fixedSize: 30));
+      final out = layout(lines);
       expect(out, hasLength(1));
       final a = out.single.item;
       expect(a.y + a.height, lessThanOrEqualTo(306 + 0.01));
+    });
+
+    test('an even or chosen size is never made smaller for the writing around it', () {
+      final lines = [
+        input('a', 'hello there', geo(baseline: 300, xHeight: 12)),
+        input('b', 'ink stays', geo(baseline: 318, xHeight: 12, inkTop: 306), include: false),
+        input('c', 'tight', geo(baseline: 330, xHeight: 12)),
+      ];
+      expect(layout(lines, style: const ConvertStyle(fixedSize: 30)).map((l) => l.item.fontSize), [30, 30]);
+      expect(layout(lines, style: const ConvertStyle(evenSize: true), ruling: lined()).map((l) => l.item.fontSize),
+          [16, 16]);
     });
 
     test('the last resort is flagged when nothing small enough fits', () {
@@ -452,8 +493,10 @@ void main() {
       expect(box.members, ['a', 'b']);
       expect(box.item.x, 100);
       expect(box.item.fontSize, 16);
-      // 38 chars * 8 = 304 + slack: fits on one line here.
-      expect(box.item.height, closeTo(1.2 * 16, 1e-9));
+      // 38 chars * 8 = 304 + slack: fits on one line here, one ruling tall
+      // (the ruling is its line spacing).
+      expect(box.item.lineSpacing, 26);
+      expect(box.item.height, closeTo(26, 1e-9));
     });
 
     test('a long joined sentence wraps at the right margin', () {
@@ -480,13 +523,57 @@ void main() {
       const style = ConvertStyle(evenSize: true, joinLines: true);
       expect(layout(sentence(first: 'Neurons send signals.'), style: style, ruling: lined()), hasLength(2));
       expect(layout(sentence(first: 'Key terms:'), style: style, ruling: lined()), hasLength(2));
-      expect(layout(sentence(right: 300), style: style, ruling: lined()), hasLength(2), reason: 'a list item');
       expect(layout(sentence(drop: 80), style: style, ruling: lined()), hasLength(2), reason: 'a new paragraph');
       final indented = [
         input('a', 'Neurons send signals', geo(baseline: 300, right: 560)),
         input('b', 'to other neurons.', geo(baseline: 326, left: 300)),
       ];
       expect(layout(indented, style: style, ruling: lined()), hasLength(2));
+    });
+
+    test('a short line joins when the words carry on', () {
+      const style = ConvertStyle(evenSize: true, joinLines: true);
+      // Mariam's and the owner's writing: lines break long before the edge,
+      // and big handwriting skips a ruled line.
+      final ruling = lined();
+      final r = ruling.baselines;
+      List<LaidOutLine> two(String a, String b, {int skip = 2}) => layout([
+            input('a', a, geo(baseline: r[4], right: 330)),
+            input('b', b, geo(baseline: r[4 + skip], left: 104, right: 330)),
+          ], style: style, ruling: ruling);
+      expect(two('I am the danger. When', 'a man gets knocked').single.item.text,
+          'I am the danger. When a man gets knocked', reason: 'ends on a word no sentence ends on');
+      expect(two('The lines are not auto joining', 'even when a sentence is not').single.item.text,
+          'The lines are not auto joining even when a sentence is not', reason: 'goes on in lowercase');
+      expect(two('Neurons send signals', 'to other neurons.', skip: 1), hasLength(1));
+      expect(two('signals travel along the axon,', 'Then they cross'), hasLength(1), reason: 'a comma');
+      expect(two('a man gets knocked', 'The lines are not joining'), hasLength(2), reason: 'a new sentence');
+      expect(two('Neurons send signals', 'to other neurons.', skip: 3), hasLength(2), reason: 'too far below');
+      expect(two('Key points of the lecture', '- neurons send signals'), hasLength(2), reason: 'a list item');
+    });
+
+    test("a list written one word per line stays a list (Mariam's step 7)", () {
+      const style = ConvertStyle(evenSize: true, joinLines: true);
+      final ruling = lined();
+      final r = ruling.baselines;
+      final out = layout([
+        for (final (i, w) in ['brain', 'neurons', 'synapse'].indexed)
+          input('l$i', w, geo(baseline: r[4 + 2 * i], right: 160)),
+      ], style: style, ruling: ruling);
+      expect(out.map((l) => l.item.text), ['brain', 'neurons', 'synapse']);
+    });
+
+    test('textCarriesOn and startsListItem', () {
+      expect(textCarriesOn('the cell is', 'Neuron'), isTrue);
+      expect(textCarriesOn('brain', 'neurons'), isFalse);
+      expect(textCarriesOn('sodium ions', 'potassium ions'), isFalse);
+      expect(textCarriesOn('ions flow in through', 'channels'), isTrue);
+      expect(textCarriesOn('ions flow in quickly', 'channels'), isFalse, reason: 'one word below');
+      for (final item in ['- a', '• a', '* a', '1. a', '2) a', 'a) a', '(3) a']) {
+        expect(startsListItem(item), isTrue, reason: item);
+      }
+      expect(startsListItem('alpha waves'), isFalse);
+      expect(startsListItem('3.5 volts'), isFalse);
     });
 
     test('with the setting off every line stays its own box', () {

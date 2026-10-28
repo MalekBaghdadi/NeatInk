@@ -245,7 +245,8 @@ class TextBoxEditor extends ChangeNotifier {
       a.underline == b.underline &&
       a.align == b.align &&
       a.font == b.font &&
-      a.background == b.background;
+      a.background == b.background &&
+      a.lineSpacing == b.lineSpacing;
 
   /// Whether two text items are identical in every field.
   static bool sameText(TextItem a, TextItem b) =>

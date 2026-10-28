@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/features/settings/convert_style_prefs.dart';
@@ -9,7 +11,10 @@ Finder key(String k) => find.byKey(ValueKey(k));
 
 void main() {
   testWidgets('the typed-text settings open from the editor with nothing to convert', (tester) async {
-    final h = await ConvertHarness.open(tester, recognizer: FakeRecognizer(const {}));
+    // The app's own typed-text defaults (the harness turns joining off).
+    final h = await ConvertHarness.open(tester,
+        recognizer: FakeRecognizer(const {}),
+        prefsValues: {ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs().toJson())});
     expect(h.page.strokes, isEmpty);
     await tester.tap(key('convert-settings'));
     await tester.pumpAndSettle();

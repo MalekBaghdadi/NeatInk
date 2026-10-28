@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../../document/font_kind.dart';
+import '../../../../document/page_items.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/text_polish.dart';
 import '../../../../recognition/word_image.dart';
@@ -13,6 +13,7 @@ import 'convert_build.dart';
 import 'convert_config.dart';
 import 'convert_corrections.dart';
 import 'convert_layout.dart';
+import 'convert_overlap.dart';
 import 'convert_plan.dart';
 import 'sample_export.dart';
 import 'user_lexicon.dart';
@@ -346,13 +347,23 @@ class ConvertSession extends ChangeNotifier {
       );
       if (laid.isEmpty) continue;
       final converted = {for (final l in laid) ...l.members};
+      // New boxes never cover text already on the page (or each other).
+      final ruling = PageRuling.of(meta.paper, meta.width, meta.height, isPdf: meta.isPdf);
+      final occupied = [...controller.doc.page(plan.pageId).texts];
+      final items = <TextItem>[];
+      for (final l in laid) {
+        final item = placeClear(l.item, occupied,
+            pageHeight: meta.height, metrics: _metrics, ruling: ruling);
+        occupied.add(item);
+        items.add(item);
+      }
       out.add(PageConversion(
         pageId: plan.pageId,
         strokeIds: {
           for (final l in plan.lines)
             if (converted.contains(l.id)) ...l.strokeIds,
         },
-        items: [for (final l in laid) l.item],
+        items: items,
       ));
     }
     return out;

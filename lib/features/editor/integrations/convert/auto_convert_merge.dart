@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show Rect;
 
 import '../../../../document/page_items.dart';
 import '../text_images/text_editor.dart';
@@ -56,27 +57,28 @@ class MergePlan {
 /// on beside the typed text, with one space, instead of starting a second
 /// box with a gap.
 ///
-/// A box qualifies when the line sits on its baseline (within
-/// [ConvertConfig.mergeBaselineTol] x-heights) and starts close to where its
-/// typed text ends: from [ConvertConfig.mergeOverlap] x-heights over the
-/// last letter to [ConvertConfig.mergeMaxGap] x-heights after it. That is
-/// where the writer continues: the typed text is rarely as wide as the
-/// handwriting it replaced. For the boxes auto-convert made ([boxes], with
-/// the state it left them in), starting just after where the replaced
-/// handwriting ended also counts (the pen may already have been down there).
+/// On the same line a box qualifies when the line sits on its baseline
+/// (within [ConvertConfig.mergeBaselineTol] x-heights, or on the same ruled
+/// line) and starts after its typed text or after where the handwriting it
+/// replaced ended (a little over either is fine), at most [ConvertConfig.mergeMaxGap]
+/// x-heights after where the handwriting it replaced ended, with no other
+/// box in between. The typed text is rarely as wide as that handwriting, so
+/// anywhere over the space it left counts too. Where the handwriting ended is
+/// known for the boxes auto-convert made ([boxes], with the state it left
+/// them in); for other boxes it is estimated from the size of the writing.
 ///
 /// Candidates are [boxes] and every other box of the page ([pageTexts]:
-/// boxes typed earlier, by the Convert button or by hand); they must be one
-/// line, left aligned, and the joined text must still fit on one line to the
-/// right page margin. [liveItem] finds a box as it is now (null: it is
-/// gone); boxes in [taken] already took a line this pass. The nearest wins.
-/// The joined box keeps the autocorrect marks of both texts ([corrections]
-/// are those of [text]).
+/// boxes typed earlier, by the Convert button or by hand); on the same line
+/// they must be one line and left aligned, and the joined text must still
+/// fit on one line to the right page margin (with [joinLines] it may wrap).
+/// [liveItem] finds a box as it is now (null: it is gone); boxes in [taken]
+/// already took a line this pass. The nearest wins. The joined box keeps the
+/// autocorrect marks of both texts ([corrections] are those of [text]).
 ///
-/// With [joinLines] a line also carries on a box on the line above when
-/// the box's sentence ran to the right edge there and is not finished
-/// ([continuesOnNextLine]); the box then wraps at the right margin. Text
-/// joined on the same line may wrap too.
+/// With [joinLines] a line also carries on a box on a line above when the
+/// box's sentence goes on there ([continuesOnNextLine]'s rules: it ran to the
+/// right edge, or the words carry on); the box then wraps at the right
+/// margin.
 MergePlan? planMerge({
   required Iterable<AutoBox> boxes,
   required TextItem? Function(String id) liveItem,
@@ -93,24 +95,64 @@ MergePlan? planMerge({
   final xh = line.xHeight;
   if (!xh.isFinite || xh <= 0 || text.isEmpty) return null;
   final start = line.baselineAt(line.left);
+  final others = pageTexts.toList();
   MergePlan? best;
   var bestGap = double.infinity;
 
+  // The ruled line nearest to [y], when it is close enough to snap to.
+  int? ruleOf(double y) {
+    final r = ruling;
+    if (r == null) return null;
+    var bestIndex = -1;
+    for (var i = 0; i < r.baselines.length; i++) {
+      if (bestIndex < 0 || (r.baselines[i] - y).abs() < (r.baselines[bestIndex] - y).abs()) {
+        bestIndex = i;
+      }
+    }
+    if (bestIndex < 0) return null;
+    return (r.baselines[bestIndex] - y).abs() <= ConvertConfig.snapReach * r.spacing ? bestIndex : null;
+  }
+
+  final myRule = ruleOf(start);
+  bool sameLine(double baseline) =>
+      (start - baseline).abs() < ConvertConfig.mergeBaselineTol * xh ||
+      (myRule != null && ruleOf(baseline) == myRule);
+
+  // Another box between the end of [live]'s text and the new writing.
+  bool blocked(TextItem live, double from, double to) {
+    if (to <= from) return false;
+    final band = Rect.fromLTRB(from, start - 1.5 * xh, to, start);
+    for (final o in others) {
+      if (o.id == live.id || o.text.isEmpty) continue;
+      if (Rect.fromLTWH(o.x, o.y, o.width, o.height).overlaps(band)) return true;
+    }
+    return false;
+  }
+
+  // Baseline of the last line of [live].
+  double lastBaselineOf(TextItem live) {
+    final one = metrics.heightOf(live.copyWith(text: 'x', width: 1e6));
+    final lines = one > 0 ? (metrics.heightOf(live) / one).round().clamp(1, 1000) : 1;
+    return live.y + metrics.firstBaseline(live) + (lines - 1) * one;
+  }
+
   // How far below the box's last line [line] starts, when it carries on the
-  // box's unfinished sentence that ran to the right edge; else null.
+  // box's unfinished sentence; else null.
   double? dropBelow(TextItem live, AutoBoxVersion? base) {
-    if (endsSentence(live.text)) return null;
+    if (endsSentence(live.text) || startsListItem(text)) return null;
     if (line.left > live.x + ConvertConfig.joinIndentXHeights * xh) return null;
     final double lastBaseline;
+    final bool atEdge;
     if (base != null) {
-      if (!ranToRightEdge(base.inkRight, xh, pageWidth)) return null;
+      atEdge = ranToRightEdge(base.inkRight, xh, pageWidth);
       lastBaseline = base.inkBaseline;
     } else {
       // A typed box: its text wraps, or reaches the edge itself.
-      final wraps = metrics.naturalWidth(live) > live.width + 1e-6;
-      if (!wraps && !ranToRightEdge(live.x + live.width, xh, pageWidth)) return null;
-      lastBaseline = live.y + metrics.heightOf(live) - 0.25 * live.fontSize;
+      atEdge = metrics.naturalWidth(live) > live.width + 1e-6 ||
+          ranToRightEdge(live.x + live.width, xh, pageWidth);
+      lastBaseline = lastBaselineOf(live);
     }
+    if (!atEdge && !textCarriesOn(live.text, text)) return null;
     final drop = start - lastBaseline;
     return drop > 0 && drop <= maxLineDrop(xh, ruling) ? drop : null;
   }
@@ -119,25 +161,25 @@ MergePlan? planMerge({
     if (live.align != TextAlignKind.left) return;
     final typedEnd = live.x + metrics.naturalWidth(live);
     final typedBaseline = live.y + metrics.firstBaseline(live);
+    // Where the handwriting the box replaced ended: remembered, or estimated
+    // from how much wider the writing is than the typed text.
+    final inkEnd = base?.inkRight ?? estimatedInkRight(live, typedEnd - live.x, xh);
     double? gap;
-    // After the typed text (the usual case) ...
-    final g = line.left - typedEnd;
-    if (g >= -ConvertConfig.mergeOverlap * xh &&
-        g < ConvertConfig.mergeMaxGap * xh &&
-        (start - typedBaseline).abs() < ConvertConfig.mergeBaselineTol * xh) {
-      gap = g.abs();
+    // On the same line, after the typed text (or over the space the
+    // handwriting left) and not too far after where the handwriting ended.
+    final onLine = sameLine(typedBaseline) || (base != null && sameLine(base.inkBaseline));
+    // The writer goes on after the typed text or after where the writing
+    // ended, whichever came first (the pen may land a little over either).
+    final earliest = math.min(typedEnd - ConvertConfig.mergeOverlap * xh,
+        inkEnd - ConvertConfig.mergeInkOverlap * xh);
+    if (onLine &&
+        line.left >= earliest &&
+        line.left < math.max(typedEnd, inkEnd) + ConvertConfig.mergeMaxGap * xh &&
+        !blocked(live, typedEnd, line.left)) {
+      gap = math.max(0, line.left - math.max(typedEnd, inkEnd));
     }
-    // ... or after the handwriting the box replaced.
-    if (base != null) {
-      final h = line.left - base.inkRight;
-      if (h >= 0 &&
-          h < ConvertConfig.mergeMaxGap * xh &&
-          (start - base.inkBaseline).abs() < ConvertConfig.mergeBaselineTol * xh) {
-        gap = gap == null ? h : math.min(gap, h);
-      }
-    }
-    // ... or on the line below, carrying on the sentence (after any box on
-    // the same line).
+    // ... or on a line below, carrying on the sentence (after any box on the
+    // same line).
     var below = false;
     if (gap == null && joinLines) {
       final drop = dropBelow(live, base);
@@ -178,7 +220,7 @@ MergePlan? planMerge({
     }
     final wide = joined.copyWith(width: width);
     final after = wide.copyWith(height: metrics.heightOf(wide));
-    best = MergePlan(box, live, after, base ?? AutoBoxVersion(live, typedEnd, typedBaseline));
+    best = MergePlan(box, live, after, base ?? AutoBoxVersion(live, inkEnd, typedBaseline));
     bestGap = gap;
   }
 
@@ -190,13 +232,24 @@ MergePlan? planMerge({
     if (live == null) continue;
     consider(box, live, box.versionOf(live));
   }
-  for (final t in pageTexts) {
+  for (final t in others) {
     if (seen.contains(t.id) || taken.contains(t.id) || t.text.isEmpty) continue;
     final live = liveItem(t.id);
     if (live == null) continue;
-    final typedEnd = live.x + metrics.naturalWidth(live);
-    final typedBaseline = live.y + metrics.firstBaseline(live);
-    consider(AutoBox(AutoBoxVersion(live, typedEnd, typedBaseline)), live, null);
+    consider(AutoBox(AutoBoxVersion(live, live.x + metrics.naturalWidth(live), live.y + metrics.firstBaseline(live))),
+        live, null);
   }
   return best;
+}
+
+/// Where the handwriting a typed box replaced probably ended, when that was
+/// not remembered (a box from an earlier session or the Convert button):
+/// handwriting with x-height [inkXHeight] is about that many times wider
+/// than the typed text ([typedWidth]) per typed x-height.
+double estimatedInkRight(TextItem live, double typedWidth, double inkXHeight) {
+  final ratio = ConvertConfig.fontXHeightRatio[live.font.category] ?? ConvertConfig.defaultXHeightRatio;
+  final typedXHeight = live.fontSize * ratio;
+  if (!(typedXHeight > 0) || !(inkXHeight > 0)) return live.x + typedWidth;
+  final scale = (inkXHeight / typedXHeight).clamp(1.0, ConvertConfig.maxInkWidthScale);
+  return live.x + typedWidth * scale;
 }

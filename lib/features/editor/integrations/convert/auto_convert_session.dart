@@ -15,6 +15,7 @@ import 'convert_apply.dart';
 import 'convert_build.dart';
 import 'convert_config.dart';
 import 'convert_layout.dart';
+import 'convert_overlap.dart';
 import 'convert_plan.dart';
 
 /// Whether auto-convert should type [line] by itself: it has text, no word
@@ -480,6 +481,15 @@ class AutoConvertSession with WidgetsBindingObserver {
       final ids = <String>{};
       final ruling = PageRuling.of(meta.paper, meta.width, meta.height,
           isPdf: meta.isPdf);
+      // Text boxes as they will be after this pass, so a new or grown box
+      // never covers another (convert_overlap.dart).
+      final grownIds = <String>{};
+      final placed = <TextItem>[];
+      List<TextItem> occupied() => [
+            for (final t in page.texts)
+              if (!grownIds.contains(t.id)) t,
+            ...placed,
+          ];
       for (final out in laid) {
         // A box may hold several written lines (joined into a sentence).
         final lines = [for (final id in out.members) lineById[id]!];
@@ -489,9 +499,9 @@ class AutoConvertSession with WidgetsBindingObserver {
         for (final l in lines) {
           ids.addAll(l.strokeIds);
         }
-        final merge = planMerge(
+        var merge = planMerge(
           boxes: boxes?.values ?? const <AutoBox>[],
-          pageTexts: page.texts,
+          pageTexts: occupied(),
           liveItem: page.textById,
           line: geometry,
           text: out.item.text,
@@ -502,19 +512,27 @@ class AutoConvertSession with WidgetsBindingObserver {
           joinLines: style.joinLines,
           ruling: ruling,
         );
+        // Growing a box over text written earlier would hide it: the line
+        // gets a box of its own instead.
+        if (merge != null && overlapsAny(merge.after, occupied())) merge = null;
         final inkRight = last.right;
         final inkBaseline = last.baselineAt(last.right);
         if (merge != null) {
           takenBoxes.add(merge.box.id);
+          grownIds.add(merge.before.id);
+          placed.add(merge.after);
           replacements.add((merge.before, merge.after));
           grownBoxes.putIfAbsent(pageId, () => []).add((
             merge.box,
             AutoBoxVersion(merge.after, inkRight, inkBaseline),
           ));
         } else {
-          items.add(out.item);
+          final item = placeClear(out.item, occupied(),
+              pageHeight: meta.height, metrics: metrics, ruling: ruling);
+          placed.add(item);
+          items.add(item);
           newBoxes.putIfAbsent(pageId, () => []).add(
-              AutoBox(AutoBoxVersion(out.item, inkRight, inkBaseline)));
+              AutoBox(AutoBoxVersion(item, inkRight, inkBaseline)));
         }
       }
       converted.addAll(ids);

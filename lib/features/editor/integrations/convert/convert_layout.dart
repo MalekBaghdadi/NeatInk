@@ -212,23 +212,68 @@ final RegExp _sentenceEnd = RegExp('[.!?:;…]["\'”’)\\]]*\$');
 bool endsSentence(String text) => _sentenceEnd.hasMatch(text.trimRight());
 
 /// Whether [next], the line written below [line], carries on [line]'s
-/// sentence: [text] (what [line] says) does not end one, the writing ran to
-/// the right edge of the page ([pageWidth]) and goes on at the left of the
-/// line below.
+/// sentence. [text] and [nextText] are what the two lines say.
+///
+/// Never across a sentence end or into a list item, never when the next line
+/// starts further right (an indent) or too far below ([maxLineDrop]: one
+/// skipped ruled line is fine, many writers leave one). Then either the
+/// writing ran to the right edge of the page ([pageWidth]), or the words say
+/// the sentence goes on ([textCarriesOn]): writers often break a line long
+/// before the edge.
 bool continuesOnNextLine({
   required LineGeometry line,
   required String text,
   required LineGeometry next,
+  required String nextText,
   required double pageWidth,
   PageRuling? ruling,
 }) {
   if (text.trim().isEmpty || endsSentence(text)) return false;
+  if (nextText.trim().isEmpty || startsListItem(nextText)) return false;
   final xh = math.max(line.xHeight, next.xHeight);
   if (!xh.isFinite || xh <= 0) return false;
-  if (!ranToRightEdge(line.right, xh, pageWidth)) return false;
   if (next.left > line.left + ConvertConfig.joinIndentXHeights * xh) return false;
   final drop = next.baselineAt(next.left) - line.baselineAt(line.left);
-  return drop > 0 && drop <= maxLineDrop(xh, ruling);
+  if (drop <= 0 || drop > maxLineDrop(xh, ruling)) return false;
+  return ranToRightEdge(line.right, xh, pageWidth) || textCarriesOn(text, nextText);
+}
+
+/// Words that do not end a sentence: after them the sentence goes on
+/// (articles, prepositions, conjunctions, auxiliary verbs, possessives).
+const Set<String> continuationWords = {
+  'a', 'an', 'the', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'this', 'these', 'those', 'some', 'any', 'each',
+  'every', 'of', 'to', 'in', 'on', 'at', 'for', 'with', 'from', 'by', 'into', 'onto', 'about', 'over', 'under', 'between',
+  'through', 'during', 'after', 'before', 'without', 'within', 'among', 'against', 'towards', 'toward', 'upon', 'via', 'than',
+  'as', 'like', 'and', 'or', 'but', 'nor', 'because', 'although', 'though', 'while', 'when', 'whereas', 'if', 'unless', 'until',
+  'since', 'whether', 'where', 'which', 'who', 'whom', 'whose', 'that', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am',
+  'has', 'have', 'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'may', 'might', 'must', 'shall', 'not',
+  'very', 'more', 'most', 'less', 'such', 'also', 'so', 'then', 'both', 'either', 'neither',
+};
+
+final RegExp _listMarker = RegExp(r'^\s*([-–—•·*+>]|\(?\d{1,3}[.)]|\(?[a-zA-Z][)])(\s|$)');
+
+/// Whether [text] begins with a list marker: a dash or bullet, `1.`, `2)`,
+/// `a)`.
+bool startsListItem(String text) => _listMarker.hasMatch(text);
+
+/// Whether the words of a line ([text]) and of the line below ([nextText])
+/// read as one sentence broken over the two: the line ends with a comma or
+/// hyphen or with a word a sentence cannot end on ([continuationWords]), or
+/// the next line starts in lowercase and both lines are more than a word or
+/// two (so a list written one word per line, `brain` / `neurons`, stays a
+/// list).
+bool textCarriesOn(String text, String nextText) {
+  final a = text.trim(), b = nextText.trim();
+  if (a.isEmpty || b.isEmpty) return false;
+  if (RegExp(r'[,\-–—(]$').hasMatch(a)) return true;
+  final words = a.split(RegExp(r'\s+'));
+  final last = words.last.replaceAll(RegExp(r"[^A-Za-z']"), '').toLowerCase();
+  if (continuationWords.contains(last)) return true;
+  final lowerStart = RegExp('^[a-z]').hasMatch(b);
+  final nextWords = b.split(RegExp(r'\s+')).length;
+  return lowerStart &&
+      words.length >= ConvertConfig.joinMinWords &&
+      nextWords >= ConvertConfig.joinMinNextWords;
 }
 
 /// Whether writing that ends at [right] ran out of room on the page: less
@@ -385,8 +430,12 @@ String normalizeLineText(String text) =>
 ///   and only then wraps inside the available width;
 /// * a box never runs into the line below (included or not): the size is
 ///   reduced step by step until it clears it;
-/// * with an even or fixed size ([ConvertStyle.keepsSize]) a long line
-///   wraps at the right margin instead of shrinking;
+/// * with an even or fixed size ([ConvertStyle.keepsSize]) the size never
+///   changes: a long line wraps at the right margin, and a box that would
+///   run into the one above it is moved down to the next free (ruled) line
+///   instead;
+/// * on ruled paper every box gets the ruling as its line spacing
+///   ([TextItem.lineSpacing]), so wrapped lines sit on the ruled lines;
 /// * with [ConvertStyle.joinLines], consecutive lines of one sentence
 ///   ([continuesOnNextLine]) become one box that wraps at the right margin
 ///   ([LaidOutLine.members]).
@@ -434,6 +483,7 @@ List<LaidOutLine> layoutPage({
             line: prev.geometry,
             text: normalizeLineText(prev.text),
             next: l.geometry,
+            nextText: text,
             pageWidth: pageWidth,
             ruling: ruling)) {
       final last = out.last;
@@ -523,7 +573,43 @@ List<LaidOutLine> _layoutLines({
     out[i] = members[i].isEmpty ? placed : placed.withLines(members[i]);
     nextTop = placed.item.y;
   }
+  if (style.keepsSize) _pushDown(out, ruling, metrics);
   return [for (final o in out) ?o];
+}
+
+/// With a size that never shrinks, a box that reaches into the one above it
+/// (a joined sentence that wraps onto more lines than the writing took) is
+/// moved down, top to bottom, to the first (ruled) line where it clears.
+void _pushDown(List<LaidOutLine?> boxes, PageRuling? ruling, ConvertTextMetrics metrics) {
+  var bottom = double.negativeInfinity;
+  for (var i = 0; i < boxes.length; i++) {
+    final o = boxes[i];
+    if (o == null) continue;
+    var item = o.item;
+    if (item.y < bottom - 0.5) {
+      final ascent = metrics.firstBaseline(item);
+      var baseline = bottom + ascent;
+      var snapped = false;
+      for (final r in ruling?.baselines ?? const <double>[]) {
+        if (r >= baseline - 0.01) {
+          baseline = r;
+          snapped = true;
+          break;
+        }
+      }
+      item = item.copyWith(y: baseline - ascent);
+      boxes[i] = LaidOutLine(
+        id: o.id,
+        item: item,
+        baselineY: baseline,
+        snapped: snapped,
+        fit: o.fit,
+        collides: false,
+        lineIds: o.lineIds,
+      );
+    }
+    bottom = item.y + item.height;
+  }
 }
 
 LaidOutLine _placeLine({
@@ -567,11 +653,13 @@ LaidOutLine _placeLine({
         bold: style.bold,
         italic: style.italic,
         font: style.font,
+        lineSpacing: ruling?.spacing,
       );
 
   // A line of text is about `lineHeightRatio` times the font size tall; two
   // lines of the same size need their baselines at least that far apart.
-  if (gapAbove.isFinite && gapAbove > 0) {
+  // (Not for even and fixed sizes: they are the size the user chose.)
+  if (!style.keepsSize && gapAbove.isFinite && gapAbove > 0) {
     final lineHeightRatio = metrics.heightOf(build(100, 1e6)) / 100;
     if (lineHeightRatio > 0) {
       base = math.min(
@@ -618,7 +706,12 @@ LaidOutLine _placeLine({
 
   var size = base;
   final single = keepSize ? base : widthFit(base);
-  if (keepSize) {
+  if (style.keepsSize) {
+    // Even and fixed sizes never change: long text wraps, and a box in the
+    // way of the next one is moved instead ([_pushDown]). Text that shrank
+    // to stay clear of handwriting below looked like a mistake (v1.6.0).
+    size = base;
+  } else if (keepSize) {
     // The chosen size, wrapping when long; a little smaller if it would run
     // into the line below, and only as a last resort more than that.
     size = clear(base, base * ConvertConfig.softShrinkFactor);
@@ -658,6 +751,6 @@ LaidOutLine _placeLine({
     baselineY: baseline,
     snapped: snapped,
     fit: fit,
-    collides: !fits(item),
+    collides: !style.keepsSize && !fits(item),
   );
 }

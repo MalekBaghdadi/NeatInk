@@ -27,6 +27,7 @@ import 'package:neatink/features/settings/settings_controller.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/ink/vec2.dart';
 import 'package:neatink/recognition/htr_channel.dart';
+import 'package:neatink/features/settings/convert_style_prefs.dart';
 import 'package:neatink/recognition/stroke_grouping.dart';
 import 'package:neatink/recognition/text_polish.dart';
 import 'package:neatink/recognition/word_image.dart';
@@ -272,6 +273,11 @@ class ConvertHarness {
       map.putIfAbsent('autoConvertDelayMs', () => autoConvertDelayMs);
     }
     values[AppSettings.prefsKey] = jsonEncode(map);
+    // Joining lines is on in the app; these tests write lines that the
+    // joining rules would read as one sentence, so they keep lines apart
+    // unless they set the typed-text look themselves.
+    values.putIfAbsent(ConvertStylePrefs.prefsKey,
+        () => jsonEncode(const ConvertStylePrefs(joinLines: false).toJson()));
     SharedPreferences.setMockInitialValues(values);
     final prefs = await SharedPreferences.getInstance();
     final repo = _FlakyRepository();
