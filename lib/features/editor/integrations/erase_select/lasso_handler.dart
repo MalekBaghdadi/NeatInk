@@ -305,7 +305,7 @@ class LassoHandler extends CanvasToolHandler {
   }
 
   /// True when [s] shows something other than its hand-drawn points.
-  static bool isRestorable(Stroke s) => s.shape != null || !s.pointsAreRaw;
+  static bool isRestorable(Stroke s) => s.shape != null || !s.pointsAreRaw || s.rawSize != null;
 
   /// Whether the selection has anything a colour can be applied to.
   bool get canRecolor {

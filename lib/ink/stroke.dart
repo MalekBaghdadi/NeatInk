@@ -47,6 +47,7 @@ class Stroke {
     required List<InkPoint> raw,
     List<InkPoint>? points,
     ShapeKind? shape,
+    double? rawSize,
   }) {
     final r = raw is _FrozenPoints ? raw : _FrozenPoints(raw);
     final List<InkPoint> p;
@@ -55,11 +56,11 @@ class Stroke {
     } else {
       p = points is _FrozenPoints ? points : _FrozenPoints(points);
     }
-    return Stroke._(id, tool, penStyle, color, size, r, p, shape);
+    return Stroke._(id, tool, penStyle, color, size, r, p, shape, rawSize);
   }
 
   Stroke._(this.id, this.tool, this.penStyle, this.color, this.size, this.raw,
-      this.points, this.shape);
+      this.points, this.shape, this.rawSize);
 
   factory Stroke.fromJson(Map<String, dynamic> j) {
     final raw = _pointsFromJson(j['raw']);
@@ -77,6 +78,7 @@ class Stroke {
       shape: j['shape'] == null
           ? null
           : _enumByName(ShapeKind.values, j['shape'], ShapeKind.line),
+      rawSize: (j['rawSize'] as num?)?.toDouble(),
     );
   }
 
@@ -92,6 +94,11 @@ class Stroke {
   final List<InkPoint> raw;
   final List<InkPoint> points;
   final ShapeKind? shape;
+
+  /// The width the pen drew [raw] with, when a tidy changed [size] (a
+  /// highlight laid over a line of text gets the height of the line). Null:
+  /// [size] is the drawn width. "Restore original" puts it back.
+  final double? rawSize;
 
   bool get isHighlighter => tool == StrokeTool.highlighter;
 
@@ -116,6 +123,8 @@ class Stroke {
     List<InkPoint>? points,
     ShapeKind? shape,
     bool clearShape = false,
+    double? rawSize,
+    bool clearRawSize = false,
   }) =>
       Stroke(
         id: id ?? this.id,
@@ -126,12 +135,14 @@ class Stroke {
         raw: raw ?? this.raw,
         points: points ?? this.points,
         shape: clearShape ? null : (shape ?? this.shape),
+        rawSize: clearRawSize ? null : (rawSize ?? this.rawSize),
       );
 
   /// Applies [m] to both [raw] and [points] (lasso move/resize). The width
   /// scales with the transform's mean scale when [scaleWidth] is true.
   Stroke transformed(Affine2 m, {bool scaleWidth = true}) {
     final newRaw = [for (final p in raw) p.transformed(m)];
+    final rs = rawSize;
     return Stroke(
       id: id,
       tool: tool,
@@ -142,6 +153,7 @@ class Stroke {
       points:
           pointsAreRaw ? newRaw : [for (final p in points) p.transformed(m)],
       shape: shape,
+      rawSize: rs == null || !scaleWidth ? rs : rs * m.meanScale,
     );
   }
 
@@ -155,6 +167,7 @@ class Stroke {
         // Spec: `points` is always written so the file is self-describing.
         'points': [for (final p in points) p.toJson()],
         if (shape != null) 'shape': shape!.name,
+        if (rawSize != null) 'rawSize': rawSize,
       };
 
   static List<InkPoint> _pointsFromJson(dynamic j) => [

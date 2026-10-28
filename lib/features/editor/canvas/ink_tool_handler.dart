@@ -144,6 +144,9 @@ class InkToolHandler extends CanvasToolHandler {
     );
     final hook = controller.extensions.liveStrokeHook;
     var stroke = hook == null ? raw : hook.onFinish(active, raw);
+    for (final finish in controller.extensions.strokeFinishers) {
+      stroke = finish(active.pageId, stroke);
+    }
     if (stroke.id != raw.id) stroke = stroke.copyWith(id: raw.id);
     // Commit before clearing the live layer: both repaint in the same
     // frame, so the stroke never blinks.

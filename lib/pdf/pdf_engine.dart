@@ -17,6 +17,10 @@ abstract interface class PdfEngine {
   Future<PdfEngineDocument> open(String path);
 }
 
+/// A word of a page's printed text: its box in page points as displayed
+/// (top-left origin, after /Rotate and the CropBox, like [PdfEngineDocument.pageSizes]).
+typedef PdfWordBox = ({double left, double top, double right, double bottom});
+
 /// An open PDF. Call [close] when done; it releases native memory.
 abstract interface class PdfEngineDocument {
   /// Page count.
@@ -28,6 +32,10 @@ abstract interface class PdfEngineDocument {
 
   /// Plain text of the page at [pageIndex] (0-based) in reading order.
   Future<String> extractText(int pageIndex);
+
+  /// The boxes of the words of the page at [pageIndex] (empty for a scanned
+  /// page without text).
+  Future<List<PdfWordBox>> words(int pageIndex);
 
   /// Renders [region] of the page at [pageIndex] on a white background.
   /// Returns null when [cancel] fired before the render finished.

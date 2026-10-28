@@ -155,6 +155,33 @@ class PdfPageCache {
   }
 
   // ---------------------------------------------------------------------
+  // Words
+  // ---------------------------------------------------------------------
+
+  final Map<(String, int), Future<List<PdfWordBox>>> _words = {};
+
+  /// The word boxes of a page (see [PdfEngineDocument.words]), loaded once
+  /// per document and page. Empty when the page has no text or reading
+  /// failed.
+  Future<List<PdfWordBox>> words(String pdfPath, int pageIndex) {
+    if (_words.length > 400) _words.clear();
+    return _words.putIfAbsent((pdfPath, pageIndex), () async {
+      try {
+        final (doc, release) = await _acquire(pdfPath);
+        try {
+          return await doc.words(pageIndex);
+        } finally {
+          release();
+        }
+      } catch (e) {
+        debugPrint('NeatInk: reading the words of a PDF page failed: $e');
+        _words.remove((pdfPath, pageIndex))?.ignore(); // a later call tries again
+        return const <PdfWordBox>[];
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Images
   // ---------------------------------------------------------------------
 

@@ -16,6 +16,8 @@ class PageMeta {
     this.height = a4HeightPt,
     this.paper = const Paper(),
     this.pdfPageIndex,
+    this.marginLeft = 0,
+    this.marginRight = 0,
   });
 
   factory PageMeta.fromJson(Map<String, dynamic> j) => PageMeta(
@@ -24,12 +26,16 @@ class PageMeta {
         height: (j['height'] as num?)?.toDouble() ?? a4HeightPt,
         paper: Paper.fromJson(j['paper'] as Map<String, dynamic>?),
         pdfPageIndex: (j['pdfPageIndex'] as num?)?.toInt(),
+        marginLeft: _margin(j['marginLeft']),
+        marginRight: _margin(j['marginRight']),
       );
+
+  static double _margin(Object? v) => v is num && v.isFinite && v > 0 ? v.toDouble() : 0;
 
   final String id;
 
   /// Page size in points as displayed (for PDF pages: after applying the
-  /// page's /Rotate and CropBox).
+  /// page's /Rotate and CropBox, plus the margins).
   final double width;
   final double height;
   final Paper paper;
@@ -37,7 +43,20 @@ class PageMeta {
   /// 0-based index into `source.pdf`, or null for a plain page.
   final int? pdfPageIndex;
 
+  /// Writing space beside a PDF page, in points: the PDF page lies between
+  /// them ([contentLeft] to [contentRight]) and the margins show [paper]
+  /// (lined by default). 0 for plain pages and PDF pages without margins.
+  final double marginLeft;
+  final double marginRight;
+
   bool get isPdf => pdfPageIndex != null;
+
+  /// Where the PDF page (or, for a plain page, the whole page) lies, in page
+  /// points.
+  double get contentLeft => marginLeft;
+  double get contentRight => width - marginRight;
+  double get contentWidth => width - marginLeft - marginRight;
+  bool get hasMargins => marginLeft > 0 || marginRight > 0;
 
   PageMeta copyWith({
     String? id,
@@ -46,6 +65,8 @@ class PageMeta {
     Paper? paper,
     int? pdfPageIndex,
     bool clearPdfPage = false,
+    double? marginLeft,
+    double? marginRight,
   }) =>
       PageMeta(
         id: id ?? this.id,
@@ -53,6 +74,8 @@ class PageMeta {
         height: height ?? this.height,
         paper: paper ?? this.paper,
         pdfPageIndex: clearPdfPage ? null : (pdfPageIndex ?? this.pdfPageIndex),
+        marginLeft: marginLeft ?? this.marginLeft,
+        marginRight: marginRight ?? this.marginRight,
       );
 
   Map<String, dynamic> toJson() => {
@@ -61,6 +84,8 @@ class PageMeta {
         'height': height,
         'paper': paper.toJson(),
         'pdfPageIndex': pdfPageIndex,
+        if (marginLeft > 0) 'marginLeft': marginLeft,
+        if (marginRight > 0) 'marginRight': marginRight,
       };
 }
 

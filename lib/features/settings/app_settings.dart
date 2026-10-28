@@ -15,6 +15,7 @@ class AppSettings {
     this.drawWithFinger = false,
     this.stylusButtonErases = true,
     this.shapeSnapEnabled = true,
+    this.tidyHighlighter = true,
     this.exportPaperLines = true,
     this.autoConvert = false,
     this.autoConvertDelayMs = defaultAutoConvertDelayMs,
@@ -32,6 +33,7 @@ class AppSettings {
         drawWithFinger: j['drawWithFinger'] as bool? ?? false,
         stylusButtonErases: j['stylusButtonErases'] as bool? ?? true,
         shapeSnapEnabled: j['shapeSnapEnabled'] as bool? ?? true,
+        tidyHighlighter: j['tidyHighlighter'] is bool ? j['tidyHighlighter'] as bool : true,
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
         autoConvertDelayMs: clampAutoConvertDelay(switch (j['autoConvertDelayMs']) {
@@ -60,6 +62,11 @@ class AppSettings {
 
   /// Hold the pen still at the end of a stroke to snap it to a shape.
   final bool shapeSnapEnabled;
+
+  /// A highlight drawn over a line of writing, typed text or PDF text
+  /// becomes a straight band that fits the line (the drawn one is kept for
+  /// "Restore original"). On by default.
+  final bool tidyHighlighter;
 
   /// Draw paper lines/grid when exporting blank notebooks as PDF.
   final bool exportPaperLines;
@@ -105,6 +112,7 @@ class AppSettings {
     bool? drawWithFinger,
     bool? stylusButtonErases,
     bool? shapeSnapEnabled,
+    bool? tidyHighlighter,
     bool? exportPaperLines,
     bool? autoConvert,
     int? autoConvertDelayMs,
@@ -121,6 +129,7 @@ class AppSettings {
         drawWithFinger: drawWithFinger ?? this.drawWithFinger,
         stylusButtonErases: stylusButtonErases ?? this.stylusButtonErases,
         shapeSnapEnabled: shapeSnapEnabled ?? this.shapeSnapEnabled,
+        tidyHighlighter: tidyHighlighter ?? this.tidyHighlighter,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
         autoConvertDelayMs: autoConvertDelayMs == null
@@ -139,6 +148,7 @@ class AppSettings {
         'drawWithFinger': drawWithFinger,
         'stylusButtonErases': stylusButtonErases,
         'shapeSnapEnabled': shapeSnapEnabled,
+        'tidyHighlighter': tidyHighlighter,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,
         'autoConvertDelayMs': autoConvertDelayMs,

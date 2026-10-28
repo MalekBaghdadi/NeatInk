@@ -205,6 +205,21 @@ typedef ViewportOverlayBuilder = Widget? Function(
 typedef ToolOptionsBuilder = Widget Function(
     BuildContext context, EditorController controller);
 
+/// Last say over a pen / highlighter stroke before it is committed (after
+/// the [LiveStrokeHook]): return [stroke] itself, or a replacement with the
+/// same id that keeps its `raw` points (e.g. a tidied highlight).
+typedef StrokeFinisher = Stroke Function(String pageId, Stroke stroke);
+
+/// Where the printed text of a page lies (a PDF page's words), in page
+/// points. [wordsOn] answers from a cache and returns null while the words
+/// are not known yet; [prepare] starts loading them (call it early, e.g.
+/// when a highlight starts on the page).
+abstract class PageTextWords {
+  List<({double left, double top, double right, double bottom})>? wordsOn(String pageId);
+
+  void prepare(String pageId);
+}
+
 /// A toolbar / menu action.
 typedef EditorAction = Future<void> Function(
     BuildContext context, EditorController controller);
@@ -227,6 +242,14 @@ class EditorExtensions {
 
   /// Observes pen/highlighter strokes while they are drawn.
   LiveStrokeHook? liveStrokeHook;
+
+  /// Run in order on every finished pen/highlighter stroke, after
+  /// [liveStrokeHook].
+  final List<StrokeFinisher> strokeFinishers = [];
+
+  /// The printed text of PDF pages (for tidying highlights). Null without
+  /// the PDF feature.
+  PageTextWords? pageTextWords;
 
   /// Background for pages with a `pdfPageIndex`.
   PageBackgroundBuilder? pageBackgroundBuilder;

@@ -104,6 +104,7 @@ List<Stroke>? cutStroke(
         size: stroke.size,
         raw: stroke.pointsAreRaw ? piecePoints : _slice(stroke.raw, a, b),
         points: stroke.pointsAreRaw ? null : piecePoints,
+        rawSize: stroke.rawSize,
       ));
     } else {
       pieces.add(Stroke(

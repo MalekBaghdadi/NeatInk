@@ -6,6 +6,7 @@ import '../../../../pdf/pdf_page_cache.dart';
 import '../../editor_controller.dart';
 import '../../editor_extensions.dart';
 import 'pdf_background_math.dart';
+import 'pdf_page_words.dart';
 
 /// Shows the PDF page behind the ink of PDF-backed notebook pages and in
 /// the library thumbnail.
@@ -16,6 +17,11 @@ void installPdfBackground(EditorController controller, {PdfPageCache? cache}) {
   PdfPageCache pages() => cache ?? PdfPageCache.shared;
   String sourcePath(String notebookId) =>
       controller.repository.sourcePdfPath(notebookId);
+
+  controller.extensions.pageTextWords = PdfPageWords(
+    controller,
+    words: (notebookId, index) => pages().words(sourcePath(notebookId), index),
+  );
 
   controller.extensions.pageBackgroundBuilder = (context, request) {
     final index = request.page.pdfPageIndex;

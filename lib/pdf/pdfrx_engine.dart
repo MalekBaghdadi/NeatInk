@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Rect;
 import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
 import '../storage/notebook_repository.dart' show PdfPageSize;
@@ -66,6 +67,41 @@ class _PdfrxDocument implements PdfEngineDocument {
   Future<String> extractText(int pageIndex) async {
     final text = await _doc.pages[pageIndex].loadText();
     return text?.fullText ?? '';
+  }
+
+  @override
+  Future<List<PdfWordBox>> words(int pageIndex) async {
+    final page = _doc.pages[pageIndex];
+    final text = await page.loadText();
+    if (text == null) return const [];
+    final chars = text.fullText;
+    final rects = text.charRects;
+    final out = <PdfWordBox>[];
+    Rect? word;
+    void flush() {
+      final w = word;
+      if (w != null) out.add((left: w.left, top: w.top, right: w.right, bottom: w.bottom));
+      word = null;
+    }
+
+    for (var i = 0; i < chars.length && i < rects.length; i++) {
+      if (chars[i].trim().isEmpty) {
+        flush();
+        continue;
+      }
+      // pdfrx maps PDF space (bottom-left origin, unrotated) to the page as
+      // displayed, the same frame its renderer and text selection use.
+      final r = rects[i].toRect(page: page);
+      if (!r.isFinite || r.width <= 0 || r.height <= 0) continue;
+      final w = word;
+      // A word also ends where the next character jumps a gap or a line.
+      if (w != null && (r.left - w.right > r.height || (r.center.dy - w.center.dy).abs() > 0.6 * r.height)) {
+        flush();
+      }
+      word = word == null ? r : word!.expandToInclude(r);
+    }
+    flush();
+    return out;
   }
 
   @override

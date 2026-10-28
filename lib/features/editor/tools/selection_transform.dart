@@ -269,11 +269,11 @@ SelectionEdit restoreOriginalSelection(PageContent page, Selection selection) {
   return SelectionEdit(strokesBefore: before, strokesAfter: after);
 }
 
-/// [s] with `points = raw` and no shape. Returns [s] itself when it is
-/// already like that.
+/// [s] with `points = raw`, no shape and the width it was drawn with.
+/// Returns [s] itself when it is already like that.
 Stroke restoreOriginalStroke(Stroke s) {
-  if (s.pointsAreRaw && s.shape == null) return s;
-  return s.copyWith(points: s.raw, clearShape: true);
+  if (s.pointsAreRaw && s.shape == null && s.rawSize == null) return s;
+  return s.copyWith(points: s.raw, clearShape: true, size: s.rawSize ?? s.size, clearRawSize: true);
 }
 
 /// Deletes everything in [selection]: strokes via `RemoveStrokesCommand`

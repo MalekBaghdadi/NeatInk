@@ -64,6 +64,17 @@ class SettingsScreen extends ConsumerWidget {
                       change((s) => s.copyWith(shapeSnapEnabled: v)),
                 ),
                 SwitchListTile(
+                  key: const ValueKey('settings-tidy-highlighter'),
+                  secondary: const Icon(Icons.format_color_fill_outlined),
+                  title: const Text('Tidy highlighter'),
+                  subtitle: const Text(
+                      'A highlight drawn over writing, typed text or a PDF '
+                      'becomes a straight band that fits the line.'),
+                  value: settings.tidyHighlighter,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(tidyHighlighter: v)),
+                ),
+                SwitchListTile(
                   key: const ValueKey('settings-auto-convert'),
                   secondary: const Icon(Icons.auto_awesome_outlined),
                   title: const Text('Auto-convert handwriting'),
