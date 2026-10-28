@@ -9,6 +9,7 @@ import 'package:neatink/document/commands.dart';
 import 'package:neatink/document/font_kind.dart';
 import 'package:neatink/features/editor/canvas/document_view.dart';
 import 'package:neatink/features/editor/editor_tool.dart';
+import 'package:neatink/features/editor/integrations/convert/convert_layout.dart';
 import 'package:neatink/features/settings/app_settings.dart';
 import 'package:neatink/features/settings/convert_style_prefs.dart';
 import 'package:neatink/features/settings/settings_controller.dart';
@@ -483,9 +484,28 @@ void main() {
     });
 
     testWidgets('a word far away starts a box of its own', (tester) async {
-      final h = await twoWords(tester, gap: 60);
+      final h = await twoWords(tester, gap: 220);
       await wait(tester, 1100);
       expect(texts(h), ['hello', 'second']);
+    });
+
+    testWidgets('a word written just after the TYPED text joins the sentence',
+        (tester) async {
+      // The typed text is never as wide as the handwriting was; the writer
+      // goes on where the text ends, not where the ink ended.
+      final h = await ConvertHarness.open(tester,
+          recognizer: reader(), autoConvert: true);
+      final first = writeLine('a', ['hello'], y: 104);
+      await h.write(first);
+      await wait(tester, 1100);
+      final box = h.page.texts.single;
+      final typedEnd = box.x + const FlutterTextMetrics().naturalWidth(box);
+      expect((typedEnd - rightOf(first)).abs(), greaterThan(25),
+          reason: 'the test needs typed text of another width than the ink');
+      await h.write(writeLine('b', ['hello'], x: typedEnd + 12, y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello second']);
+      expect(h.page.texts.single.id, box.id);
     });
 
     testWidgets('a word on another baseline starts a box of its own',

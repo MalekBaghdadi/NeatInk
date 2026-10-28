@@ -109,14 +109,19 @@ abstract final class ConvertConfig {
   /// forever.
   static const Duration autoPassTimeout = Duration(minutes: 2);
 
-  /// A new auto-converted line is appended to the previous auto-converted
-  /// box instead of starting a second one when it sits on the same baseline
-  /// (within this many x-heights)...
+  /// A new auto-converted line is appended to a text box on the page instead
+  /// of starting a second one when it sits on the same baseline (within this
+  /// many x-heights)...
   static const double mergeBaselineTol = 0.6;
 
-  /// ...and starts this close (x-heights, but not before it) to where the
-  /// previous handwriting ended.
+  /// ...and starts this close (x-heights) after where the box's typed text
+  /// ends (or, for a box auto-convert made, where the handwriting it
+  /// replaced ended)...
   static const double mergeMaxGap = 2.5;
+
+  /// ...or at most this far over its last letter (the pen lands a little
+  /// early).
+  static const double mergeOverlap = 0.5;
 
   /// Ink colour overrides offered next to "Keep my ink colour".
   static const List<int> colorChoices = [

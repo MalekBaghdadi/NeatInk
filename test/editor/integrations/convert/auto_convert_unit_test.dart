@@ -194,6 +194,76 @@ void main() {
       expect(plan(line(left: 220), boxes: [b], live: (_) => grown), isNull);
     });
 
+    group('any one-line box on the page', () {
+      // "hello" at size 16 is 40 wide here: typed text ends at x 140.
+      MergePlan? onPage(LineGeometry geometry, TextItem t) => planMerge(
+            boxes: const [],
+            pageTexts: [t],
+            liveItem: (id) => id == t.id ? t : null,
+            line: geometry,
+            text: 'world',
+            pageWidth: pageWidth,
+            metrics: metrics,
+          );
+
+      test('a line just after the typed text continues it', () {
+        final p = onPage(line(left: 150), item())!;
+        expect(p.after.text, 'hello world');
+        expect(p.after.x, 100);
+        expect(onPage(line(left: 150), item())!.base.inkRight, 140);
+      });
+
+      test('exactly one space between the old and the new text', () {
+        final p = onPage(line(left: 150), item(text: 'hello ', width: 60))!;
+        expect(p.after.text, 'hello world');
+      });
+
+      test('from half an x-height over the last letter to 2.5 after it', () {
+        expect(onPage(line(left: 136), item()), isNotNull);
+        expect(onPage(line(left: 130), item()), isNull);
+        expect(onPage(line(left: 164), item()), isNotNull);
+        expect(onPage(line(left: 166), item()), isNull);
+      });
+
+      test('on its baseline (y + first baseline = 84 + 12.8)', () {
+        expect(onPage(line(left: 150, baseline: 96.8), item()), isNotNull);
+        expect(onPage(line(left: 150, baseline: 104), item()), isNull);
+      });
+
+      test('centred, right-aligned, gone or taken boxes are left alone', () {
+        expect(onPage(line(left: 150), item().copyWith(align: TextAlignKind.center)), isNull);
+        expect(onPage(line(left: 150), item().copyWith(align: TextAlignKind.right)), isNull);
+        expect(
+            planMerge(
+              boxes: const [],
+              pageTexts: [item()],
+              liveItem: (_) => null,
+              line: line(left: 150),
+              text: 'world',
+              pageWidth: pageWidth,
+              metrics: metrics,
+            ),
+            isNull);
+        expect(
+            planMerge(
+              boxes: const [],
+              pageTexts: [item()],
+              liveItem: (_) => item(),
+              line: line(left: 150),
+              text: 'world',
+              pageWidth: pageWidth,
+              metrics: metrics,
+              taken: {'i1'},
+            ),
+            isNull);
+      });
+
+      test('an auto box also continues after its typed text, far from its ink', () {
+        // ink ended at 200, typed text at 140
+        expect(plan(line(left: 150))!.after.text, 'hello world');
+      });
+    });
+
     test('the joined text must stay on one line inside the page', () {
       // Room: 200 - 24 margin - 100 = 76; "hello world" needs 88 + 4.
       expect(plan(line(), width: 200), isNull);

@@ -482,17 +482,16 @@ class AutoConvertSession with WidgetsBindingObserver {
         final line = lineById[out.id]!;
         final geometry = LineGeometry.of(line.line);
         ids.addAll(line.strokeIds);
-        final merge = boxes == null
-            ? null
-            : planMerge(
-                boxes: boxes.values,
-                liveItem: page.textById,
-                line: geometry,
-                text: out.item.text,
-                pageWidth: meta.width,
-                metrics: metrics,
-                taken: takenBoxes,
-              );
+        final merge = planMerge(
+          boxes: boxes?.values ?? const <AutoBox>[],
+          pageTexts: page.texts,
+          liveItem: page.textById,
+          line: geometry,
+          text: out.item.text,
+          pageWidth: meta.width,
+          metrics: metrics,
+          taken: takenBoxes,
+        );
         final inkRight = geometry.right;
         final inkBaseline = geometry.baselineAt(geometry.right);
         if (merge != null) {
@@ -534,8 +533,12 @@ class AutoConvertSession with WidgetsBindingObserver {
       }
     });
     grownBoxes.forEach((pageId, list) {
+      final map = _boxes.putIfAbsent(pageId, () => {});
       for (final (box, version) in list) {
         box.versions.add(version);
+        // A box typed earlier (Convert button, another session) that a line
+        // was appended to is followed from now on, like the ones made here.
+        map.putIfAbsent(box.id, () => box);
       }
     });
   }
