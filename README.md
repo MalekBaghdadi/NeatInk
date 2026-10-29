@@ -32,7 +32,7 @@ and copy it to the tablet.
 - **Scribble to delete**, like on an iPad: scribble back and forth over handwriting or typed text with the pen and it disappears (one undo brings it back). Scribbling on empty paper, or shading inside a drawn circle, stays ink. Switch it off in Settings.
 - **Tidy highlighter**: a wobbly highlight over a line of writing, typed text or PDF text becomes a neat straight band over that line (switch it off in Settings; "Restore original" in the lasso menu brings the drawn one back).
 - **Convert to text**: tap Convert and the app reads your handwriting a whole line at a time (on the tablet, nothing is uploaded), shows what it understood so you can fix any word, and retypes it on the lines in a font you choose (18 fonts: school-friendly, handwriting-style, serif, sans and more). Punctuation comes along (full stops, commas, colons, semicolons, question marks), and an arrow drawn between words becomes →. One undo gives your handwriting back.
-- **Autocorrect**, like on an iPad: misspellings, missing apostrophes (isnt → isn't), capitals and small grammar slips (a/an, "could of", "their is", repeated words) are fixed as handwriting becomes text. Corrected words get a dotted underline: tap one and tap the bubble to get your word back (it is then learned, so it is not corrected again), or tick to keep it. Switch it off in Settings to only get suggestions in the review sheet. Names you taught it are never changed.
+- **Autocorrect**, like on an iPad: misspellings (swapped, missing or doubled letters: teh, recieve, finaly, happend), missing apostrophes (isnt → isn't), capitals and small grammar slips (a/an, "could of", "their is", repeated words) are fixed as handwriting becomes text. British and American spellings are both fine. Corrected words get a dotted underline: tap one and tap the bubble to get your word back (it is then learned, so it is not corrected again), or tick to keep it. Switch it off in Settings to only get suggestions in the review sheet. Names you taught it are never changed.
 - **Check spelling**, like in Word: in typed text a red wavy line marks a word the app does not know, an amber one a word that may be a slip (wong for wrong). Tap it for spellings to choose from, or add the word to My words.
 - **Auto-convert**: switch it on and your writing turns into text by itself a moment after you lift the pen (you choose how long, 1 to 10 seconds, so you can pause mid-sentence). A line it can't read stays handwriting, and a small note offers to review it. Writing more after the typed text carries on the same sentence, right beside it. A new line stays a new line, unless the sentence clearly goes on (it ran out of room, or ended on a comma or a word like "the").
 - **Typed text settings** (the slider button next to Auto, or Settings > Typed text), open any time: font, bold/italic, colour and size. The size is **even** by default: every line the same size, chosen to sit on the page's lines; "Match my handwriting" and a custom size are there too. **Join lines into sentences** (on by default): a sentence that runs over to the next line becomes one line of text that wraps at the page edge.
@@ -47,13 +47,13 @@ and copy it to the tablet.
 - **Trash**: deleted notebooks wait in the Trash (bottom of the side menu) for 30 days, to bring back or delete for good.
 - **Backup & restore** (Settings > Backup): all notebooks, folders, settings and My words in one file you save wherever you like (Downloads, a USB stick, a PC). Restoring only adds: notebooks already on the tablet are left alone, changed ones come back as copies.
 - **Tips** open once after installing or updating, and any time from Settings > About.
-- **Keep my corrections**: lines you check in the Convert sheet are kept on the tablet, so recognition can be improved for your writing; Settings > Share my corrections sends them when you choose.
+- **Writing samples**: lines typed from your handwriting (Convert or Auto) are kept on the tablet with what you changed afterwards, so recognition can be improved for your writing; ⋮ › Send writing samples (or Settings › Writing) shares them in one file when you choose.
 - **Share diagnostics** (Settings > About): problems the app ran into are kept on the tablet, to send when something goes wrong.
 
 ## Private by design
 
 It works fully offline. The app has no internet permission, no accounts, no
-tracking and no ads. Your notebooks, corrections and diagnostics leave the
+tracking and no ads. Your notebooks, writing samples and diagnostics leave the
 tablet only when you export, back up or share them yourself.
 
 ## For developers
