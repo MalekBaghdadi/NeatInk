@@ -589,7 +589,7 @@ class HtrRecognizer {
       for (var i = 0; i < drafts.length; i++)
         WordResult(
           group: groups[i],
-          text: drafts[i].text,
+          text: typedArrows(drafts[i].text),
           confidence: drafts[i].confidence,
           raw: drafts[i].raw,
           alternatives: drafts[i].alternatives,
