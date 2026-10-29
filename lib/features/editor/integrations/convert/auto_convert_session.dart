@@ -582,6 +582,15 @@ class AutoConvertSession with WidgetsBindingObserver {
           ));
         }
         if (merge != null) {
+          // The appended text keeps when it was written, after the box's own.
+          final shift = merge.after.text.length - out.item.text.length;
+          if (out.item.times.isNotEmpty && shift >= 0) {
+            final after = merge.after.copyWith(times: [
+              ...merge.after.times.where((t) => t.start < shift),
+              for (final t in out.item.times) t.shifted(shift),
+            ]);
+            merge = MergePlan(merge.box, merge.before, after, merge.base);
+          }
           takenBoxes.add(merge.box.id);
           grownIds.add(merge.before.id);
           placed.add(merge.after);

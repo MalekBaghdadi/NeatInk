@@ -130,6 +130,10 @@ abstract class NotebookRepository {
   /// Absolute path of the notebook's `source.pdf` (may not exist).
   String sourcePdfPath(String notebookId);
 
+  /// Absolute path of the notebook's `audio/` folder (lecture recordings,
+  /// v1.12.0; may not exist). It moves with the notebook (Trash, backups).
+  String recordingsFolder(String notebookId);
+
   /// Copies an image file into the notebook's `assets/` folder and returns
   /// the new asset file name.
   Future<String> addAsset(String notebookId, String sourceFilePath);

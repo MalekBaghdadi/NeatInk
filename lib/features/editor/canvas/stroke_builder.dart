@@ -18,6 +18,7 @@ class StrokeBuilder {
     required this.pageWidth,
     required this.pageHeight,
     required this.startTime,
+    this.writtenAt,
   }) : _endTime = startTime;
 
   /// Page size in points; points are clamped to [0, width] × [0, height].
@@ -26,6 +27,10 @@ class StrokeBuilder {
 
   /// Pointer-clock time of the first sample.
   final Duration startTime;
+
+  /// Wall-clock time of the first sample (ms since the epoch), kept on the
+  /// stroke ([Stroke.writtenAt]).
+  final int? writtenAt;
 
   final List<InkPoint> _points = [];
   late final UnmodifiableListView<InkPoint> _view =
@@ -86,5 +91,6 @@ class StrokeBuilder {
         color: color,
         size: size,
         raw: _points,
+        writtenAt: writtenAt,
       );
 }

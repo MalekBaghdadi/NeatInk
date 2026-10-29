@@ -127,6 +127,9 @@ class FileNotebookRepository implements NotebookRepository {
       p.join(_dir(notebookId), _thumbFile);
 
   @override
+  String recordingsFolder(String notebookId) => p.join(_dir(notebookId), 'audio');
+
+  @override
   String assetPath(String notebookId, String asset) =>
       p.join(_assetsDir(notebookId), checkAssetName(asset));
 
@@ -485,6 +488,7 @@ class FileNotebookRepository implements NotebookRepository {
           await _writePage(newId, newPageIds[page.id]!, content);
         }
         await _copyAssets(notebookId, newId);
+        await _copyRecordings(notebookId, newId);
         await _copyIfExists(sourcePdfPath(notebookId), sourcePdfPath(newId));
         await _copyIfExists(thumbnailPath(notebookId), thumbnailPath(newId));
         final search = await _loadSearchData(notebookId);
@@ -520,6 +524,18 @@ class FileNotebookRepository implements NotebookRepository {
       if (entity is! File || !isValidAssetName(name)) continue;
       await AtomicFile.copy(entity.path, assetPath(toId, name));
       _sessionAssetsOf(toId).add(name);
+    }
+  }
+
+  /// The lecture recordings go with the copy: its notes keep the times they
+  /// were written, so they play back with it the same way.
+  Future<void> _copyRecordings(String fromId, String toId) async {
+    final dir = Directory(recordingsFolder(fromId));
+    if (!await dir.exists()) return;
+    await Directory(recordingsFolder(toId)).create(recursive: true);
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File || p.basename(entity.path).contains('.tmp')) continue;
+      await AtomicFile.copy(entity.path, p.join(recordingsFolder(toId), p.basename(entity.path)));
     }
   }
 

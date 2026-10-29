@@ -97,6 +97,9 @@ class EditorController extends ChangeNotifier {
 
   final ToolPrefsStore _toolPrefsStore;
   final DateTime Function() _clock;
+
+  /// The editor's clock (the wall clock; tests set it).
+  DateTime now() => _clock();
   final Uuid _uuid;
 
   /// Zoom, pan and page layout of the document view.

@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:neatink/document/page_items.dart' show TextCorrection;
+import 'package:neatink/document/page_items.dart' show TextCorrection, TextTime;
 import 'package:neatink/app/providers.dart';
 import 'package:neatink/document/commands.dart';
 import 'package:neatink/document/font_kind.dart';
@@ -758,6 +758,20 @@ void main() {
       await wait(tester, 1100);
       expect(texts(h), ['hello third']);
     });
+  });
+
+  // v1.12.0: typed notes play back line by line with a lecture recording.
+  testWidgets('typed text keeps when each of its lines was written', (tester) async {
+    final h = await ConvertHarness.open(tester, recognizer: reader(), autoConvert: true);
+    final first = [for (final s in writeLine('a', ['hello'], y: 104)) s.copyWith(writtenAt: 1000)];
+    await h.write(first);
+    await wait(tester, 1100);
+    expect(h.page.texts.single.times, const [TextTime(0, 1000)]);
+    await h.write([for (final s in writeLine('b', ['hello'], x: rightOf(first) + 20, y: 104)) s.copyWith(writtenAt: 9000)]);
+    await wait(tester, 1100);
+    final box = h.page.texts.single;
+    expect(box.text, 'hello second');
+    expect(box.times, const [TextTime(0, 1000), TextTime(6, 9000)], reason: 'the appended word from when it was written');
   });
 
   // v1.11.0: Mariam mostly uses Auto, whose lines were never kept, and

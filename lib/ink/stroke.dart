@@ -48,6 +48,7 @@ class Stroke {
     List<InkPoint>? points,
     ShapeKind? shape,
     double? rawSize,
+    int? writtenAt,
   }) {
     final r = raw is _FrozenPoints ? raw : _FrozenPoints(raw);
     final List<InkPoint> p;
@@ -56,11 +57,11 @@ class Stroke {
     } else {
       p = points is _FrozenPoints ? points : _FrozenPoints(points);
     }
-    return Stroke._(id, tool, penStyle, color, size, r, p, shape, rawSize);
+    return Stroke._(id, tool, penStyle, color, size, r, p, shape, rawSize, writtenAt);
   }
 
   Stroke._(this.id, this.tool, this.penStyle, this.color, this.size, this.raw,
-      this.points, this.shape, this.rawSize);
+      this.points, this.shape, this.rawSize, this.writtenAt);
 
   factory Stroke.fromJson(Map<String, dynamic> j) {
     final raw = _pointsFromJson(j['raw']);
@@ -79,6 +80,7 @@ class Stroke {
           ? null
           : _enumByName(ShapeKind.values, j['shape'], ShapeKind.line),
       rawSize: (j['rawSize'] as num?)?.toDouble(),
+      writtenAt: (j['at'] as num?)?.toInt(),
     );
   }
 
@@ -99,6 +101,11 @@ class Stroke {
   /// highlight laid over a line of text gets the height of the line). Null:
   /// [size] is the drawn width. "Restore original" puts it back.
   final double? rawSize;
+
+  /// When the pen went down for this stroke (milliseconds since the epoch,
+  /// wall clock; v1.12.0, null for older strokes). A lecture recording plays
+  /// the notes back in step with the sound by it.
+  final int? writtenAt;
 
   bool get isHighlighter => tool == StrokeTool.highlighter;
 
@@ -125,6 +132,7 @@ class Stroke {
     bool clearShape = false,
     double? rawSize,
     bool clearRawSize = false,
+    int? writtenAt,
   }) =>
       Stroke(
         id: id ?? this.id,
@@ -136,6 +144,7 @@ class Stroke {
         points: points ?? this.points,
         shape: clearShape ? null : (shape ?? this.shape),
         rawSize: clearRawSize ? null : (rawSize ?? this.rawSize),
+        writtenAt: writtenAt ?? this.writtenAt,
       );
 
   /// Applies [m] to both [raw] and [points] (lasso move/resize). The width
@@ -154,6 +163,7 @@ class Stroke {
           pointsAreRaw ? newRaw : [for (final p in points) p.transformed(m)],
       shape: shape,
       rawSize: rs == null || !scaleWidth ? rs : rs * m.meanScale,
+      writtenAt: writtenAt,
     );
   }
 
@@ -168,6 +178,7 @@ class Stroke {
         'points': [for (final p in points) p.toJson()],
         if (shape != null) 'shape': shape!.name,
         if (rawSize != null) 'rawSize': rawSize,
+        if (writtenAt != null) 'at': writtenAt,
       };
 
   static List<InkPoint> _pointsFromJson(dynamic j) => [

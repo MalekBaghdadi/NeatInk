@@ -363,6 +363,9 @@ class InMemoryNotebookRepository implements NotebookRepository {
   String thumbnailPath(String notebookId) =>
       p.join(_notebookDir(notebookId), 'thumb.png');
 
+  @override
+  String recordingsFolder(String notebookId) => p.join(_notebookDir(notebookId), 'audio');
+
   // ---------------------------------------------------------------------
   // Library and search
   // ---------------------------------------------------------------------

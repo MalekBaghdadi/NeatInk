@@ -82,6 +82,57 @@ List<TextCorrection> remapCorrections(String before, String after, List<TextCorr
   ];
 }
 
+/// When part of a text box was written (v1.12.0): the text from [start] on
+/// (up to the next [TextTime] of the box) was converted from handwriting the
+/// pen began at [writtenAt] (milliseconds since the epoch). A lecture
+/// recording plays typed notes back line by line with it.
+class TextTime {
+  const TextTime(this.start, this.writtenAt);
+
+  final int start;
+  final int writtenAt;
+
+  TextTime shifted(int by) => TextTime(start + by, writtenAt);
+
+  List<int> toJson() => [start, writtenAt];
+
+  @override
+  bool operator ==(Object other) => other is TextTime && other.start == start && other.writtenAt == writtenAt;
+
+  @override
+  int get hashCode => Object.hash(start, writtenAt);
+
+  @override
+  String toString() => 'TextTime($start @$writtenAt)';
+}
+
+/// [times] of [before] carried over to [after] (the same text edited in one
+/// place), like [remapCorrections]: marks before the edit stay, those after
+/// it move with the text, those inside it are dropped (the edited words then
+/// count as written with the text before them).
+List<TextTime> remapTimes(String before, String after, List<TextTime> times) {
+  if (times.isEmpty || before == after) return times;
+  final common = before.length < after.length ? before.length : after.length;
+  var prefix = 0;
+  while (prefix < common && before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
+    prefix++;
+  }
+  var suffix = 0;
+  while (suffix < common - prefix &&
+      before.codeUnitAt(before.length - 1 - suffix) == after.codeUnitAt(after.length - 1 - suffix)) {
+    suffix++;
+  }
+  final editEnd = before.length - suffix;
+  final delta = after.length - before.length;
+  return [
+    for (final t in times)
+      if (t.start <= prefix)
+        t
+      else if (t.start >= editEnd)
+        t.shifted(delta),
+  ];
+}
+
 /// A typed text box placed on a page. Position and size are in page points.
 class TextItem {
   const TextItem({
@@ -101,6 +152,7 @@ class TextItem {
     this.background = 0x00000000,
     this.corrections = const [],
     this.lineSpacing,
+    this.times = const [],
   });
 
   factory TextItem.fromJson(Map<String, dynamic> j) => TextItem(
@@ -127,6 +179,10 @@ class TextItem {
           final num v when v.isFinite && v > 0 => v.toDouble(),
           _ => null,
         },
+        times: [
+          for (final t in (j['times'] as List<dynamic>? ?? const []))
+            if (t is List && t.length >= 2 && t[0] is num && t[1] is num) TextTime((t[0] as num).toInt(), (t[1] as num).toInt()),
+        ],
       );
 
   final String id;
@@ -161,6 +217,10 @@ class TextItem {
   /// the font's own line height (v1.6.0). Handwriting converted on ruled
   /// paper uses the ruling, so every wrapped line sits on a ruled line.
   final double? lineSpacing;
+
+  /// When its lines were written, for boxes converted from handwriting
+  /// (see [TextTime]; empty for typed boxes and older ones), by `start`.
+  final List<TextTime> times;
 
   /// The [corrections] still in [text].
   List<TextCorrection> get liveCorrections => [
@@ -204,6 +264,7 @@ class TextItem {
     int? background,
     List<TextCorrection>? corrections,
     double? lineSpacing,
+    List<TextTime>? times,
   }) =>
       TextItem(
         id: id ?? this.id,
@@ -226,6 +287,8 @@ class TextItem {
                 ? this.corrections
                 : remapCorrections(this.text, text, this.corrections)),
         lineSpacing: lineSpacing ?? this.lineSpacing,
+        times: times ??
+            (text == null || text == this.text ? this.times : remapTimes(this.text, text, this.times)),
       );
 
   Map<String, dynamic> toJson() => {
@@ -246,6 +309,7 @@ class TextItem {
         if (liveCorrections.isNotEmpty)
           'corrections': [for (final c in liveCorrections) c.toJson()],
         if (lineSpacing != null) 'lineSpacing': lineSpacing,
+        if (times.isNotEmpty) 'times': [for (final t in times) t.toJson()],
       };
 }
 

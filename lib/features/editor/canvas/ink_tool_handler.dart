@@ -41,6 +41,7 @@ class InkToolHandler extends CanvasToolHandler {
       pageWidth: page.width,
       pageHeight: page.height,
       startTime: e.timeStamp,
+      writtenAt: controller.now().millisecondsSinceEpoch,
     )..add(hit.point.x, hit.point.y, e.pressure, e.timeStamp);
     final live = controller.liveInkFor(hit.pageId);
     final stroke = ActiveStroke(
