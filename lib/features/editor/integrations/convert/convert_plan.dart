@@ -245,7 +245,8 @@ String? textBeforeLine(Iterable<TextItem> texts, {required double left, required
   return (beside ?? above)?.text;
 }
 
-/// Groups [strokes] (ignoring highlighter strokes and shapes) into lines,
+/// Groups [strokes] (ignoring highlighter strokes and shapes other than
+/// level arrows) into lines,
 /// without recognising anything yet. Every pen stroke ends up in a line's
 /// [RecognizedLine.inkStrokes].
 List<RecognizedLine> groupPageStrokes(List<Stroke> strokes) =>

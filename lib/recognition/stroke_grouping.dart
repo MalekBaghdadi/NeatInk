@@ -230,7 +230,8 @@ class RecognizedLine {
 ///    These [RecognizedLine.words] are only a fallback: the recogniser reads
 ///    whole lines ([RecognizedLine.inkStrokes]).
 ///
-/// Highlighter strokes and shapes are ignored. Lines come top to bottom,
+/// Highlighter strokes and shapes are ignored (except a snapped arrow along
+/// the line: see `arrows.dart`). Lines come top to bottom,
 /// words left to right; every pen stroke ends up in exactly one line.
 List<RecognizedLine> groupStrokes(
   List<Stroke> strokes, {
@@ -239,7 +240,9 @@ List<RecognizedLine> groupStrokes(
 }) {
   final items = <_Item>[];
   for (final s in strokes) {
-    if (s.tool != StrokeTool.pen || s.shape != null) continue;
+    // Shapes are drawings, except an arrow written in a line of text, which
+    // becomes "→" (arrows.dart).
+    if (s.tool != StrokeTool.pen || (s.shape != null && !_levelArrow(s))) continue;
     final b = finiteBounds(s.points);
     if (b == null) continue;
     items.add(_Item(s, b, items.length));
@@ -947,4 +950,12 @@ bool _isLoopLike(_Item it, double u) {
   if (s.length < 3) return false;
   final diag = it.bounds.diagonal;
   return diag >= 0.5 * u && s.first.distanceTo(s.last) <= 0.4 * diag;
+}
+
+/// A stroke snapped to an arrow that lies along a line (at least twice as
+/// wide as tall).
+bool _levelArrow(Stroke s) {
+  if (s.shape != ShapeKind.arrow) return false;
+  final b = s.bounds;
+  return b.right - b.left >= 2 * (b.bottom - b.top);
 }

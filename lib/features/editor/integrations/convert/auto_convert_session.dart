@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../document/page_items.dart';
 import '../../../../ink/stroke.dart';
+import '../../../../recognition/arrows.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/stroke_grouping.dart' show RecognizedLine;
 import '../../editor_controller.dart';
@@ -246,7 +247,7 @@ class AutoConvertSession with WidgetsBindingObserver {
   void _onFinished(FinishedStroke e) {
     if (_disposed || !_enabled || _away) return;
     final s = e.stroke;
-    if (s.tool != StrokeTool.pen || s.shape != null) return;
+    if (s.tool != StrokeTool.pen || (s.shape != null && s.shape != ShapeKind.arrow)) return;
     _generation++;
     _failurePaused = false;
     if (!controller.isPageEditable(e.pageId)) return;
@@ -355,7 +356,8 @@ class AutoConvertSession with WidgetsBindingObserver {
       bool usable(String id) {
         final s = byId[id];
         if (s == null || _ignored.contains(id)) return false; // gone, or not ours
-        return s.tool == StrokeTool.pen && s.shape == null;
+        // Snapped arrows too: one written between words becomes "→".
+        return s.tool == StrokeTool.pen && (s.shape == null || s.shape == ShapeKind.arrow);
       }
 
       final fresh = {for (final id in entry.value) if (usable(id)) id};
@@ -483,7 +485,8 @@ class AutoConvertSession with WidgetsBindingObserver {
           final mark = late.mark;
           if (mark != null) marks.putIfAbsent(late.box.id, () => mark);
           if (wasHeld(line)) kept--;
-        } else if (dotsOnly) {
+        } else if (dotsOnly || (fresh && line.text.trim().isEmpty && findArrows(line.line).isNotEmpty)) {
+          // An arrow on its own, too: it waits for the words beside it.
           // Dots on their own are never a text box ("." or "?"): they wait,
           // quietly, for writing next to them (a bullet, then its text).
           _held.putIfAbsent(pageId, () => <String>{}).addAll(line.strokeIds);

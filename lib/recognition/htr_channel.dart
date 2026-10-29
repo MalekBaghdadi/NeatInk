@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../beautify/resample.dart';
 import '../ink/ink_rect.dart';
 import '../ink/stroke.dart';
+import 'arrows.dart';
 import 'ctc.dart';
 import 'lexicon.dart';
 import 'line_decoder.dart';
@@ -470,8 +471,18 @@ class HtrRecognizer {
       final end = (start + batchSize).clamp(0, lines.length);
       final group = lines.sublist(start, end);
       final rendered = <List<LineImage>>[];
+      // Arrows between words are not read by the model: they leave the
+      // picture and come back as "→" where they were (arrows.dart).
+      final arrows = <List<LineArrow>>[];
+      final readable = <RecognizedLine>[];
       for (final line in group) {
-        rendered.add(await renderLineImages(line, renderer: _renderer, config: _lineImageConfig));
+        final found = findArrows(line);
+        final text = found.isEmpty ? line : _withoutArrows(line, found);
+        arrows.add(found);
+        readable.add(text);
+        rendered.add(text.inkStrokes.isEmpty
+            ? const <LineImage>[]
+            : await renderLineImages(text, renderer: _renderer, config: _lineImageConfig));
       }
       final flat = [for (final images in rendered) ...images];
       final logProbs = <CtcLogProbs>[];
@@ -487,11 +498,13 @@ class HtrRecognizer {
         ];
         at += images.length;
         final result = _lineResult(
-          group[i],
+          readable[i],
           images,
           readings,
           textPolisher,
           sentenceStart: previous == null || _endsSentence(previous),
+          arrows: arrows[i],
+          whole: group[i],
         );
         results.add(result);
         if (result.text.isNotEmpty) previous = result.text;
@@ -513,6 +526,8 @@ class HtrRecognizer {
     List<LineReading> readings,
     TextPolisher textPolisher, {
     required bool sentenceStart,
+    List<LineArrow> arrows = const [],
+    RecognizedLine? whole,
   }) {
     final drafts = <_WordDraft>[];
     // Words without ink before the first word with ink.
@@ -554,10 +569,11 @@ class HtrRecognizer {
 
     if (drafts.isEmpty) {
       // Nothing was read (or nothing to attach it to): all the ink is one
-      // unreadable word.
-      final group = _groupOf(line, line.inkStrokes);
+      // unreadable word (an arrow alone included: a drawing).
+      final all = whole ?? line;
+      final group = _groupOf(all, all.inkStrokes);
       return LineResult(
-        line: line.copyWith(words: [group]),
+        line: all.copyWith(words: [group]),
         words: [
           WordResult(group: group, text: '', confidence: 0, raw: '', alternatives: const []),
         ],
@@ -579,9 +595,17 @@ class HtrRecognizer {
           alternatives: drafts[i].alternatives,
         ),
     ];
+    // Each arrow goes between the words left and right of it.
+    for (final a in arrows) {
+      final g = _groupOf(line, a.strokes);
+      var at = groups.indexWhere((x) => (x.bounds.left + x.bounds.right) / 2 > a.centerX);
+      if (at < 0) at = groups.length;
+      groups.insert(at, g);
+      words.insert(at, WordResult(group: g, text: a.text, confidence: 1, raw: a.text, alternatives: const []));
+    }
     final text = words.map((w) => w.text).join(' ');
     return LineResult(
-      line: line.copyWith(words: groups),
+      line: (whole ?? line).copyWith(words: groups),
       words: words,
       text: text,
       raw: raws.join(' '),
@@ -634,6 +658,24 @@ class HtrRecognizer {
   }
 
   /// One word group holding [strokes] (the line's baseline and size).
+  /// [line] without the strokes of [arrows] (its words and its ink).
+  static RecognizedLine _withoutArrows(RecognizedLine line, List<LineArrow> arrows) {
+    final gone = {for (final a in arrows) ...a.strokes};
+    return RecognizedLine(
+      words: [
+        for (final w in line.words)
+          if (w.strokes.any((s) => !gone.contains(s)))
+            _groupOf(line, [for (final s in w.strokes) if (!gone.contains(s)) s]),
+      ],
+      baselineY: line.baselineY,
+      baselineSlope: line.baselineSlope,
+      left: line.left,
+      right: line.right,
+      xHeight: line.xHeight,
+      inkStrokes: [for (final s in line.inkStrokes) if (!gone.contains(s)) s],
+    );
+  }
+
   static WordGroup _groupOf(RecognizedLine line, List<Stroke> strokes) {
     InkRect? bounds;
     for (final s in strokes) {

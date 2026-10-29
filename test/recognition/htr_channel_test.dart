@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/ink/vec2.dart';
 import 'package:neatink/recognition/ctc.dart';
 import 'package:neatink/recognition/htr_channel.dart';
 import 'package:neatink/recognition/lexicon.dart';
@@ -136,6 +137,28 @@ void main() {
     expect(results[0].group, isA<WordGroup>());
     expect(p.images, hasLength(2));
     expect(progress, [0, 2]);
+  });
+
+  test('an arrow between words is left out of the picture and comes back as →', () async {
+    final strokes = [
+      ...makeWord('hello', prefix: 'a', x: 100, y: 300),
+      ...toStrokes([
+        densify(const [Vec2(165, 295), Vec2(205, 295)]),
+        densify(const [Vec2(199, 290), Vec2(205, 295), Vec2(199, 300)]),
+      ], prefix: 'arrow'),
+      ...makeWord('hen', prefix: 'b', x: 215, y: 300),
+    ];
+    final line = groupStrokes(strokes).single;
+    final frames = [...spell('hello'), {' ': 0.9, '_': 0.05}, ...spell('hen')];
+    final p = plugin([frames]);
+    _mock(p);
+    final result = (await _recognizer(lexicon: lex).recognizeLines([line])).single;
+    expect(result.text, 'hello \u2192 hen');
+    final arrow = result.words[1];
+    expect(arrow.group.strokes.map((s) => s.id), ['arrow-0', 'arrow-1']);
+    expect(result.line.inkStrokes, hasLength(strokes.length), reason: 'the arrow goes with the line');
+    // The picture the model got had no arrow in it: narrower than the line.
+    expect(p.images.single.width, lessThan((205 - 100) * 48 / 14));
   });
 
   test('sends variable-size 48 pixel high images, one map per image', () async {
