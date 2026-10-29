@@ -586,7 +586,10 @@ class HtrRecognizer {
       text: text,
       raw: raws.join(' '),
       confidence: confidence,
-      suggestions: textPolisher.suggest(text, sentenceStart: sentenceStart),
+      suggestions: weighSuggestions(
+          textPolisher.suggest(text, sentenceStart: sentenceStart),
+          [for (final w in words) (text: w.text, confidence: w.confidence, alternatives: w.alternatives)],
+          textPolisher.config.sureWordConfidence),
       images: images,
     );
   }
@@ -700,4 +703,38 @@ class _WordDraft {
     raw = raw.isEmpty ? ghost.raw : (ghost.raw.isEmpty ? raw : '${ghost.raw} $raw');
     confidence = math.min(confidence, ghost.confidence);
   }
+}
+
+/// [suggestions] for the text of [words] (joined by single spaces), with the
+/// spelling fixes of unsure words ([PolishConfig.sureWordConfidence]) that
+/// are not among the word's own alternatives marked as not to be applied by
+/// themselves ([PolishSuggestion.auto]).
+List<PolishSuggestion> weighSuggestions(List<PolishSuggestion> suggestions,
+    List<({String text, double confidence, List<String> alternatives})> words, double sureConfidence) {
+  if (suggestions.isEmpty) return suggestions;
+  final starts = <int>[];
+  var at = 0;
+  for (final w in words) {
+    starts.add(at);
+    at += w.text.length + 1;
+  }
+  String core(String s) => s.toLowerCase().replaceAll(RegExp('[^a-z\'\u2019 ]'), '');
+  return [
+    for (final s in suggestions)
+      if (s.kind != PolishKind.spelling)
+        s
+      else
+        () {
+          // The word the fix starts in.
+          var i = 0;
+          while (i + 1 < starts.length && starts[i + 1] <= s.start) {
+            i++;
+          }
+          final w = words[i];
+          if (w.confidence >= sureConfidence) return s;
+          final target = core(s.replacement);
+          final weighed = w.alternatives.any((a) => core(a) == target);
+          return weighed ? s : s.offered;
+        }(),
+  ];
 }

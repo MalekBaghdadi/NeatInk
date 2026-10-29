@@ -185,6 +185,19 @@ void main() {
       expect(decoder.decode(lp).text, 'Malek');
     });
 
+    test('words glued by a full stop are scored as two words (Mariam\'s cord.Seizure)', () {
+      // One long unknown token paid a letter-by-letter penalty, so a reading
+      // that dropped letters ("cord.Seire,") beat the right one.
+      final lexicon = Lexicon.parse('filler 330000000000\ncord 20000000\nseizure 5000000\n');
+      final lp = lpOf(crisp('cord.Seizure,', maybe: {
+        8: {'z': 0.5, 'r': 0.45},
+        9: {'u': 0.5, 'e': 0.45},
+      }));
+      final d = LineDecoder(cs, lexicon);
+      expect(d.scoreText(lp, 'cord.Seizure,'), greaterThan(d.scoreText(lp, 'cord.Seire,')));
+      expect(d.decode(lp).text, contains('Seizure,'));
+    });
+
     test('a doubtful letter is settled by the word list', () {
       final r = decode(crisp('cot', maybe: {
         1: {'a': 0.45, 'o': 0.5},

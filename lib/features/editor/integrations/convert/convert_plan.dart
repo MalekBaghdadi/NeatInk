@@ -266,15 +266,17 @@ int dominantColorOf(Iterable<Stroke> strokes) {
   return best;
 }
 
-/// The suggestions of [all] that [applyPolish] would apply to [text] (the
-/// same rules: by position, none overlapping an earlier one, each still
-/// matching the text), in text order.
+/// The suggestions of [all] that Autocorrect applies by itself to [text]:
+/// those marked [PolishSuggestion.auto], by the rules of [applyPolish] (by
+/// position, none overlapping an earlier one, each still matching the text),
+/// in text order.
 List<PolishSuggestion> applicableSuggestions(
     String text, Iterable<PolishSuggestion> all) {
   final sorted = all.toList()..sort((a, b) => a.start.compareTo(b.start));
   final out = <PolishSuggestion>[];
   var lastEnd = -1;
   for (final s in sorted) {
+    if (!s.auto) continue;
     if (s.start < lastEnd || s.start < 0 || s.end > text.length || s.end < s.start) {
       continue;
     }

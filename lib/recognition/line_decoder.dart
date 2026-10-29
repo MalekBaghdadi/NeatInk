@@ -500,6 +500,7 @@ class _Decode {
 
   static final RegExp _split = RegExp(r'^([^A-Za-z0-9]*)(.*?)([^A-Za-z0-9]*)$');
   static final RegExp _plainWord = RegExp(r"^[A-Za-z]+(?:'[A-Za-z]+)?$");
+  static final RegExp _gluedWords = RegExp(r"^[A-Za-z]+(?:'[A-Za-z]+)?(?:[.,;:][A-Za-z]+(?:'[A-Za-z]+)?)+$");
   static final RegExp _closing = RegExp(r'''^[.,;:!?)\]}%"']+$''');
 
   late final CtcScorer _plain = CtcScorer.fromLogProbs(lp, blank: cs.blank);
@@ -543,6 +544,23 @@ class _Decode {
       (lex?.contains(lower) ?? false) ||
       contractionLogProb(lower) != null;
 
+  /// The prior of a token that is not a plain word: an unknown string, or
+  /// the sum of its words' priors when it is words glued by a full stop or
+  /// comma written without a space ("cord.Seizure"). As one unknown string
+  /// it paid the per-letter cost of a long token, so a reading that dropped
+  /// letters won ("cord.Seire"). Kept as one string: parts of one letter
+  /// ("e.g") and unknown parts of up to three ("file.txt", where splitting
+  /// would make dropping the dot cheaper than keeping it).
+  double _tokenPrior(String text, String core) {
+    if (_gluedWords.hasMatch(core)) {
+      final parts = core.split(RegExp('[.,;:]'));
+      if (parts.every((p) => p.length >= 2 && (p.length >= 4 || _known(p)))) {
+        return parts.map(_priorOf).reduce((a, b) => a + b);
+      }
+    }
+    return oovPriorFor(_letterOrDigit.allMatches(text).length);
+  }
+
   double _priorOf(String lower) {
     var best = oovPriorFor(lower.replaceAll("'", '').length);
     final base = lex?.logProb(lower);
@@ -581,7 +599,7 @@ class _Decode {
           trail: trail,
           letters: letters,
           known: known,
-          prior: letters ? _priorOf(core) : oovPriorFor(_letterOrDigit.allMatches(text).length),
+          prior: letters ? _priorOf(core) : _tokenPrior(text, core),
           sets: _setsOf(text),
         );
       });
@@ -931,6 +949,14 @@ class _Stretch {
       if (words.isEmpty) continue;
       starts.add([for (final w in words) _Tok(w.toLowerCase(), w)]);
     }
+    // The model's own best path too: the beam keeps the likeliest strings,
+    // and a clear word can fall out of them next to punctuation (Mariam's
+    // "cord.Seizure," came out as "cord. Seire,", which scores 2.9 nats
+    // below "Seizure").
+    final greedy = [
+      for (final w in greedyDecode(window, cs).text.split(' '))
+        if (w.isNotEmpty) _Tok(w.toLowerCase(), w),
+    ];
     if (starts.isEmpty) return const [];
     _own = _headStarts(starts.first);
 
@@ -945,6 +971,11 @@ class _Stretch {
     for (final (s, v) in ranked) {
       if (seeds.length >= limit || (v == double.negativeInfinity && seeds.isNotEmpty)) break;
       if (counts.add(s.length)) seeds.add(s);
+    }
+    bool same(List<_Tok> a, List<_Tok> b) =>
+        a.length == b.length && [for (var i = 0; i < a.length; i++) a[i].text == b[i].text].every((e) => e);
+    if (greedy.isNotEmpty && score(greedy) > double.negativeInfinity && !seeds.any((s) => same(s, greedy))) {
+      seeds.add(greedy);
     }
     if (ranked.first.$2 == double.negativeInfinity) {
       // The beam's reading does not even fit the frames (cannot happen for a

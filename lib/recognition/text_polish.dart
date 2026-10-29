@@ -16,6 +16,7 @@ class PolishSuggestion {
     required this.reason,
     required this.start,
     required this.end,
+    this.auto = true,
   });
 
   /// The text to replace and what to put there.
@@ -31,6 +32,15 @@ class PolishSuggestion {
   final int start;
   final int end;
 
+  /// Whether "Autocorrect" may apply it by itself. False for a spelling fix
+  /// of a word the recogniser was unsure of (see
+  /// [PolishConfig.sureWordConfidence]): it stays a suggestion.
+  final bool auto;
+
+  /// This suggestion, not to be applied by itself.
+  PolishSuggestion get offered => PolishSuggestion(
+      original: original, replacement: replacement, kind: kind, reason: reason, start: start, end: end, auto: false);
+
   @override
   bool operator ==(Object other) =>
       other is PolishSuggestion &&
@@ -39,10 +49,11 @@ class PolishSuggestion {
       other.kind == kind &&
       other.reason == reason &&
       other.start == start &&
-      other.end == end;
+      other.end == end &&
+      other.auto == auto;
 
   @override
-  int get hashCode => Object.hash(original, replacement, kind, reason, start, end);
+  int get hashCode => Object.hash(original, replacement, kind, reason, start, end, auto);
 
   @override
   String toString() => 'PolishSuggestion($original -> $replacement, ${kind.name}, [$start,$end))';
@@ -70,6 +81,7 @@ class PolishConfig {
     this.realWordMaxCost = 1.0,
     this.userWordRank = 5000,
     this.candidateLimit = 200,
+    this.sureWordConfidence = 0.65,
     this.abbreviations = defaultAbbreviations,
     this.repeatableWords = defaultRepeatableWords,
   });
@@ -153,6 +165,15 @@ class PolishConfig {
 
   /// Dictionary neighbours examined per word.
   final int candidateLimit;
+
+  /// Autocorrect fixes the spelling of a recognised word by itself only when
+  /// the recogniser read it with at least this confidence (the writer's own
+  /// slip, written clearly: `nuerons`), or when the fix is one of the
+  /// readings the decoder weighed against the picture. A word it was unsure
+  /// of is a misreading more often than a misspelling, and the text-only
+  /// guess turned Mariam's `systa` into `syria` and `visud` into `virus`; the
+  /// fix stays a suggestion and the word gets the spelling underline.
+  final double sureWordConfidence;
 
   /// Lowercase words whose full stop does not end a sentence.
   final Set<String> abbreviations;
