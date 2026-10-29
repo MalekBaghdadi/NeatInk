@@ -1,4 +1,4 @@
-import '../../../../document/page_items.dart' show TextCorrection;
+import '../../../../document/page_items.dart' show TextCorrection, TextItem;
 import '../../../../ink/stroke.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/stroke_grouping.dart';
@@ -203,11 +203,43 @@ class PageStrokes {
     required this.pageId,
     required this.pageIndex,
     required this.strokes,
+    this.texts = const [],
   });
 
   final String pageId;
   final int pageIndex;
   final List<Stroke> strokes;
+
+  /// Typed text already on the page: the box before the first line (in
+  /// reading order) says whether that line starts a sentence.
+  final List<TextItem> texts;
+}
+
+/// The text of the box in [texts] that comes right before a line of
+/// handwriting starting at ([left], [baselineY]) with [xHeight] in reading
+/// order: the nearest box ending above it, or one on the same line to its
+/// left. Null when there is none (the line starts the page).
+///
+/// Auto-convert reads only the new writing, so without this every pass
+/// started a sentence: autocorrect gave the first word a capital, and a
+/// line carrying on the sentence above ("... so I can / test my app") no
+/// longer looked like it, so it became a box of its own (v1.8.0).
+String? textBeforeLine(Iterable<TextItem> texts, {required double left, required double baselineY, required double xHeight}) {
+  TextItem? above, beside;
+  for (final t in texts) {
+    if (t.text.trim().isEmpty) continue;
+    final bottom = t.y + t.height;
+    if (bottom <= baselineY - 0.5 * xHeight) {
+      if (above == null ||
+          bottom > above.y + above.height + 0.5 * xHeight ||
+          ((bottom - (above.y + above.height)).abs() <= 0.5 * xHeight && t.x > above.x)) {
+        above = t;
+      }
+    } else if (t.y < baselineY && t.x + t.width <= left + 2 * xHeight) {
+      if (beside == null || t.x > beside.x) beside = t;
+    }
+  }
+  return (beside ?? above)?.text;
 }
 
 /// Groups [strokes] (ignoring highlighter strokes and shapes) into lines,
@@ -353,7 +385,12 @@ Future<List<PagePlan>> recognizePages(
     final planned = <PlannedLine>[];
     // The text of the line above the chunk, so the suggestions know whether
     // the chunk's first line starts a sentence (null: it starts the page).
-    String? above;
+    String? above = lines.isEmpty || pages[p].texts.isEmpty
+        ? null
+        : textBeforeLine(pages[p].texts,
+            left: lines.first.left,
+            baselineY: lines.first.baselineAt(lines.first.left),
+            xHeight: lines.first.xHeight);
     for (var start = 0; start < lines.length; start += ConvertConfig.chunkLines) {
       if (cancel?.isCancelled ?? false) throw const ConvertCancelled();
       final end = (start + ConvertConfig.chunkLines).clamp(0, lines.length);

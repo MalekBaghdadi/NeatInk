@@ -173,6 +173,7 @@ class ConvertSession extends ChangeNotifier {
           strokes: sel != null
               ? sel.strokesOn(doc.page(id))
               : List.of(doc.page(id).strokes),
+          texts: doc.page(id).texts,
         ),
     ];
   }

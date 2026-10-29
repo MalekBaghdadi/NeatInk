@@ -957,3 +957,7 @@ nmda 3000000
 ampa 3000000
 ltp 3000000
 ltd 3000000
+# names
+mariam 1400000
+malek 1400000
+baghdadi 1400000

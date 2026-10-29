@@ -386,6 +386,7 @@ class AutoConvertSession with WidgetsBindingObserver {
         pageId: pageId,
         pageIndex: doc.meta.indexOfPage(pageId),
         strokes: strokes,
+        texts: doc.page(pageId).texts,
       ));
     }
     _pending.clear();

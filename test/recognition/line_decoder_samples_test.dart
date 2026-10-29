@@ -45,7 +45,7 @@ void main() {
     final charset = CtcCharset.fromJson(charsetFile!.readAsStringSync());
     // The bundled lexicon: the general list and the study vocabulary.
     final subject = _asset('subject_words.txt');
-    final lexicon = Lexicon.parse([wordsFile!.readAsStringSync(), if (subject != null) subject.readAsStringSync()].join('\n'));
+    final lexicon = Lexicon.parse(wordsFile!.readAsStringSync(), studyText: subject?.readAsStringSync());
     final data = jsonDecode(File(path!).readAsStringSync()) as Map<String, dynamic>;
 
     final personal = UserLexicon()

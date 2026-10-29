@@ -175,6 +175,12 @@ coursework syllabus semester midterm midterms exam exams revision definition
 definitions summary diagram diagrams example examples
 """
 
+# The app's people (it is "Mariam's Notes"): the general list lacks their
+# names, and the owner's "Mariam" came out as "Marianne" (v1.8.0).
+NAMES = """
+mariam malek baghdadi
+"""
+
 ACRONYMS = """
 adhd ocd ptsd gaba dna rna mrna trna atp adp eeg ecg ekg emg mri fmri cns pns
 iq ssri ssris snri maoi dsm icd bmi hiv copd cpr icu bpm acth tsh lsd mdma
@@ -202,6 +208,7 @@ def main():
         ('maths and statistics', MATHS, COUNT),
         ('general study words', GENERAL, COUNT),
         ('acronyms', ACRONYMS, ACRONYM_COUNT),
+        ('names', NAMES, COUNT),
     ]:
         lines.append(f'# {title}')
         for w in words(block):

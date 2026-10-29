@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/document/page_items.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_config.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_plan.dart';
 import 'package:neatink/ink/ink_point.dart';
@@ -250,6 +251,24 @@ void main() {
       ]);
     });
 
+    test('the first line is told the typed text that comes before it', () async {
+      // Auto-convert reads only new writing: the box above decides whether it
+      // starts a sentence (so "test my app" is not given a capital).
+      final fake = FakeRecognizer({'l0w0': ('test', 0.9)});
+      await recognizePages([
+        PageStrokes(
+          pageId: 'p',
+          pageIndex: 0,
+          strokes: writeLine('l0', ['hello'], y: 200),
+          texts: const [
+            TextItem(id: 'a', x: 60, y: 100, width: 300, height: 40, text: 'I wrote this so I can'),
+            TextItem(id: 'b', x: 60, y: 400, width: 300, height: 20, text: 'Later.'),
+          ],
+        ),
+      ], fake);
+      expect(fake.previousTexts, ['I wrote this so I can']);
+    });
+
     test('a line that read as nothing is not the line above', () async {
       final last = ConvertConfig.chunkLines - 1;
       final fake = FakeRecognizer({
@@ -405,6 +424,31 @@ void main() {
       expect(on.lowConfidence, off.lowConfidence);
       expect(on.strokeIds, off.strokeIds);
       expect(on.confidence, off.confidence);
+    });
+  });
+
+  group('textBeforeLine', () {
+    const above = TextItem(id: 'a', x: 60, y: 100, width: 300, height: 40, text: 'Above');
+    const higher = TextItem(id: 'h', x: 60, y: 40, width: 300, height: 20, text: 'Higher.');
+    const below = TextItem(id: 'b', x: 60, y: 300, width: 300, height: 20, text: 'Below.');
+    const beside = TextItem(id: 's', x: 60, y: 185, width: 100, height: 20, text: 'Beside');
+
+    String? before(List<TextItem> texts, {double left = 60}) =>
+        textBeforeLine(texts, left: left, baselineY: 200, xHeight: 8);
+
+    test('the nearest box above', () {
+      expect(before([higher, above, below]), 'Above');
+    });
+
+    test('a box on the same line to the left comes after the ones above', () {
+      expect(before([above, beside], left: 200), 'Beside');
+      // ... but not when the writing starts left of its end.
+      expect(before([above, beside], left: 100), 'Above');
+    });
+
+    test('nothing before the line', () {
+      expect(before([below]), isNull);
+      expect(before(const []), isNull);
     });
   });
 }
