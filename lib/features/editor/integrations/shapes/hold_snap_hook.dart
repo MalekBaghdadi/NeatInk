@@ -125,13 +125,51 @@ class HoldSnapHook extends LiveStrokeHook {
   void _adjust(ActiveStroke stroke, RecognizedShape shape, Vec2 pos) {
     if (!_adjusting) {
       if (pos.distanceTo(_holdPos) <= config.holdRadiusPt) return;
-      _adjusting = true;
+      switch (_turn(shape, pos)) {
+        case _Turn.head:
+          return _unsnap(stroke);
+        case _Turn.undecided:
+          return;
+        case _Turn.adjust:
+          _adjusting = true;
+      }
     }
     final next = shape.resizedTo(_holdPos, pos, config: config);
     if (identical(next, shape)) return;
     _shape = next;
     _holdPos = pos;
     _show(stroke, next);
+  }
+
+  /// What the pen does on leaving the hold after a line snapped. Heading
+  /// back beside the line, it draws an arrow's head: the writer rested at the
+  /// tip of the shaft and goes on in the same stroke (v1.11.0: the head moved
+  /// the line's end and the arrow was lost). Going back along the line
+  /// (shortening it) or anywhere ahead of its end adjusts the line. Heading
+  /// back, it waits until the pen is clearly off the line or
+  /// [ToolConfig.unsnapDecidePt] away.
+  _Turn _turn(RecognizedShape shape, Vec2 pos) {
+    if (shape.kind != ShapeKind.line) return _Turn.adjust;
+    final axis = shape.segmentEnd - shape.segmentStart;
+    final length = axis.length;
+    if (length < 1e-6) return _Turn.adjust;
+    final ux = axis.x / length, uy = axis.y / length;
+    final mx = pos.x - _holdPos.x, my = pos.y - _holdPos.y;
+    final along = mx * ux + my * uy;
+    if (along >= 0) return _Turn.adjust;
+    final off = (mx * uy - my * ux).abs();
+    if (off > math.max(config.holdRadiusPt, config.unsnapOffsetRatio * -along)) return _Turn.head;
+    return pos.distanceTo(_holdPos) < config.unsnapDecidePt ? _Turn.undecided : _Turn.adjust;
+  }
+
+  /// Gives the pen's ink back: the stroke goes on as drawn.
+  void _unsnap(ActiveStroke stroke) {
+    _shape = null;
+    _adjusting = false;
+    stroke.preview = null;
+    _detector.reset();
+    _timer?.cancel();
+    _timer = Timer.periodic(tick, (_) => _onTick());
   }
 
   void _show(ActiveStroke stroke, RecognizedShape shape) {
@@ -161,3 +199,5 @@ class HoldSnapHook extends LiveStrokeHook {
 
   void dispose() => _end();
 }
+
+enum _Turn { adjust, head, undecided }

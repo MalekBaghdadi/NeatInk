@@ -181,4 +181,96 @@ void main() {
     expect(typedArrows('well-known'), 'well-known');
     expect(typedArrows('a > b'), 'a > b');
   });
+
+  // v1.11.0: Mariam draws the shaft and the head in one stroke, and "it
+  // sometimes picks up". Arrows drawn with a hand's variety (3 to 6
+  // x-heights; barbs of 0.5 to 1.2 x-heights at 25-55 degrees, each its own;
+  // the head tilted, rounded at the corners, not quite back at the tip; the
+  // shaft sloping and bowed): 1.10.0 found 68-78% of them.
+  group('arrows drawn with a hand\'s variety', () {
+    List<Vec2> round(List<Vec2> p) {
+      var pts = p;
+      for (var k = 0; k < 2; k++) {
+        pts = [
+          pts.first,
+          for (var i = 0; i + 1 < pts.length; i++) ...[pts[i].lerp(pts[i + 1], 0.25), pts[i].lerp(pts[i + 1], 0.75)],
+          pts.last,
+        ];
+      }
+      return pts;
+    }
+
+    for (final style in ['one stroke, back over the first barb', 'one stroke, a closed head', 'shaft and head', 'shaft and two barbs']) {
+      test(style, () {
+        final rnd = math.Random(11);
+        double r(double a, double b) => a + rnd.nextDouble() * (b - a);
+        const n = 120;
+        var found = 0;
+        for (var t = 0; t < n; t++) {
+          const xh = 10.0;
+          final length = r(2, 6) * xh, slope = r(-0.08, 0.08), bow = r(-1.5, 1.5), y0 = r(-6, -3);
+          final tip = Vec2(40 + length, y0 + slope * length);
+          final dir = Vec2(1, slope) * (1 / math.sqrt(1 + slope * slope));
+          final tilt = r(-0.15, 0.15);
+          Vec2 barb(double side) {
+            final a = math.pi - r(25, 55) * math.pi / 180 * side + tilt;
+            final c = math.cos(a), s = math.sin(a);
+            return tip + Vec2(dir.x * c - dir.y * s, dir.x * s + dir.y * c) * (r(0.5, 1.2) * xh);
+          }
+
+          final one = barb(1), two = barb(-1);
+          final back = tip + Vec2(r(-3, 3), r(-3, 3));
+          final shaft = [Vec2(40, y0), Vec2(40 + length / 2, y0 + slope * length / 2 + bow), tip];
+          final arrow = switch (style) {
+            'one stroke, back over the first barb' => [round(densify([...shaft, one, back, two]))],
+            'one stroke, a closed head' => [round(densify([...shaft, one, two, back]))],
+            'shaft and head' => [round(densify(shaft)), round(densify([one, back, two]))],
+            _ => [round(densify(shaft)), densify([back, one]), densify([back, two])],
+          };
+          final ink = [
+            for (final s in arrow) [for (final p in s) Vec2(p.x + r(-0.25, 0.25), p.y + r(-0.25, 0.25))],
+          ];
+          final lines = groupStrokes(toStrokes([...textAt('hen', 0), ...ink, ...textAt('ne', tip.x + 12)]));
+          final a = lines.length == 1 ? findArrows(lines.single) : const <LineArrow>[];
+          if (a.length == 1 && a.single.text == '→' && a.single.strokes.length == arrow.length) found++;
+        }
+        expect(found, greaterThanOrEqualTo(n * 0.95));
+      });
+    }
+  });
+
+  test('a dash before a c or an e, a flick, a tilde, joining strokes into letters are no arrows', () {
+    Vec2 v(double x, double y) => Vec2(x, y);
+    List<Vec2> arc(double cx, double cy, double r, double from, double to) => [
+          for (var k = 0; k <= 24; k++)
+            Vec2(cx + r * math.cos(from + (to - from) * k / 24), cy + r * math.sin(from + (to - from) * k / 24)),
+        ];
+    final cases = <String, List<List<Vec2>>>{};
+    for (final len in [16.0, 22.0, 30.0]) {
+      final e = 40 + len;
+      cases.addAll({
+        // 1.10.0 typed "→" for these two.
+        'dash, c ($len)': [densify([v(40, -5), v(e, -5)]), densify(arc(e + 6, -5, 4, -0.6, -math.pi * 1.7))],
+        'dash, e ($len)': [densify([v(40, -5), v(e, -5)]), densify([v(e + 3, -4), v(e + 9, -6), ...arc(e + 6, -5, 4, -0.3, -math.pi * 1.8)])],
+        'dash, a ($len)': [densify([v(40, -5), v(e, -5)]), densify([...arc(e + 6, -5, 4, -0.5, -math.pi * 2.1), v(e + 10, 0)])],
+        'into c ($len)': [densify([v(40, -5), v(e, -5), ...arc(e + 4, -5, 4, -0.6, -math.pi * 1.7)])],
+        'into o ($len)': [densify([v(40, -9), v(e, -9), ...arc(e + 2, -5, 4, -math.pi / 2, -math.pi / 2 - 2 * math.pi)])],
+        'into e ($len)': [densify([v(40, -4), v(e, -4), v(e + 6, -6), ...arc(e + 3, -5, 4, -0.3, -math.pi * 1.8)])],
+        'into r ($len)': [densify([v(40, -5), v(e, -5), v(e + 1, -10), v(e + 1, 0), v(e + 1, -7), v(e + 5, -10)])],
+        'into n ($len)': [densify([v(40, -5), v(e, -5), v(e + 1, -10), v(e + 1, 0), v(e + 1, -8), v(e + 5, -10), v(e + 7, -6), v(e + 7, 0)])],
+        'into s ($len)': [densify([v(40, -5), v(e, -5), v(e + 5, -10), v(e + 1, -8), v(e + 5, -3), v(e, 0)])],
+        'into m ($len)': [densify([v(40, -5), v(e, -5), v(e, 0), v(e, -9), v(e + 3, -10), v(e + 4, 0), v(e + 4, -9), v(e + 7, -10), v(e + 8, 0)])],
+        'dash, flick up ($len)': [densify([v(40, -5), v(e, -5), v(e - 3, -9)])],
+        'dash, flick down and up ($len)': [densify([v(40, -5), v(e, -5), v(e - 2, -2), v(e + 1, -8)])],
+        'tilde ($len)': [densify([for (var k = 0; k <= 20; k++) v(40 + len * k / 20, -5 + 2 * math.sin(k / 20 * 2 * math.pi))])],
+      });
+    }
+    final found = <String>[];
+    cases.forEach((name, ink) {
+      for (final line in groupStrokes(toStrokes([...textAt('hen', 0), ...ink, ...textAt('ne', 90)]))) {
+        if (findArrows(line).isNotEmpty) found.add(name);
+      }
+    });
+    expect(found, isEmpty);
+  });
 }

@@ -15,13 +15,15 @@ class ArrowConfig {
     this.headReachOfShaft = 0.9,
     this.pastTip = 1.0,
     this.headStrokeMax = 2.6,
-    this.barbRise = 0.35,
+    this.barbRise = 0.12,
     this.tipOnShaft = 0.4,
     this.overshoot = 0.6,
     this.coneSlope = 2.0,
     this.coneSlack = 0.45,
-    this.barbDepth = 0.25,
+    this.barbDepth = 0.12,
     this.barbSlant = 0.3,
+    this.tipZone = 0.2,
+    this.tipNarrow = 0.75,
     this.lineReachAbove = 2.2,
     this.lineReachBelow = 0.8,
   });
@@ -66,11 +68,16 @@ class ArrowConfig {
   final double coneSlope;
   final double coneSlack;
 
-  /// The barbs reach back at least this far behind the tip, and every point
+  /// Each barb reaches back at least this far behind the tip, and every point
   /// of a barb lies behind it by at least [barbSlant] times its distance
   /// from the shaft (beyond [tipOnShaft]).
   final double barbDepth;
   final double barbSlant;
+
+  /// Near the tip (within [tipZone] of the head's depth behind it) the head
+  /// is at most [tipNarrow] of its full height: the barbs meet there.
+  final double tipZone;
+  final double tipNarrow;
 
   /// The shaft lies between this far above the baseline and this far below
   /// it: arrows written in the text, not a diagram's arrow under it.
@@ -113,6 +120,13 @@ class LineArrow {
 /// be big, flat or steep, a closed triangle, two separate barbs, or land a
 /// little past the shaft; a letter written close after the tip no longer
 /// spoils it (each nearby stroke is tried on its own and in pairs).
+///
+/// v1.11.0 (Mariam: one-stroke arrows "sometimes" found): a head drawn back
+/// over its first barb no longer passes for more shaft (a straight run goes
+/// one way), small and flat heads count (barbs from 0.12 x-heights out), and
+/// every stroke that fits joins the head. A head is checked for its shape:
+/// barbs above and below the tip, each reaching back, the ink narrow at the
+/// tip (a c or an e after a dash is open there).
 List<LineArrow> findArrows(RecognizedLine line, {ArrowConfig config = const ArrowConfig()}) {
   final xh = line.xHeight;
   if (!xh.isFinite || xh <= 0) return const [];
@@ -238,10 +252,19 @@ List<int> _simplify(List<InkPoint> pts, double tolerance) {
 }
 
 /// Whether the points of [pts] from [i] to [j] all lie within [tolerance]
-/// of the segment between those two.
+/// of the segment between those two and go one way along it: a barb drawn
+/// back over itself and out again lies along the shaft's line, but the pen
+/// went back (v1.11.0: such a run took the first barb for more shaft).
 bool _straight(List<InkPoint> pts, int i, int j, double tolerance) {
+  final dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
+  final len = math.sqrt(dx * dx + dy * dy);
+  if (len < 1e-9) return false;
+  var furthest = 0.0;
   for (var k = i + 1; k < j; k++) {
     if (_toSegment(pts[k], pts[i], pts[j]) > tolerance) return false;
+    final along = ((pts[k].x - pts[i].x) * dx + (pts[k].y - pts[i].y) * dy) / len;
+    if (along < furthest - tolerance) return false;
+    furthest = math.max(furthest, along);
   }
   return true;
 }
@@ -296,16 +319,37 @@ List<Stroke>? _headAt(_Shaft shaft, _End end, List<Stroke> nearby, double xh, Ar
         ...attached,
         for (final s in extra) ...s.points.where((p) => p.x.isFinite && p.y.isFinite),
       ], extra.isNotEmpty, xh, config);
-  if (attached.isNotEmpty && head(const [])) return const [];
-  for (final o in nearby) {
-    if (head([o])) return [o];
-  }
-  for (var i = 0; i < nearby.length; i++) {
-    for (var j = i + 1; j < nearby.length; j++) {
-      if (head([nearby[i], nearby[j]])) return [nearby[i], nearby[j]];
+  // The smallest set that draws a head...
+  List<Stroke>? found;
+  if (attached.isNotEmpty && head(const [])) {
+    found = [];
+  } else {
+    for (final o in nearby) {
+      if (head([o])) {
+        found = [o];
+        break;
+      }
+    }
+    if (found == null) {
+      outer:
+      for (var i = 0; i < nearby.length; i++) {
+        for (var j = i + 1; j < nearby.length; j++) {
+          if (head([nearby[i], nearby[j]])) {
+            found = [nearby[i], nearby[j]];
+            break outer;
+          }
+        }
+      }
     }
   }
-  return null;
+  if (found == null) return null;
+  // ... then every other stroke there that is part of it too (the second
+  // barb, drawn apart): left out, it would be read as a letter.
+  var whole = found;
+  for (final o in nearby) {
+    if (!whole.contains(o) && head([...whole, o])) whole = [...whole, o];
+  }
+  return whole;
 }
 
 /// Whether the ink [points] around [end] is an arrow head: barbs above and
@@ -330,19 +374,33 @@ bool _isHead(_End end, List<InkPoint> points, bool separate, double xh, ArrowCon
   }
   if (separate && tipOut < -config.overshoot * xh) return false;
   if (tipSide.abs() > config.tipOnShaft * xh) return false;
-  var above = false, below = false;
-  var depth = 0.0;
+  // Each barb reaches out to one side of the tip and back from it.
+  var depthAbove = 0.0, depthBelow = 0.0;
+  var depth = 0.0, top = tipSide, bottom = tipSide;
   for (final (out, side) in frame) {
     final behind = tipOut - out;
     if (side.abs() > config.coneSlope * math.max(behind, 0) + config.coneSlack * xh) return false;
+    depth = math.max(depth, behind);
+    top = math.min(top, side);
+    bottom = math.max(bottom, side);
     if (side.abs() <= config.barbRise * xh) continue;
     // A barb slopes back from the tip; a letter's stem stands upright.
     if (behind < config.barbSlant * (side.abs() - config.tipOnShaft * xh)) return false;
-    if (side < 0) above = true;
-    if (side > 0) below = true;
-    depth = math.max(depth, behind);
+    final rise = side - tipSide;
+    if (rise < -config.barbRise * xh) depthAbove = math.max(depthAbove, behind);
+    if (rise > config.barbRise * xh) depthBelow = math.max(depthBelow, behind);
   }
-  return above && below && depth >= config.barbDepth * xh;
+  if (depthAbove < config.barbDepth * xh || depthBelow < config.barbDepth * xh) return false;
+  // The barbs meet at the tip: close to it the head is narrow. A c or an e
+  // after a dash has ink above and below there too, but it is open at the
+  // front (v1.11.0: "- c" was typed as "→ c").
+  var nearTop = tipSide, nearBottom = tipSide;
+  for (final (out, side) in frame) {
+    if (tipOut - out > config.tipZone * depth) continue;
+    nearTop = math.min(nearTop, side);
+    nearBottom = math.max(nearBottom, side);
+  }
+  return nearBottom - nearTop <= config.tipNarrow * (bottom - top);
 }
 
 final RegExp _bothWays = RegExp(r'\s*<[-–—=]+>\s*');

@@ -88,6 +88,8 @@ class ToolConfig {
     this.holdDurationMs = 500,
     this.holdRadiusPt = 3,
     this.holdMinPathLengthPt = 15,
+    this.unsnapOffsetRatio = 0.35,
+    this.unsnapDecidePt = 12,
     // Shape tool.
     this.shapeToolSquareSnapFraction = 0.06,
     this.shapeToolMinDragPt = 4,
@@ -354,6 +356,14 @@ class ToolConfig {
 
   /// ...after drawing more than this much ink.
   final double holdMinPathLengthPt;
+
+  /// A snapped line lets go (the ink comes back and the stroke goes on) when
+  /// the pen then heads back beside it, off its axis by more than the hold
+  /// radius and [unsnapOffsetRatio] of the way back (about 20 degrees): the
+  /// head of an arrow drawn after a pause at the tip. Heading back nearer
+  /// the axis, the line is shortened once the pen is [unsnapDecidePt] away.
+  final double unsnapOffsetRatio;
+  final double unsnapDecidePt;
 
   // ----------------------------------------------------------- shape tool
 

@@ -185,6 +185,52 @@ void main() {
       await h.close();
     });
 
+    // v1.11.0: an arrow drawn in one stroke, with a pause at the tip of its
+    // shaft, lost its head: the pause snapped the shaft to a line and the
+    // head then moved the line's end.
+    Future<Stroke> pauseThen(ShapesHarness h, List<Vec2> after) async {
+      final pts = wobblyLine();
+      final g = await h.beginDrag(pts.first);
+      for (final p in pts.skip(1)) {
+        await g.moveTo(h.at(p));
+        await h.tester.pump(const Duration(milliseconds: 8));
+      }
+      await h.tester.pump(const Duration(milliseconds: 1200));
+      for (final p in after) {
+        await g.moveTo(h.at(p));
+        await h.tester.pump(const Duration(milliseconds: 8));
+      }
+      await g.up();
+      await h.tester.pump();
+      return h.strokes.single;
+    }
+
+    testWidgets("a pause at an arrow's tip, then its head: the ink stays as drawn", (tester) async {
+      final h = await ShapesHarness.open(tester);
+      // The shaft ends at (340, 200); the head goes back up, to the tip, back down.
+      final s = await pauseThen(h, [
+        for (var i = 1; i <= 6; i++) Vec2(340 - 2.0 * i, 200 - 2.0 * i),
+        for (var i = 5; i >= 0; i--) Vec2(340 - 2.0 * i, 200 - 2.0 * i),
+        for (var i = 1; i <= 6; i++) Vec2(340 - 2.0 * i, 200 + 2.0 * i),
+      ]);
+      expect(s.shape, isNull);
+      expect(s.points.map((p) => p.y).reduce(math.min), lessThan(190), reason: 'the head is there');
+      await h.close();
+    });
+
+    testWidgets('after the snap, moving on ahead or back along it still adjusts the line', (tester) async {
+      for (final after in [
+        [for (var i = 1; i <= 8; i++) Vec2(340 + 4.0 * i, 200 + 1.0 * i)],
+        [for (var i = 1; i <= 8; i++) Vec2(340 - 4.0 * i, 200)],
+      ]) {
+        final h = await ShapesHarness.open(tester);
+        final s = await pauseThen(h, after);
+        expect(s.shape, ShapeKind.line);
+        expect(s.points.last.x, closeTo(after.last.x, 1));
+        await h.close();
+      }
+    });
+
     testWidgets('a held scribble is not snapped', (tester) async {
       final h = await ShapesHarness.open(tester);
       final rnd = math.Random(3);
