@@ -155,6 +155,12 @@ void main() {
       expect(p.before.text, 'hello');
     });
 
+    test('punctuation written after the typed text goes on without a space', () {
+      expect(plan(line(), text: '?')!.after.text, 'hello?');
+      expect(plan(line(), text: '!')!.after.text, 'hello!');
+      expect(plan(line(), text: '; world')!.after.text, 'hello; world');
+    });
+
     test('it starts after the typed text (or a little over where the ink ended), up to 4 x-heights after the ink', () {
       // Typed text ends at 140, the ink ended at 200: the writer may go on
       // anywhere from just after the text to 40 after the ink.

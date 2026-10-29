@@ -298,6 +298,8 @@ class LineImageConfig {
     this.stemMaxAspect = 0.6,
     this.stemTopFraction = 0.2,
     this.markFactor = 0.6,
+    this.colonAlignFactor = 0.6,
+    this.colonGapFactor = 1.5,
     this.reachX = 1.2,
     this.reachY = 2.0,
     this.snapReachY = 3.0,
@@ -390,6 +392,12 @@ class LineImageConfig {
   /// many x-heights are marks (dots, commas) that follow the stroke they
   /// belong to instead of being placed by their own overlap.
   final double markFactor;
+
+  /// [snapDots] leaves a floating dot alone when a small mark sits under it
+  /// (a colon's or semicolon's lower half): within this many x-heights
+  /// sideways (centre to centre) and [colonGapFactor] x-heights below.
+  final double colonAlignFactor;
+  final double colonGapFactor;
 
   /// How far a dot may be from the stem or stroke it belongs to: this many
   /// x-heights sideways and [reachY] vertically (see [nearestSupport]).
@@ -670,19 +678,35 @@ void _snapDots(RecognizedLine line, List<_Levelled> pieces, double angle, LineIm
   final baseline = by * c - bx * s;
   final stems = <_Levelled>[];
   final dots = <_Levelled>[];
+  // Small marks on the line: a full stop, a comma, the bottom of a colon.
+  final marks = <_Levelled>[];
   for (final p in pieces) {
     final bar = p.width >= config.barMinWidthFactor * xh && p.height <= config.barFlatness * p.width;
     if (p.diagonal <= config.dotMaxFactor * xh && p.bottom <= baseline - config.dotFloatFactor * xh) {
       if (!bar) dots.add(p);
-    } else if (p.height >= config.stemMinFactor * xh &&
-        p.width <= config.stemMaxWidthFactor * xh &&
-        p.width <= config.stemMaxAspect * p.height) {
-      stems.add(p);
+    } else {
+      if (p.diagonal <= config.markFactor * xh) marks.add(p);
+      if (p.height >= config.stemMinFactor * xh &&
+          p.width <= config.stemMaxWidthFactor * xh &&
+          p.width <= config.stemMaxAspect * p.height) {
+        stems.add(p);
+      }
     }
   }
   if (dots.isEmpty || stems.isEmpty) return;
   final boxes = [for (final st in stems) st.box];
+  // The upper dot of a colon or semicolon has its lower mark right under it:
+  // it is punctuation, not an i-dot (v1.9.0: Mariam's ":" and ";" lost it
+  // to the letter before).
+  bool topOfColon(_Levelled d) {
+    final cx = (d.left + d.right) / 2;
+    return marks.any((m) =>
+        ((m.left + m.right) / 2 - cx).abs() <= config.colonAlignFactor * xh &&
+        m.top >= d.bottom - 0.1 * xh &&
+        m.top - d.bottom <= config.colonGapFactor * xh);
+  }
   for (final d in dots) {
+    if (topOfColon(d)) continue;
     final k = nearestSupport(d.box, boxes, u: xh, reachX: config.reachX, reachY: config.snapReachY, underOnly: true);
     if (k == null) continue;
     final stem = stems[k];

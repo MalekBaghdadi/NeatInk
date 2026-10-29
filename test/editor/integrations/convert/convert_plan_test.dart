@@ -442,8 +442,11 @@ void main() {
 
     test('a box on the same line to the left comes after the ones above', () {
       expect(before([above, beside], left: 200), 'Beside');
-      // ... but not when the writing starts left of its end.
-      expect(before([above, beside], left: 100), 'Above');
+      // ... also when the box is wider than its text and reaches past the pen.
+      const wide = TextItem(id: 'w', x: 60, y: 185, width: 480, height: 20, text: 'The brain is');
+      expect(before([above, wide], left: 200), 'The brain is');
+      // ... but not when the writing starts left of it.
+      expect(before([above, beside], left: 50), 'Above');
     });
 
     test('nothing before the line', () {

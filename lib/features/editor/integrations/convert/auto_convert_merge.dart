@@ -206,9 +206,14 @@ MergePlan? planMerge({
     if (!below && metrics.naturalWidth(live) + slack > live.width + 1e-6) return;
     final tail = text.trimLeft();
     final lead = text.length - tail.length;
+    // Punctuation written after the typed text ("?", "!") goes right after
+    // it, without a space.
+    final closing = RegExp(r'^[.,;:!?)\]}%…]').hasMatch(tail);
     final joinedText = below
         ? joinSentence(live.text, tail)
-        : '${live.text.trimRight()} $tail';
+        : closing
+            ? '${live.text.trimRight()}$tail'
+            : '${live.text.trimRight()} $tail';
     final tailStart = joinedText.length - tail.length;
     final grown = live.copyWith(text: joinedText);
     final joined = corrections.isEmpty

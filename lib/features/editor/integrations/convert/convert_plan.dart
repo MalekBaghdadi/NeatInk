@@ -235,7 +235,10 @@ String? textBeforeLine(Iterable<TextItem> texts, {required double left, required
           ((bottom - (above.y + above.height)).abs() <= 0.5 * xHeight && t.x > above.x)) {
         above = t;
       }
-    } else if (t.y < baselineY && t.x + t.width <= left + 2 * xHeight) {
+    } else if (t.y < baselineY && t.x < left) {
+      // On this line and starting left of the writing: it comes first, even
+      // when the box reaches past the pen (a typed box is often as wide as
+      // the page; v1.9.0, the half sentence Mariam carried on got a capital).
       if (beside == null || t.x > beside.x) beside = t;
     }
   }

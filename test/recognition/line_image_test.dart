@@ -390,6 +390,26 @@ void main() {
       expect(snapped.shifts.every((s) => s == 0), isTrue);
     });
 
+    test('the upper dot of a colon or semicolon stays where it is (not an i-dot)', () async {
+      // "hen:" and "hen;" - the mark's upper dot floats at the x-height,
+      // right of the n's stem; it has its own lower mark under it.
+      for (final lower in [
+        densify(const [Vec2(35, -0.6), Vec2(35.5, 0)]), // colon
+        densify(const [Vec2(35.6, -0.6), Vec2(35, 2), Vec2(34, 3.5)]), // semicolon
+      ]) {
+        final line = lineFrom([
+          ...textAt('hen', 0),
+          densify(const [Vec2(35, -8.6), Vec2(35.5, -8)]),
+          lower,
+          ...textAt('ne', 50),
+        ]);
+        final snapped = (await renderLineImages(line,
+                renderer: renderer, config: const LineImageConfig(snapDots: true)))
+            .single;
+        expect(snapped.shifts.every((s) => s == 0), isTrue);
+      }
+    });
+
     test('a dot with nothing within 1.2 x-heights is left alone', () async {
       final line = lineFrom(lineWithLeftDot(dotX: 95)); // ne ends at 71
       final snapped = (await renderLineImages(line,

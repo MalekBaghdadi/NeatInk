@@ -29,7 +29,7 @@ bool onlyDots(Iterable<Stroke> strokes, {required double reference}) {
 }
 
 /// Where late dots belong: the text box [box] whose writing they finish,
-/// and the punctuation [mark] they add to its text (`.` or `,`), or null
+/// and the punctuation [mark] they add to its text (`.`, `,`, `:`, `;`), or null
 /// when they are an i-dot, a t-bar or a stray mark that just goes.
 typedef LateDots = ({TextItem box, String? mark});
 
@@ -86,7 +86,31 @@ LateDots? lateDotsTarget({
   }
   final box = best;
   if (box == null) return null;
-  return (box: box, mark: strokes.length == 1 ? _markOf(strokes.single, box, bestMemory, metrics) : null);
+  final mark = switch (strokes.length) {
+    1 => _markOf(strokes.single, box, bestMemory, metrics),
+    2 => _colonOf(strokes, box, bestMemory, metrics),
+    _ => null,
+  };
+  return (box: box, mark: mark);
+}
+
+/// `:` or `;` for two marks [strokes] one above the other at the end of
+/// [box]'s writing: a dot floating at the x-height over a full stop or a
+/// comma (v1.9.0; before, only `.` and `,` were added late). Null otherwise.
+String? _colonOf(List<Stroke> strokes, TextItem box, AutoBoxVersion? mem, ConvertTextMetrics metrics) {
+  final sorted = [...strokes]..sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
+  final upper = sorted.first.bounds, lowerStroke = sorted.last;
+  final lower = lowerStroke.bounds;
+  final xh = mem?.inkXHeight ?? 0.5 * box.fontSize;
+  final aligned = ((upper.left + upper.right) / 2 - (lower.left + lower.right) / 2).abs() <= 0.6 * xh;
+  final small = upper.right - upper.left <= 0.7 * xh && upper.bottom - upper.top <= 0.7 * xh;
+  final above = lower.top - upper.bottom >= 0.1 * xh && lower.top - upper.bottom <= 1.5 * xh;
+  if (!aligned || !small || !above) return null;
+  return switch (_markOf(lowerStroke, box, mem, metrics)) {
+    '.' => ':',
+    ',' => ';',
+    _ => null,
+  };
 }
 
 /// `.` or `,` for a single dot [s] at the end of [box]'s writing, on its

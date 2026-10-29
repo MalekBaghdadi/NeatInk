@@ -69,6 +69,13 @@ void main() {
       expect(target([stroke('c', 161, 97, 3, 12)])!.mark, ',', reason: 'a long comma');
     });
 
+    test('a dot over a full stop is a colon, over a comma a semicolon', () {
+      expect(target([stroke('u', 162, 92, 2, 2), stroke('l', 162, 98, 2, 2)])!.mark, ':');
+      expect(target([stroke('u', 162, 92, 2, 2), stroke('c', 162, 98, 2, 7)])!.mark, ';');
+      // Not stacked: nothing added.
+      expect(target([stroke('u', 150, 92, 2, 2), stroke('l', 162, 98, 2, 2)])!.mark, isNull);
+    });
+
     test('a dot above the writing is an i-dot: it goes, nothing is added', () {
       final t = target([stroke('i', 130, 78, 2, 2)])!;
       expect(t.mark, isNull);
