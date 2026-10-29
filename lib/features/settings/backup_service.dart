@@ -151,18 +151,32 @@ class DefaultBackupService implements BackupService {
     }
   }
 
-  /// Runs [job] in a background isolate, forwarding its progress reports.
   static Future<T> _withProgress<T>(BackupProgress onProgress,
-      Future<T> Function(BackupProgress progress) job) async {
-    final port = ReceivePort();
-    port.listen((m) {
-      if (m case (final int done, final int total)) onProgress(done, total);
-    });
-    final send = port.sendPort;
-    try {
-      return await Isolate.run(() => job((done, total) => send.send((done, total))));
-    } finally {
-      port.close();
-    }
+          Future<T> Function(BackupProgress progress) job) =>
+      runWithProgress(onProgress, job);
+}
+
+/// Runs [job] in a background isolate, forwarding its progress reports to
+/// [onProgress] on this one.
+///
+/// The closure sent to the isolate is made in [_runJob], where nothing but
+/// [job] and a [SendPort] is in scope: a closure carries every variable
+/// captured in its scope, so making it here, next to [onProgress] (which
+/// holds on to the Settings screen), made every backup and restore fail with
+/// "object is unsendable" (v1.6.0). [job] itself must capture only plain
+/// data.
+@visibleForTesting
+Future<T> runWithProgress<T>(BackupProgress onProgress, Future<T> Function(BackupProgress progress) job) async {
+  final port = ReceivePort();
+  port.listen((m) {
+    if (m case (final int done, final int total)) onProgress(done, total);
+  });
+  try {
+    return await _runJob(job, port.sendPort);
+  } finally {
+    port.close();
   }
 }
+
+Future<T> _runJob<T>(Future<T> Function(BackupProgress progress) job, SendPort send) =>
+    Isolate.run(() => job((done, total) => send.send((done, total))));
