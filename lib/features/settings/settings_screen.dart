@@ -129,6 +129,18 @@ class SettingsScreen extends ConsumerWidget {
                   onChanged: (v) =>
                       change((s) => s.copyWith(autocorrect: v)),
                 ),
+                SwitchListTile(
+                  key: const ValueKey('settings-check-spelling'),
+                  secondary: const Icon(Icons.spellcheck),
+                  title: const Text('Check spelling'),
+                  subtitle: const Text(
+                      'Underlines words in typed text that may be misspelt: '
+                      'red for unknown words, amber for a word that may be a '
+                      'slip. Tap one for spellings or to add it to My words.'),
+                  value: settings.checkSpelling,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(checkSpelling: v)),
+                ),
                 ListTile(
                   key: const ValueKey('settings-typed-text'),
                   leading: const Icon(Icons.text_fields),

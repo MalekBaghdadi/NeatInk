@@ -441,12 +441,90 @@ class TextPolisher {
       if (lp < minLp) continue;
       final distance = handwritingDistance(lower, w);
       if (distance <= 0 || distance > config.realWordMaxCost + 1e-9) continue;
+      if (!_isSkippedLetter(lower, w)) continue;
       options.add((w, lp - config.channelWeight * distance));
     }
     options.sort((a, b) => b.$2.compareTo(a.$2));
     return [
       for (final (w, _) in options.take(3)) capitalised ? w[0].toUpperCase() + w.substring(1) : w,
     ];
+  }
+
+  /// [a] and [b] differ by one letter left out or written twice inside the
+  /// word (`wong` / `wrong`), not by an ending (`specific` / `specifics`,
+  /// `raise` / `raised`): the slip a pen or the recogniser makes, while one
+  /// letter swapped for another (`info` / `into`, `fake` / `face`) is far more
+  /// often a word of its own, and so is a different ending.
+  static bool _isSkippedLetter(String a, String b) {
+    if ((a.length - b.length).abs() != 1) return false;
+    final long = a.length > b.length ? a : b;
+    final short = a.length > b.length ? b : a;
+    var i = 0;
+    while (i < short.length && long[i] == short[i]) {
+      i++;
+    }
+    if (long.substring(i + 1) != short.substring(i)) return false;
+    // The letter is inside the word, not its last one or a plural/past ending.
+    if (i >= short.length) return false;
+    for (final ending in const ['s', 'es', 'd', 'ed', 'r', 'er', 'n', 'y', 'ly', 'e']) {
+      if (long.endsWith(ending) && long.substring(0, long.length - ending.length) == short) return false;
+    }
+    return true;
+  }
+
+  // ---- for the spelling underline --------------------------------------------
+
+  /// Whether [word] (letters with apostrophes or hyphens inside) is spelt
+  /// like a known word: the word list with the study words, the personal
+  /// dictionary, a contraction, a possessive or another form of a listed word
+  /// (`brainstorms`), or a hyphenated word whose every part is known. Without
+  /// a word list every word counts as known.
+  bool isKnownSpelling(String word) {
+    if (lexicon == null) return true;
+    final lower = word.toLowerCase().replaceAll('\u2019', "'");
+    if (lower.isEmpty) return true;
+    if (lower.contains('-')) return lower.split('-').every((p) => p.isEmpty || isKnownSpelling(p));
+    if (_known(lower)) return true;
+    if (lower.endsWith("'s") && _known(lower.substring(0, lower.length - 2))) return true;
+    if (lower.endsWith("s'") && _known(lower.substring(0, lower.length - 1))) return true;
+    return !lower.contains("'") && _looksInflected(lower);
+  }
+
+  /// Whether [word] is in the personal dictionary.
+  bool isUserWord(String word) => _isUserWord(word.toLowerCase());
+
+  /// Spellings [word] (an unknown word) may have been meant as, best first,
+  /// at most [limit]: listed words within two edits (one for words of up to
+  /// three letters), scored like autocorrect (frequency against handwriting
+  /// distance), and the word split in two (`itworked` -> `it worked`). With
+  /// the capital of [word]; empty when nothing is close.
+  List<String> spellingSuggestions(String word, {int limit = 3}) {
+    final lex = lexicon;
+    if (lex == null || word.isEmpty) return const [];
+    final lower = word.toLowerCase().replaceAll('\u2019', "'");
+    final options = <(String, double)>[];
+    final split = _split(lower);
+    if (split != null) options.add(split);
+    if (!lower.contains("'")) {
+      for (final c in lex.candidates(lower, maxEdits: lower.length <= 3 ? 1 : 2, limit: config.candidateLimit)) {
+        final w = c.word;
+        if (w == lower || w.contains("'")) continue;
+        final distance = handwritingDistance(lower, w);
+        if (distance <= 0) continue;
+        final cost = distance + (w[0] != lower[0] ? config.firstLetterPenalty : 0);
+        options.add((w, lex.logProb(w)! - config.channelWeight * cost));
+      }
+    }
+    options.sort((a, b) => b.$2.compareTo(a.$2));
+    final shouting = word.length >= 2 && word == word.toUpperCase();
+    final capital = word[0] != word[0].toLowerCase();
+    final out = <String>[];
+    for (final (w, _) in options) {
+      final shown = shouting ? w.toUpperCase() : (capital ? w[0].toUpperCase() + w.substring(1) : w);
+      if (!out.contains(shown)) out.add(shown);
+      if (out.length == limit) break;
+    }
+    return out;
   }
 
   /// [core] with a space before the contraction it ends with

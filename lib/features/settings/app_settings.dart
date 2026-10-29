@@ -25,6 +25,7 @@ class AppSettings {
     this.autoConvert = false,
     this.autoConvertDelayMs = defaultAutoConvertDelayMs,
     this.autocorrect = true,
+    this.checkSpelling = true,
     this.defaultPaper = const Paper(),
     this.librarySort = LibrarySort.edited,
     this.pinHash,
@@ -54,6 +55,7 @@ class AppSettings {
         // 1.5.0: replaces 'autoFixSpelling' (off by default), so everyone
         // starts with autocorrect on.
         autocorrect: j['autocorrect'] is bool ? j['autocorrect'] as bool : true,
+        checkSpelling: j['checkSpelling'] is bool ? j['checkSpelling'] as bool : true,
         defaultPaper:
             Paper.fromJson(j['defaultPaper'] as Map<String, dynamic>?),
         librarySort:
@@ -127,6 +129,11 @@ class AppSettings {
   /// sheet). Off by default: the fixes are only suggested there.
   final bool autocorrect;
 
+  /// Typed text: words that may be misspelt get a wavy underline (red: not a
+  /// known word; amber: a rare word that may be a slip for a common one); a
+  /// tap offers spellings and "Add to My words" (v1.8.0). Screen only.
+  final bool checkSpelling;
+
   /// Paper preselected when creating a notebook.
   final Paper defaultPaper;
   final LibrarySort librarySort;
@@ -160,6 +167,7 @@ class AppSettings {
     bool? autoConvert,
     int? autoConvertDelayMs,
     bool? autocorrect,
+    bool? checkSpelling,
     Paper? defaultPaper,
     LibrarySort? librarySort,
     String? pinHash,
@@ -185,6 +193,7 @@ class AppSettings {
             ? this.autoConvertDelayMs
             : clampAutoConvertDelay(autoConvertDelayMs),
         autocorrect: autocorrect ?? this.autocorrect,
+        checkSpelling: checkSpelling ?? this.checkSpelling,
         defaultPaper: defaultPaper ?? this.defaultPaper,
         librarySort: librarySort ?? this.librarySort,
         pinHash: clearPin ? null : (pinHash ?? this.pinHash),
@@ -208,6 +217,7 @@ class AppSettings {
         'autoConvert': autoConvert,
         'autoConvertDelayMs': autoConvertDelayMs,
         'autocorrect': autocorrect,
+        'checkSpelling': checkSpelling,
         'defaultPaper': defaultPaper.toJson(),
         'librarySort': librarySort.name,
         'pinHash': pinHash,
