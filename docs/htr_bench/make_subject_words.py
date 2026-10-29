@@ -188,6 +188,32 @@ nmda ampa ltp ltd
 """
 
 
+# v1.11.0: terms of her courses autocorrect took for misspellings (the
+# British spellings come through the -ise/-ize rule in text_polish.dart).
+MORE_NEURO_PSYCH = """
+interoception interoceptive proprioception proprioceptive nociception nociceptor nociceptors
+synaptically myelinated myelination demyelination demyelinating unmyelinated
+depolarizing repolarizing hyperpolarization hyperpolarized hyperpolarizing depolarized repolarized
+excitability neuromodulator neuromodulators neuromodulation neurotransmission glutamate glutamatergic gabaergic
+dendrites dendritic somas soma ganglia ganglion thalamic hypothalamic cortical subcortical neocortex neocortical
+limbic hippocampal amygdala amygdalae amygdalar cerebellar prefrontal orbitofrontal dorsolateral ventromedial
+mesolimbic mesocortical nigrostriatal tuberoinfundibular dopaminergic serotonergic cholinergic noradrenergic adrenergic
+interneuron interneurons internode internodes neurone neurones axonal axons nodal ranvier schwann oligodendrocyte
+oligodendrocytes astrocyte astrocytes microglia microglial ependymal saltatory reconsolidation consolidation
+centration egocentrism decentration conservation operant reinforcer reinforcers punisher punishers habituated habituation
+sensitization sensitisation dishabituation priming mnemonic mnemonics heuristic heuristics schema schemas schemata
+avoidant ambivalent neurodevelopmental neurodivergent neurotypical comorbid comorbidity etiology aetiology
+symptomatology psychopathology psychoanalytic psychodynamic behaviourist behaviorist behaviourism behaviorism
+cognitivist humanistic eudaimonia hedonic introversion extraversion extroversion conscientiousness agreeableness neuroticism
+obsessive compulsions phobias phobic psychotic delusional hallucinations schizoid metacognition neurogenesis
+neuroplasticity plasticity potentiation postsynaptic presynaptic ionotropic metabotropic reuptake agonist agonists
+antagonist antagonists anxiolytic anxiolytics antipsychotic antipsychotics antidepressant antidepressants
+benzodiazepine benzodiazepines endorphins oxytocin cortisol melatonin norepinephrine noradrenaline adrenaline epinephrine
+somatosensory striatum accumbens nigra substantia meninges arachnoid gyrus gyri sulcus sulci insula cingulate fornix
+mammillary pituitary pineal tectum tegmentum colliculus colliculi cerebrospinal
+"""
+
+
 def words(block):
     return [w for w in re.split(r'\s+', block.strip().lower()) if w]
 
@@ -207,6 +233,7 @@ def main():
         ('chemistry', CHEMISTRY, COUNT),
         ('maths and statistics', MATHS, COUNT),
         ('general study words', GENERAL, COUNT),
+        ('more neuroscience and psychology', MORE_NEURO_PSYCH, COUNT),
         ('acronyms', ACRONYMS, ACRONYM_COUNT),
         ('names', NAMES, COUNT),
     ]:

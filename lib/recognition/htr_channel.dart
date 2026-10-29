@@ -613,7 +613,8 @@ class HtrRecognizer {
       suggestions: weighSuggestions(
           textPolisher.suggest(text, sentenceStart: sentenceStart),
           [for (final w in words) (text: w.text, confidence: w.confidence, alternatives: w.alternatives)],
-          textPolisher.config.sureWordConfidence),
+          textPolisher.config.sureWordConfidence,
+          typoConfidence: textPolisher.config.typoMinConfidence),
       images: images,
     );
   }
@@ -750,9 +751,13 @@ class _WordDraft {
 /// [suggestions] for the text of [words] (joined by single spaces), with the
 /// spelling fixes of unsure words ([PolishConfig.sureWordConfidence]) that
 /// are not among the word's own alternatives marked as not to be applied by
-/// themselves ([PolishSuggestion.auto]).
+/// themselves ([PolishSuggestion.auto]). A fix shaped like a slip of the
+/// pen ([TextPolisher.isTypoShaped], or a misspelling everybody makes) is
+/// applied down to [typoConfidence]: a misreading changes letters, it does
+/// not swap or double them.
 List<PolishSuggestion> weighSuggestions(List<PolishSuggestion> suggestions,
-    List<({String text, double confidence, List<String> alternatives})> words, double sureConfidence) {
+    List<({String text, double confidence, List<String> alternatives})> words, double sureConfidence,
+    {double? typoConfidence}) {
   if (suggestions.isEmpty) return suggestions;
   final starts = <int>[];
   var at = 0;
@@ -774,6 +779,9 @@ List<PolishSuggestion> weighSuggestions(List<PolishSuggestion> suggestions,
           }
           final w = words[i];
           if (w.confidence >= sureConfidence) return s;
+          final typo = TextPolisher.isTypoShaped(s.original, s.replacement) ||
+              TextPolisher.commonMisspellings[s.original.toLowerCase()] == s.replacement.toLowerCase();
+          if (typo && typoConfidence != null && w.confidence >= typoConfidence) return s;
           final target = core(s.replacement);
           final weighed = w.alternatives.any((a) => core(a) == target);
           return weighed ? s : s.offered;

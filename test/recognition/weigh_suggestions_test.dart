@@ -41,4 +41,22 @@ void main() {
     final s = fix(text, 'systa', 'Systa', kind: PolishKind.capitalization);
     expect(weighSuggestions([s], words, 0.65).single.auto, isTrue);
   });
+
+  test('a slip of the pen is fixed on a less sure word too, a misreading is not', () {
+    // v1.11.0: with the 0.65 bar alone most of Mariam's misspellings stayed.
+    const line = 'they recieve systa happend';
+    final ws = [
+      (text: 'they', confidence: 0.9, alternatives: <String>[]),
+      (text: 'recieve', confidence: 0.5, alternatives: <String>[]),
+      (text: 'systa', confidence: 0.5, alternatives: <String>[]),
+      (text: 'happend', confidence: 0.2, alternatives: <String>[]),
+    ];
+    final weighed = weighSuggestions([
+      fix(line, 'recieve', 'receive'),
+      fix(line, 'systa', 'syria'),
+      fix(line, 'happend', 'happened'),
+    ], ws, 0.65, typoConfidence: 0.35);
+    expect([for (final s in weighed) '${s.original}:${s.auto}'], ['recieve:true', 'systa:false', 'happend:false'],
+        reason: 'below 0.35 even a slip is a guess');
+  });
 }

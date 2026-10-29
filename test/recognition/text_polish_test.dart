@@ -117,8 +117,11 @@ void main() {
       expect(polisher().suggest("the neuron's brain"), isEmpty);
     });
 
-    test('short words are never spell-checked', () {
-      expect(polisher().suggest('teh cta wifi'), isEmpty);
+    test('a three-letter word is only fixed by swapping two letters into a frequent word', () {
+      // v1.11.0: "teh" and "adn" were left alone.
+      expect(only(polisher().suggest('teh cta wifi')).replacement, 'the');
+      expect(only(polisher().suggest('Teh brain', sentenceStart: true)).replacement, 'The');
+      expect(polisher().suggest('the Teh brain'), isEmpty, reason: 'a capital inside a sentence: a name');
       final withWife = Lexicon.parse('filler 330000000000\nwife 100000000\n');
       expect(polisher(lexicon: withWife).suggest('the wifi here'), isEmpty);
     });
@@ -518,5 +521,104 @@ void main() {
       }
       expect(sw.elapsedMilliseconds / 20, lessThan(100));
     });
+  });
+
+  // v1.11.0, Mariam: autocorrect "mostly doesn't recognise wrong words".
+  // On a list of 126 common misspellings, 25 were not even underlined.
+  group('slips of the pen', () {
+    // Counts of the bundled list.
+    final words = Lexicon.parse('''
+filler 330000000000
+the 26548583149
+that 4000373255
+with 2591390604
+what 611266211
+want 103845898
+this 1913024043
+final 48312451
+finally 62381205
+happen 19347696
+happened 30889378
+happens 14236413
+begin 34655431
+beginning 57165133
+real 90782636
+argue 11495418
+argument 32182995
+brain 29690816
+receive 33869240
+relieve 4682358
+neurons 4414312
+nervous 14672716
+brainstorm 258924
+''');
+    TextPolisher p() => TextPolisher(words);
+    String? fixOf(String word) =>
+        p().suggest('the $word here').where((s) => s.original == word).firstOrNull?.replacement;
+
+    test('a word that only looks like a form of a listed word is fixed and underlined', () {
+      expect(fixOf('finaly'), 'finally');
+      expect(fixOf('happend'), 'happened');
+      expect(fixOf('begining'), 'beginning');
+      expect(fixOf('arguement'), 'argument');
+      for (final w in ['finaly', 'happend', 'begining']) {
+        expect(p().isKnownSpelling(w), isFalse, reason: w);
+      }
+    });
+
+    test('a real form the list lacks stays as written', () {
+      expect(fixOf('brainstorms'), isNull);
+      expect(p().isKnownSpelling('brainstorms'), isTrue);
+      expect(fixOf('finals'), isNull);
+    });
+
+    test('two letters swapped cost as little as a look-alike letter', () {
+      expect(fixOf('taht'), 'that');
+      expect(fixOf('wiht'), 'with');
+      expect(fixOf('waht'), 'what', reason: 'not "want": a swap, and far more frequent');
+      expect(fixOf('recieve'), 'receive', reason: 'not "relieve"');
+      expect(fixOf('neruons'), 'neurons', reason: 'not "nervous"');
+    });
+
+    test('a glued word is only split into real words', () {
+      // The list has "ta", "ht", "wi" as abbreviations: "taht" was "ta ht".
+      final withBits = Lexicon.parse('filler 330000000000\nta 90000000\nht 90000000\nwi 90000000\nself 90000000\nie 90000000\n');
+      final q = TextPolisher(withBits);
+      for (final w in ['taht', 'wiht', 'selfie']) {
+        expect(q.suggest('the $w here'), isEmpty, reason: w);
+      }
+    });
+
+    test('misspellings everybody makes are fixed even when they land on a name', () {
+      expect(fixOf('brian'), 'brain');
+      expect(fixOf('thier'), 'their');
+      expect(p().suggest('the Brian here'), isEmpty, reason: 'a name inside a sentence');
+      expect(p().isKnownSpelling('brian'), isFalse);
+    });
+
+    test('a slip of the pen is told from a misreading', () {
+      for (final (a, b) in [('recieve', 'receive'), ('finaly', 'finally'), ('alot', 'a lot'), ('happend', 'happened')]) {
+        expect(TextPolisher.isTypoShaped(a, b), isTrue, reason: '$a $b');
+      }
+      for (final (a, b) in [('systa', 'syria'), ('visud', 'virus'), ('nevrons', 'neurons'), ('cat', 'cat')]) {
+        expect(TextPolisher.isTypoShaped(a, b), isFalse, reason: '$a $b');
+      }
+    });
+  });
+
+  test('British and American spellings are both right', () {
+    final us = Lexicon.parse('filler 330000000000\nthe 26548583149\ndepolarized 100000\nbehavior 30000000\ncenter 60000000\netiology 300000\nlabeled 5000000\norganization 50000000\n');
+    final uk = Lexicon.parse('filler 330000000000\nthe 26548583149\ndepolarised 100000\nbehaviour 30000000\ncentre 60000000\naetiology 300000\nlabelled 5000000\norganisation 50000000\n');
+    for (final (lex, words) in [
+      (us, ['depolarised', 'behaviour', 'centre', 'aetiology', 'labelled', 'organisation']),
+      // (Not `e` -> `ae`: there is no telling where an `a` would go.)
+      (uk, ['depolarized', 'behavior', 'center', 'labeled', 'organization']),
+    ]) {
+      final p = TextPolisher(lex);
+      for (final w in words) {
+        expect(p.suggest('the $w here'), isEmpty, reason: w);
+        expect(p.isKnownSpelling(w), isTrue, reason: w);
+      }
+    }
   });
 }

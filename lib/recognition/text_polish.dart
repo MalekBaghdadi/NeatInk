@@ -82,6 +82,11 @@ class PolishConfig {
     this.userWordRank = 5000,
     this.candidateLimit = 200,
     this.sureWordConfidence = 0.65,
+    this.typoMinConfidence = 0.35,
+    this.swapCost = 0.6,
+    this.shortSwapMaxRank = 1000,
+    this.formSlipMaxCost = 1.2,
+    this.formSlipBonus = 2.5,
     this.abbreviations = defaultAbbreviations,
     this.repeatableWords = defaultRepeatableWords,
   });
@@ -174,6 +179,32 @@ class PolishConfig {
   /// guess turned Mariam's `systa` into `syria` and `visud` into `virus`; the
   /// fix stays a suggestion and the word gets the spelling underline.
   final double sureWordConfidence;
+
+  /// A fix shaped like a slip of the pen ([isTypoShaped]: two neighbouring
+  /// letters swapped, one letter left out, added or doubled) is applied by
+  /// itself down to this confidence (v1.11.0: with [sureWordConfidence]
+  /// alone, most of Mariam's misspellings stayed). A misreading changes
+  /// letters for look-alikes (`systa`/`syria`), which these fixes never do.
+  final double typoMinConfidence;
+
+  /// What two neighbouring letters written the wrong way round cost, in
+  /// [handwritingDistance] units: as little as a look-alike letter, the
+  /// commonest slip of a writer (`taht`, `recieve`, `neruons`).
+  final double swapCost;
+
+  /// A three-letter word is fixed only by swapping two letters, into a word
+  /// at least this frequent (`teh` -> `the`, `adn` -> `and`).
+  final int shortSwapMaxRank;
+
+  /// A word that looks like a form of a listed word (`finaly` = `final` +
+  /// `y`) is still a misspelling when a listed word of the same stem and
+  /// ending is at most this far (`finally`, `happened` for `happend`,
+  /// `beginning` for `begining`). Before v1.11.0 such words were taken for
+  /// forms the list lacks and neither fixed nor underlined.
+  final double formSlipMaxCost;
+
+  /// Head start (ln) of those words over other corrections.
+  final double formSlipBonus;
 
   /// Lowercase words whose full stop does not end a sentence.
   final Set<String> abbreviations;
@@ -377,7 +408,38 @@ class TextPolisher {
   // ---- spelling ---------------------------------------------------------------
 
   bool _known(String lower) =>
-      (lexicon?.contains(lower) ?? false) || _isUserWord(lower) || contractionLogProb(lower) != null;
+      _listed(lower) || _isUserWord(lower) || contractionLogProb(lower) != null || _variants(lower).any(_listed);
+
+  bool _listed(String lower) => lexicon?.contains(lower) ?? false;
+
+  static final RegExp _izeEnding = RegExp(r'(i)([sz])(e|ed|es|ing|ation|ations|er|ers)$');
+  static final RegExp _ourEnding = RegExp(r'(o)(u?)(r)(s|ed|ing|ite|ites|able|ful|ism|ist|ists|less)?$');
+  static final RegExp _reEnding = RegExp(r'([^aeiou])(re|er)(s|d)?$');
+  static final RegExp _doubledL = RegExp(r'([aeiou])(ll?)(ed|ing|er|ers)$');
+
+  /// The British and American spellings of [lower] (`depolarised` /
+  /// `depolarized`, `behaviour` / `behavior`, `centre` / `center`,
+  /// `aetiology` / `etiology`, `labelled` / `labeled`): v1.11.0, a word
+  /// spelt the other way from the word list was "corrected".
+  static List<String> _variants(String lower) {
+    final out = <String>[];
+    final ize = _izeEnding.firstMatch(lower);
+    if (ize != null) {
+      out.add(lower.replaceRange(ize.start + 1, ize.start + 2, ize.group(2) == 's' ? 'z' : 's'));
+    }
+    final our = _ourEnding.firstMatch(lower);
+    if (our != null && lower.length > 4) {
+      out.add(lower.replaceRange(our.start + 1, our.start + 1 + our.group(2)!.length, our.group(2)!.isEmpty ? 'u' : ''));
+    }
+    final re = _reEnding.firstMatch(lower);
+    if (re != null && lower.length > 4) {
+      out.add(lower.replaceRange(re.start + 1, re.start + 3, re.group(2) == 're' ? 'er' : 're'));
+    }
+    if (lower.contains('ae') || lower.contains('oe')) out.add(lower.replaceAll('ae', 'e').replaceAll('oe', 'e'));
+    final l = _doubledL.firstMatch(lower);
+    if (l != null) out.add(lower.replaceRange(l.start + 1, l.start + 1 + l.group(2)!.length, l.group(2) == 'll' ? 'l' : 'll'));
+    return out;
+  }
 
   /// The suggested spelling of [core], or null: the best-scoring
   /// correction of an unknown word ([PolishConfig.channelWeight]) within
@@ -387,8 +449,12 @@ class TextPolisher {
   String? _spelling(String core, String lower, bool startsSentence) {
     final lex = lexicon;
     if (lex == null) return null;
-    if (core.length < config.minWordLength) return null;
+    final common = commonMisspellings[lower];
+    if (common != null && (core == lower || startsSentence) && !_isUserWord(lower)) {
+      return core == lower ? common : common[0].toUpperCase() + common.substring(1);
+    }
     if (_known(lower)) return null;
+    if (core.length < config.minWordLength) return _shortSwap(core, lower, startsSentence);
     // A contraction glued to the word before it (`Baghdadidoesn't`): split
     // even when that word is a name the list does not know.
     final glued = _contractionTail(core, lower);
@@ -399,7 +465,12 @@ class TextPolisher {
     final capitalised = core[0] != core[0].toLowerCase();
     // A capitalised word inside a sentence is a name.
     if (capitalised && !startsSentence) return null;
-    if (_looksInflected(lower)) return null;
+    // A form of a listed word is left alone, unless it is a slip in one
+    // (`finaly` next to `finally`): then it is checked like any word, the
+    // words of that stem and ending first (`happend` is `happened`, not
+    // `happens`).
+    final forms = _looksInflected(lower) ? _formSlips(lower) : const <String>{};
+    if (forms.isEmpty && _looksInflected(lower)) return null;
 
     // Text, score, and whether it may be chosen (a candidate that only came
     // close still makes the choice ambiguous: `onvert` could be `convert`,
@@ -414,7 +485,7 @@ class TextPolisher {
       for (final c in lex.candidates(lower, maxEdits: 2, limit: config.candidateLimit)) {
         final w = c.word;
         if (w == lower || w.contains("'")) continue;
-        final distance = handwritingDistance(lower, w);
+        final distance = _slipDistance(lower, w);
         if (distance <= 0 || distance > maxCost + 1e-9) continue;
         final cost = distance + (w[0] != lower[0] ? config.firstLetterPenalty : 0);
         final lp = lex.logProb(w)!;
@@ -423,7 +494,7 @@ class TextPolisher {
         // look-alike letter or a swap of two letters is fixed there.
         final eligible = cost <= maxCost + 1e-9 &&
             !(capitalised && cost > 0.6 + 1e-9 && !_isSwap(lower, w));
-        options.add((w, lp - config.channelWeight * cost, eligible));
+        options.add((w, lp - config.channelWeight * cost + (forms.contains(w) ? config.formSlipBonus : 0), eligible));
       }
     }
     if (options.isEmpty) return null;
@@ -505,10 +576,12 @@ class TextPolisher {
     final lower = word.toLowerCase().replaceAll('\u2019', "'");
     if (lower.isEmpty) return true;
     if (lower.contains('-')) return lower.split('-').every((p) => p.isEmpty || isKnownSpelling(p));
+    if (commonMisspellings.containsKey(lower) && word == lower && !_isUserWord(lower)) return false;
     if (_known(lower)) return true;
     if (lower.endsWith("'s") && _known(lower.substring(0, lower.length - 2))) return true;
     if (lower.endsWith("s'") && _known(lower.substring(0, lower.length - 1))) return true;
-    return !lower.contains("'") && _looksInflected(lower);
+    if (lower.contains("'") || !_looksInflected(lower)) return false;
+    return _formSlips(lower).isEmpty;
   }
 
   /// Whether [word] is in the personal dictionary.
@@ -530,7 +603,7 @@ class TextPolisher {
       for (final c in lex.candidates(lower, maxEdits: lower.length <= 3 ? 1 : 2, limit: config.candidateLimit)) {
         final w = c.word;
         if (w == lower || w.contains("'")) continue;
-        final distance = handwritingDistance(lower, w);
+        final distance = _slipDistance(lower, w);
         if (distance <= 0) continue;
         final cost = distance + (w[0] != lower[0] ? config.firstLetterPenalty : 0);
         options.add((w, lex.logProb(w)! - config.channelWeight * cost));
@@ -589,6 +662,10 @@ class TextPolisher {
   double? _partLogProb(String part) {
     if (part.contains("'") || part.contains('\u2019')) return contractionLogProb(part.replaceAll('\u2019', "'"));
     if (part.length == 1 && part != 'a' && part != 'i') return null;
+    // The list has every two-letter abbreviation (`ht`, `ie`): only words;
+    // three-letter parts must be common (`cor ext` is no split of `corext`).
+    if (part.length == 2 && !_twoLetterWords.contains(part)) return null;
+    if (part.length == 3 && (lexicon!.rankOf(part) ?? 1 << 30) > config.shortSwapMaxRank * 3) return null;
     final listed = lexicon!.logProb(part) ?? contractionLogProb(part);
     if (listed != null) return listed;
     return _isUserWord(part) ? lexicon!.logProbAtRank(config.userWordRank) : null;
@@ -605,6 +682,95 @@ class TextPolisher {
       i++;
     }
     return i + 1 < a.length && a[i] == b[i + 1] && a[i + 1] == b[i] && a.substring(i + 2) == b.substring(i + 2);
+  }
+
+  /// Misspellings the rules cannot reach (more than one slip, or a slip
+  /// that lands on a listed word or name), as a phone's autocorrect knows
+  /// them: fixed wherever they are written in lowercase (or start a
+  /// sentence). `brian` is the brain in a student's notes; `Brian` inside a
+  /// sentence stays a name.
+  static const Map<String, String> commonMisspellings = {
+    'thier': 'their', 'wich': 'which', 'whcih': 'which', 'fourty': 'forty', 'tounge': 'tongue', 'collegue': 'colleague',
+    'rember': 'remember', 'mispell': 'misspell', 'basicly': 'basically', 'posession': 'possession', 'dissapoint': 'disappoint',
+    'dissapointed': 'disappointed', 'goverment': 'government', 'enviroment': 'environment', 'tommorow': 'tomorrow',
+    'tommorrow': 'tomorrow', 'acommodate': 'accommodate', 'accomodate': 'accommodate', 'occurence': 'occurrence',
+    'neccessary': 'necessary', 'necesary': 'necessary', 'seperately': 'separately', 'definately': 'definitely',
+    'definatly': 'definitely', 'existance': 'existence', 'independant': 'independent', 'arguement': 'argument',
+    'beleive': 'believe', 'belive': 'believe', 'concious': 'conscious', 'consciencious': 'conscientious',
+    'embarass': 'embarrass', 'occured': 'occurred', 'untill': 'until', 'alot': 'a lot', 'infront': 'in front',
+    'aswell': 'as well', 'eachother': 'each other', 'incase': 'in case', 'brian': 'brain', 'brians': 'brains',
+    'nueron': 'neuron', 'nuerons': 'neurons', 'nuerotransmitter': 'neurotransmitter', 'nuerotransmitters': 'neurotransmitters',
+    'pyschology': 'psychology', 'psycology': 'psychology', 'phsychology': 'psychology', 'seratonin': 'serotonin',
+    'schizophernia': 'schizophrenia', 'hipocampus': 'hippocampus', 'hypothalmus': 'hypothalamus', 'behavoir': 'behavior',
+    'behavour': 'behaviour', 'harmone': 'hormone', 'harmones': 'hormones', 'cerebelum': 'cerebellum',
+  };
+
+  /// Two-letter words a glued word may be split into.
+  static const Set<String> _twoLetterWords = {
+    'am', 'an', 'as', 'at', 'be', 'by', 'do', 'go', 'he', 'hi', 'if', 'in', 'is', 'it', 'me', 'my', 'no', 'of', 'oh', //
+    'ok', 'on', 'or', 'so', 'to', 'up', 'us', 'we',
+  };
+
+  /// [handwritingDistance], with two neighbouring letters swapped costing
+  /// [PolishConfig.swapCost].
+  double _slipDistance(String a, String b) =>
+      _isSwap(a, b) ? config.swapCost : handwritingDistance(a, b);
+
+  /// A three-letter unknown word with two letters swapped from a frequent
+  /// word (`teh`, `adn`, `hte`), or null.
+  String? _shortSwap(String core, String lower, bool startsSentence) {
+    if (lower.length != 3 || !RegExp(r'^[a-z]+$').hasMatch(lower)) return null;
+    final capitalised = core[0] != lower[0];
+    if (core.substring(1) != lower.substring(1) || (capitalised && !startsSentence)) return null;
+    String? best;
+    var bestRank = 1 << 30;
+    for (var i = 0; i + 1 < lower.length; i++) {
+      final w = lower.substring(0, i) + lower[i + 1] + lower[i] + lower.substring(i + 2);
+      final rank = lexicon!.rankOf(w);
+      if (rank == null || rank > config.shortSwapMaxRank || rank >= bestRank) continue;
+      best = w;
+      bestRank = rank;
+    }
+    if (best == null) return null;
+    return capitalised ? best[0].toUpperCase() + best.substring(1) : best;
+  }
+
+  /// The listed words [lower] (a word that looks like a form of a listed
+  /// word) may be a slip of: the same stem and ending, at most
+  /// [PolishConfig.formSlipMaxCost] away (`finally` for `finaly`).
+  /// Empty: it is a form of that word.
+  Set<String> _formSlips(String lower) {
+    final lex = lexicon;
+    if (lex == null) return const {};
+    final out = <String>{};
+    for (final suffix in _suffixes) {
+      if (lower.length <= suffix.length + 2 || !lower.endsWith(suffix)) continue;
+      final stem = lower.substring(0, lower.length - suffix.length);
+      final prefix = stem.substring(0, math.min(stem.length, math.max(3, stem.length - 2)));
+      for (final c in lex.candidates(lower, maxEdits: 2, limit: config.candidateLimit)) {
+        final w = c.word;
+        if (w == lower || !w.endsWith(suffix) || !w.startsWith(prefix) || w.contains("'")) continue;
+        if (_slipDistance(lower, w) > config.formSlipMaxCost + 1e-9) continue;
+        out.add(w);
+      }
+    }
+    return out;
+  }
+
+  /// Whether [replacement] is [original] with one slip of the pen: two
+  /// neighbouring letters swapped, or one letter left out, added or doubled
+  /// (case and the text around ignored). Spaces count as letters (`alot`).
+  static bool isTypoShaped(String original, String replacement) {
+    final a = original.toLowerCase(), b = replacement.toLowerCase();
+    if (a == b) return false;
+    if (_isSwap(a, b)) return true;
+    if ((a.length - b.length).abs() != 1) return false;
+    final long = a.length > b.length ? a : b, short = a.length > b.length ? b : a;
+    var i = 0;
+    while (i < short.length && long[i] == short[i]) {
+      i++;
+    }
+    return long.substring(i + 1) == short.substring(i);
   }
 
   static const List<String> _suffixes = ['s', 'es', 'd', 'ed', 'ing', 'ly', 'er', 'ers', 'est', 'ness', 'ment', 'ments', 'ful', 'less', 'ion', 'ions', 'al', 'ish', 'y'];
