@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/document/page_items.dart';
 import 'package:neatink/features/editor/editor_tool.dart';
-import 'package:neatink/features/editor/tool_prefs.dart';
 import 'package:neatink/features/editor/tools/text_eraser.dart';
 import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/ink_rect.dart';
