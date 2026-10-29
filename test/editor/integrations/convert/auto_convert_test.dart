@@ -598,6 +598,33 @@ void main() {
         await tester.pump(const Duration(seconds: 6));
       });
 
+      testWidgets('a box whose text she fixed is still carried on', (tester) async {
+        // v1.11.0: any change to the box's text made Auto forget where its
+        // handwriting ended, and the next line only joined on its words.
+        final h = await ConvertHarness.open(tester,
+            recognizer: longReader(),
+            autoConvert: true,
+            prefsValues: {
+              ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs().toJson()),
+            });
+        await h.write(writeLine('a', ['hello', 'online', 'hello', 'online', 'hello', 'online', 'hello'], y: 104, gap: 20));
+        await wait(tester, 1100);
+        final box = h.page.texts.single;
+        h.controller.execute(PageItemsCommand(h.pageIdAt(0),
+            label: 'Edit text', textChanges: [(box, box.copyWith(text: 'hello online fire when they reach thresholds'))]));
+        await h.write(writeLine('b', ['hello'], y: 130));
+        await wait(tester, 1100);
+        expect(texts(h), ['hello online fire when they reach thresholds second']);
+
+        // Moved, it is left alone.
+        final moved = h.page.texts.single;
+        h.controller.execute(PageItemsCommand(h.pageIdAt(0),
+            label: 'Move text', textChanges: [(moved, moved.copyWith(x: moved.x + 30))]));
+        await h.write(writeLine('c', ['hello'], y: 156));
+        await wait(tester, 1100);
+        expect(texts(h), hasLength(2));
+      });
+
       testWidgets('with joining off it is a box of its own', (tester) async {
         final h = await twoLines(tester, join: false);
         expect(texts(h), ['hello online fire when they reach threshold', 'second']);

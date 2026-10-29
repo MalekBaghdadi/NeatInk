@@ -34,11 +34,21 @@ class AutoBox {
 
   String get id => versions.first.item.id;
 
-  /// The remembered state that [live] is identical to, or null when the user
-  /// moved, edited or restyled the box since.
+  /// The remembered state that [live] is identical to; else, when only its
+  /// text changed since the last state (a word fixed by hand, taken back
+  /// from autocorrect or a spelling picked: v1.11.0), that state's ink with
+  /// [live]: where the handwriting ended has not moved. Null when the user
+  /// moved or restyled the box.
   AutoBoxVersion? versionOf(TextItem live) {
     for (final v in versions.reversed) {
       if (TextBoxEditor.sameText(v.item, live)) return v;
+    }
+    final last = versions.last;
+    final was = last.item;
+    final retyped = was.copyWith(
+        text: live.text, width: live.width, height: live.height, corrections: live.corrections);
+    if (was.id == live.id && was.x == live.x && was.y == live.y && TextBoxEditor.sameText(retyped, live)) {
+      return AutoBoxVersion(live, last.inkRight, last.inkBaseline, inkXHeight: last.inkXHeight);
     }
     return null;
   }
