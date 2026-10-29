@@ -1,11 +1,11 @@
 /// Static facts about the app shown in Settings › About and the license page.
 ///
 /// Keep [version] and [buildNumber] in sync with `version:` in pubspec.yaml
-/// (`1.6.0+8` → version `1.6.0`, build `8`).
+/// (`1.7.0+9` → version `1.7.0`, build `9`).
 abstract final class AppInfo {
   static const String name = "Mariam's Notes";
-  static const String version = '1.6.0';
-  static const int buildNumber = 8;
+  static const String version = '1.7.0';
+  static const int buildNumber = 9;
 
   /// Version as shown to the user, e.g. "1.4.0 (build 6)".
   static const String displayVersion = '$version (build $buildNumber)';
