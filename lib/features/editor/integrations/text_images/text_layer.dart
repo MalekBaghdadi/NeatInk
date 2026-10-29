@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart' show TextPainter, TextSelection;
 import '../../../../document/page_items.dart';
 import '../../../../recognition/spell_check.dart';
 import '../../../../render/text_style.dart';
+import '../../canvas/ink_reveal.dart';
 import '../../editor_extensions.dart';
 
 /// Paints the committed text boxes of a page (background fill, then text
@@ -27,6 +28,10 @@ class TextLayerPainter extends PageLayerPainter {
   /// checking is off or not ready. Set by the autocorrect integration.
   List<SpellMark> Function(TextItem item)? spellMarks;
 
+  /// Lines ahead of a recording's playback are painted faint (v1.12.0; set
+  /// by the recordings integration).
+  InkReveal? Function()? reveal;
+
   /// The colour of the autocorrect underline: a soft blue that shows on
   /// white, cream and dark paper.
   static const ui.Color correctionColor = ui.Color(0xB33D7BE0);
@@ -39,9 +44,19 @@ class TextLayerPainter extends PageLayerPainter {
   void paint(ui.Canvas canvas, PagePaintContext context) {
     final hidden = context.forThumbnail ? null : hiddenId?.call(context.pageId);
     final marks = !context.forThumbnail && (showCorrections?.call() ?? false);
+    final reveal = context.forThumbnail ? null : this.reveal?.call();
     for (final item in context.content.texts) {
       if (item.id == hidden) continue;
-      final painter = layoutTextItem(item);
+      int? faintFrom;
+      if (reveal != null) {
+        for (final t in item.times) {
+          if (reveal.isAhead(t.writtenAt)) {
+            faintFrom = t.start;
+            break;
+          }
+        }
+      }
+      final painter = layoutTextItem(item, faintFrom: faintFrom, faintOpacity: aheadOpacity);
       try {
         if ((item.background >>> 24) & 0xFF != 0) {
           canvas.drawRect(

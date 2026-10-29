@@ -98,6 +98,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
   Future<void> _leave() async {
     if (_closing) return;
     _closing = true;
+    if (_controller.isReady) {
+      for (final ask in _controller.extensions.beforeLeave) {
+        if (!await ask(context, _controller) || !mounted) {
+          _closing = false;
+          return;
+        }
+      }
+    }
     final saved = await _controller.close();
     if (!mounted) return;
     var leave = saved;
@@ -257,6 +265,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
             onPressed: () => unawaited(ext.convertSettings!(context, c)),
           ),
       ],
+      for (final action in ext.appBarActions) ?action(context, c),
       IconButton(
         key: const ValueKey('undo'),
         icon: const Icon(Icons.undo),
@@ -416,6 +425,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
         return Column(
           children: [
             EditorToolRow(controller: c),
+            for (final bar in c.extensions.editorBars) ?bar(context, c),
             Expanded(child: DocumentView(controller: c)),
           ],
         );

@@ -8,6 +8,7 @@ import '../../../document/page_content.dart';
 import '../../../ink/stroke.dart';
 import '../../../render/stroke_outline.dart';
 import '../editor_extensions.dart';
+import 'ink_reveal.dart';
 
 /// The two committed-content pictures of a page.
 ///
@@ -45,6 +46,7 @@ void paintPageLayer(
   PageLayerPainter? imageLayer,
   PageLayerPainter? textLayer,
   Set<String> hiddenStrokeIds = const {},
+  InkReveal? reveal,
 }) {
   final paint = Paint()
     ..isAntiAlias = true
@@ -55,24 +57,26 @@ void paintPageLayer(
       imageLayer?.paint(canvas, context);
       for (final s in strokes) {
         if (s.isHighlighter && !hiddenStrokeIds.contains(s.id)) {
-          paintStroke(canvas, s, paint);
+          paintStroke(canvas, s, paint, faint: reveal?.isAhead(s.writtenAt) ?? false);
         }
       }
     case InkLayer.upper:
       textLayer?.paint(canvas, context);
       for (final s in strokes) {
         if (!s.isHighlighter && !hiddenStrokeIds.contains(s.id)) {
-          paintStroke(canvas, s, paint);
+          paintStroke(canvas, s, paint, faint: reveal?.isAhead(s.writtenAt) ?? false);
         }
       }
   }
 }
 
 /// Fills one stroke's cached outline. [paint] is reused across strokes to
-/// avoid allocating per stroke.
-void paintStroke(ui.Canvas canvas, Stroke s, Paint paint) {
+/// avoid allocating per stroke. A [faint] stroke (ahead of a recording's
+/// playback) keeps [aheadOpacity] of its colour.
+void paintStroke(ui.Canvas canvas, Stroke s, Paint paint, {bool faint = false}) {
   if (s.points.isEmpty) return;
-  paint.color = strokeFillColor(s);
+  final color = strokeFillColor(s);
+  paint.color = faint ? color.withValues(alpha: color.a * aheadOpacity) : color;
   canvas.drawPath(cachedStrokePath(s), paint);
 }
 

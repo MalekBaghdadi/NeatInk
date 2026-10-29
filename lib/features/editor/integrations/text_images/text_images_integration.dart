@@ -47,7 +47,7 @@ void _install(EditorController controller, WidgetRef ref) {
   ext.textLayer = TextLayerPainter(
     hiddenId: textEditor.editingIdOn,
     showCorrections: () => controller.settings.autocorrect,
-  );
+  )..reveal = () => ext.inkReveal;
   ext.imageLayer = imageLayer;
   ext.toolHandlers[EditorTool.text] = TextToolHandler(controller, textEditor);
   // The lasso menu's Edit: the text tool, editing that box.

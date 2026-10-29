@@ -69,10 +69,22 @@ const TextScaler textItemScaler = TextScaler.noScaling;
 ///
 /// Paint the result at `Offset(item.x, item.y)`. The caller owns the painter
 /// and should [TextPainter.dispose] it when done.
-TextPainter layoutTextItem(TextItem item) {
+TextPainter layoutTextItem(TextItem item, {int? faintFrom, double faintOpacity = 1}) {
   final width = item.width.isFinite && item.width > 0 ? item.width : 1.0;
+  final style = textStyleFor(item);
+  // From [faintFrom] on the text keeps [faintOpacity] of its colour (notes
+  // ahead of a recording's playback); the layout is the same either way.
+  final split = faintFrom?.clamp(0, item.text.length);
   return TextPainter(
-    text: TextSpan(text: item.text, style: textStyleFor(item)),
+    text: split == null
+        ? TextSpan(text: item.text, style: style)
+        : TextSpan(style: style, children: [
+            TextSpan(text: item.text.substring(0, split)),
+            TextSpan(
+              text: item.text.substring(split),
+              style: TextStyle(color: style.color?.withValues(alpha: (style.color?.a ?? 1) * faintOpacity)),
+            ),
+          ]),
     textAlign: textAlignFor(item.align),
     textDirection: TextDirection.ltr,
     textScaler: textItemScaler,

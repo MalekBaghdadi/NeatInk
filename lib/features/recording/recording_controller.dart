@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,8 +29,16 @@ class RecordingController extends ChangeNotifier {
     Uuid? uuid,
     this.tick = const Duration(milliseconds: 250),
     this.persistEvery = const Duration(seconds: 10),
+    this.remember,
+    this.recall,
   })  : _clock = clock ?? DateTime.now,
         _uuid = uuid ?? const Uuid();
+
+  /// Keeps which recording is on (`notebookId`, `id`, `title`; null when
+  /// none) where a new start of the app finds it ([recall]): the recorder
+  /// goes on in the background when the app's screen is closed.
+  final void Function(Map<String, String>? active)? remember;
+  final Map<String, String>? Function()? recall;
 
   final AudioBackend backend;
   final RecordingStore store;
@@ -99,11 +108,53 @@ class RecordingController extends ChangeNotifier {
     _notebookId = notebookId;
     _notebookTitle = notebookTitle;
     _state = RecorderState.recording;
-    _timer?.cancel();
-    _timer = Timer.periodic(tick, (_) => unawaited(_onTick()));
+    remember?.call({'notebookId': notebookId, 'id': id, 'title': ?notebookTitle});
+    _startTimer();
     await _persist();
     _notify();
     return RecordingStartResult.started;
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(tick, (_) => unawaited(_onTick()));
+  }
+
+  /// After the app starts again: takes back a recording the recorder kept
+  /// going in the background meanwhile (its timeline runs on to now), or
+  /// stops a recorder nobody knows about.
+  Future<void> reattach() async {
+    if (isActive) return;
+    final RecorderState native;
+    try {
+      native = (await backend.recorderStatus()).state;
+    } catch (_) {
+      return;
+    }
+    final active = recall?.call();
+    if (native == RecorderState.idle) {
+      if (active != null) remember?.call(null);
+      return;
+    }
+    final notebookId = active?['notebookId'];
+    final id = active?['id'];
+    final list = notebookId == null ? const <Recording>[] : await store.list(notebookId);
+    final rec = list.where((r) => r.id == id).firstOrNull;
+    if (rec == null || notebookId == null) {
+      await backend.stopRecording();
+      remember?.call(null);
+      return;
+    }
+    _current = rec.copyWith(inProgress: true);
+    _notebookId = notebookId;
+    _notebookTitle = active?['title'];
+    _state = native;
+    // Recording all along: its timeline runs on to now. (Paused: since some
+    // moment after the last save; the saved end stands.)
+    if (native == RecorderState.recording) _current = _closed(_current!);
+    _startTimer();
+    await _persist();
+    _notify();
   }
 
   Future<void> pause() async {
@@ -149,6 +200,7 @@ class RecordingController extends ChangeNotifier {
     _notebookId = null;
     _notebookTitle = null;
     _level = 0;
+    remember?.call(null);
     _notify();
     return done;
   }
@@ -252,12 +304,24 @@ final recordingStoreProvider =
 
 /// The app's one recorder.
 final recordingControllerProvider = Provider<RecordingController>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  const key = 'activeRecording';
   final c = RecordingController(
     backend: ref.watch(audioBackendProvider),
     store: ref.watch(recordingStoreProvider),
     clock: ref.watch(clockProvider),
+    remember: (active) => active == null ? prefs.remove(key) : prefs.setString(key, jsonEncode(active)),
+    recall: () {
+      try {
+        final raw = prefs.getString(key);
+        return raw == null ? null : (jsonDecode(raw) as Map<String, dynamic>).map((k, v) => MapEntry(k, '$v'));
+      } catch (_) {
+        return null;
+      }
+    },
   );
   ref.onDispose(c.dispose);
+  unawaited(c.reattach());
   return c;
 });
 

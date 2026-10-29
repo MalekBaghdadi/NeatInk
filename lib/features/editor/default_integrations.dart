@@ -5,6 +5,7 @@ import 'integrations/erase_select/erase_select_integration.dart';
 import 'integrations/highlight/highlight_integration.dart';
 import 'integrations/pages/pages_integration.dart';
 import 'integrations/pdf/pdf_integration.dart';
+import 'integrations/recordings/recordings_integration.dart';
 import 'integrations/scribble/scribble_integration.dart';
 import 'integrations/search_index/search_index_integration.dart';
 import 'integrations/shapes/shapes_integration.dart';
@@ -25,4 +26,5 @@ final List<EditorIntegration> defaultEditorIntegrations = [
   autocorrectIntegration,
   scribbleIntegration,
   searchIndexIntegration,
+  recordingsIntegration,
 ];

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../recording/recording_banner.dart';
 import '../settings/app_settings.dart' show LibrarySort;
 import 'library_actions.dart';
 import 'library_controller.dart';
@@ -116,24 +119,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           onImportPdf: _actions.importPdf,
           onNewFolder: () => _actions.newFolder(inCurrentFolder: true),
         ),
-        body: wide
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    width: librarySidePanelWidth,
-                    // A Material (not a ColoredBox) so the list tiles' selection
-                    // colour and splashes show.
-                    child: Material(
-                      color: scheme.surfaceContainerLow,
-                      child: panel(inDrawer: false),
-                    ),
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: content),
-                ],
-              )
-            : content,
+        body: Column(
+          children: [
+            // A lecture still recording for a notebook she left.
+            RecordingBanner(onOpenNotebook: (id) => unawaited(_actions.openNotebook(id))),
+            Expanded(
+              child: wide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: librarySidePanelWidth,
+                          // A Material (not a ColoredBox) so the list tiles' selection
+                          // colour and splashes show.
+                          child: Material(
+                            color: scheme.surfaceContainerLow,
+                            child: panel(inDrawer: false),
+                          ),
+                        ),
+                        const VerticalDivider(width: 1),
+                        Expanded(child: content),
+                      ],
+                    )
+                  : content,
+            ),
+          ],
+        ),
       ),
     );
   }

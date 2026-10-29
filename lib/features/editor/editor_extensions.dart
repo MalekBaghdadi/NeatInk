@@ -8,6 +8,7 @@ import '../../document/page_content.dart';
 import '../../document/page_items.dart';
 import '../../ink/stroke.dart';
 import '../../ink/vec2.dart';
+import 'canvas/ink_reveal.dart';
 import 'canvas/live_ink.dart';
 import 'canvas/viewport_controller.dart';
 import 'editor_controller.dart';
@@ -240,6 +241,10 @@ abstract class PageTextWords {
   void prepare(String pageId);
 }
 
+/// A widget in the editor's frame (a bar under the tools, a button in the
+/// app bar), or null for none.
+typedef EditorWidgetBuilder = Widget? Function(BuildContext context, EditorController controller);
+
 /// A toolbar / menu action.
 typedef EditorAction = Future<void> Function(
     BuildContext context, EditorController controller);
@@ -351,4 +356,19 @@ class EditorExtensions {
   /// Run by `EditorController.close()` after the tools committed their
   /// pending gestures and before saving (tidy commits its pending word).
   final List<VoidCallback> beforeSaveHooks = [];
+
+  /// Bars between the tool row and the pages, top to bottom (the recording
+  /// and player bars, v1.12.0).
+  final List<EditorWidgetBuilder> editorBars = [];
+
+  /// Extra app bar buttons, before Undo.
+  final List<EditorWidgetBuilder> appBarActions = [];
+
+  /// Asked in order when the user leaves the notebook; false keeps it open
+  /// (a recording that is on asks what to do with it).
+  final List<Future<bool> Function(BuildContext context, EditorController controller)> beforeLeave = [];
+
+  /// Notes to show faint while a recording plays "with notes" (painted
+  /// pages ask it; after it changes, invalidate the pages it affects).
+  InkReveal? inkReveal;
 }
