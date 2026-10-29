@@ -297,6 +297,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
               unawaited(ext.pdfMargins?.call(context, c));
             case 'paste':
               unawaited(ext.paste?.call(context, c));
+            case 'samples':
+              unawaited(ext.sendWritingSamples?.call(context, c));
           }
         },
         itemBuilder: (context) => [
@@ -324,6 +326,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
                 child: Text('PDF margins…')),
           if (ext.exportPdf != null)
             const PopupMenuItem(value: 'export', child: Text('Export PDF')),
+          if (ext.sendWritingSamples != null)
+            const PopupMenuItem(
+                key: ValueKey('menu-writing-samples'),
+                value: 'samples',
+                child: Text('Send writing samples')),
         ],
       ),
     ];

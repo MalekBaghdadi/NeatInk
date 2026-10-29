@@ -66,6 +66,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     required this.recognizer,
     required this.readStyle,
     bool Function()? readAutoFix,
+    this.onConverted,
     this._enabled = false,
     Duration? idle,
     Duration Function()? readIdle,
@@ -98,6 +99,11 @@ class AutoConvertSession with WidgetsBindingObserver {
   final bool Function() readAutoFix;
 
   static bool _noAutoFix() => false;
+
+  /// Told about every line a pass typed, once the pass is applied (for "Keep
+  /// my corrections": v1.11.0 kept Auto's lines too, not only the review
+  /// sheet's).
+  final void Function(List<AutoConvertedLine> lines)? onConverted;
 
   /// Quiet time after the last stroke before a pass starts; read every time
   /// the timer starts, so a new setting applies to the next stroke.
@@ -428,6 +434,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     };
     final conversions = <PageConversion>[];
     final converted = <String>{};
+    final typed = <AutoConvertedLine>[];
     final newBoxes = <String, List<AutoBox>>{};
     final grownBoxes = <String, List<(AutoBox, AutoBoxVersion)>>{};
     final stale = <String, List<String>>{};
@@ -564,6 +571,16 @@ class AutoConvertSession with WidgetsBindingObserver {
         if (merge != null && overlapsAny(merge.after, occupied())) merge = null;
         final inkRight = last.right;
         final inkBaseline = last.baselineAt(last.right);
+        final pageIndex = doc.meta.pages.indexWhere((p) => p.id == pageId);
+        for (final l in lines) {
+          typed.add(AutoConvertedLine(
+            line: l,
+            pageId: pageId,
+            pageIndex: pageIndex,
+            boxId: merge?.after.id ?? out.item.id,
+            joinedBox: merge != null,
+          ));
+        }
         if (merge != null) {
           takenBoxes.add(merge.box.id);
           grownIds.add(merge.before.id);
@@ -638,6 +655,7 @@ class AutoConvertSession with WidgetsBindingObserver {
     final outcome = applyConversion(controller, conversions,
         label: autoConvertCommandLabel);
     if (outcome == null) return;
+    if (typed.isNotEmpty) onConverted?.call(typed);
     newBoxes.forEach((pageId, list) {
       final map = _boxes.putIfAbsent(pageId, () => {});
       for (final b in list) {
@@ -654,4 +672,22 @@ class AutoConvertSession with WidgetsBindingObserver {
       }
     });
   }
+}
+
+/// A line auto-convert typed: the planned line, its page and the text box it
+/// went into (a box it made, or one it carried on: [joinedBox]).
+class AutoConvertedLine {
+  const AutoConvertedLine({
+    required this.line,
+    required this.pageId,
+    required this.pageIndex,
+    required this.boxId,
+    required this.joinedBox,
+  });
+
+  final PlannedLine line;
+  final String pageId;
+  final int pageIndex;
+  final String boxId;
+  final bool joinedBox;
 }

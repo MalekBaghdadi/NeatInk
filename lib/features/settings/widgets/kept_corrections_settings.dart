@@ -3,16 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/app_info.dart';
-import '../../../app/providers.dart';
 import '../../editor/integrations/convert/kept_corrections.dart';
-import '../../editor/integrations/convert/sample_share.dart';
+import '../../editor/integrations/convert/send_writing_samples.dart';
 import '../settings_controller.dart';
 
-/// Settings › Writing: "Keep my corrections" and "Share my corrections".
-/// Lines converted from the review sheet are kept on the tablet with the
-/// text the user checked, so recognition can be measured and tuned on her
-/// writing; they leave the tablet only through the share sheet.
+/// Settings › Writing: "Keep my writing samples" and "Send writing samples"
+/// (v1.11.0; "Keep / Share my corrections" before). Lines typed from the
+/// review sheet or by Auto are kept on the tablet, so recognition and the
+/// auto features can be measured and tuned on her writing; they leave the
+/// tablet only through the share sheet, in one file
+/// ([sendWritingSamples]).
 class KeptCorrectionsSettings extends ConsumerStatefulWidget {
   const KeptCorrectionsSettings({super.key});
 
@@ -36,20 +36,9 @@ class _KeptCorrectionsSettingsState extends ConsumerState<KeptCorrectionsSetting
   }
 
   Future<void> _share() async {
-    final kept = ref.read(keptCorrectionsProvider);
-    final share = ref.read(sampleShareServiceProvider);
-    final now = ref.read(clockProvider)();
-    final messenger = ScaffoldMessenger.maybeOf(context);
     setState(() => _busy = true);
     try {
-      final json = await kept.exportJson(appVersion: '${AppInfo.version}+${AppInfo.buildNumber}', createdAt: now);
-      if (json == null) {
-        messenger?.showSnackBar(const SnackBar(content: Text('No corrections kept yet.')));
-        return;
-      }
-      await share.share(fileName: keptCorrectionsFileName(now), json: json);
-    } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text("Couldn't share the corrections: $e")));
+      await sendWritingSamples(context, ref);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -60,7 +49,7 @@ class _KeptCorrectionsSettingsState extends ConsumerState<KeptCorrectionsSetting
     final yes = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete kept corrections?'),
+        title: const Text('Delete kept writing samples?'),
         content: Text('The ${_count ?? 0} lines kept on this tablet are deleted. '
             'Your notebooks are not changed.'),
         actions: [
@@ -88,27 +77,28 @@ class _KeptCorrectionsSettingsState extends ConsumerState<KeptCorrectionsSetting
         SwitchListTile(
           key: const ValueKey('settings-keep-corrections'),
           secondary: const Icon(Icons.fact_check_outlined),
-          title: const Text('Keep my corrections'),
-          subtitle: const Text('Lines you check in the Convert sheet are kept on this '
-              'tablet, so the handwriting reader can be improved for your '
-              'writing. Nothing is sent unless you share it.'),
+          title: const Text('Keep my writing samples'),
+          subtitle: const Text('Lines typed from your handwriting (with Convert or Auto) are kept on '
+              'this tablet, with what you changed afterwards, so the handwriting reader can '
+              'be improved for your writing. Nothing is sent unless you send it.'),
           value: on,
           onChanged: (v) => ref.read(settingsProvider.notifier).update((s) => s.copyWith(keepCorrections: v)),
         ),
         ListTile(
           key: const ValueKey('settings-share-corrections'),
           leading: const Icon(Icons.ios_share_rounded),
-          title: const Text('Share my corrections'),
+          title: const Text('Send writing samples'),
           subtitle: Text(count == null
               ? 'Counting…'
               : count == 0
                   ? 'Nothing kept yet.'
-                  : '$count ${count == 1 ? 'line' : 'lines'} kept, ready to send for improving recognition.'),
+                  : '$count ${count == 1 ? 'line' : 'lines'} of your writing. Tap, then pick WhatsApp '
+                      '(or email) and send the file to Malek.'),
           enabled: !_busy && (count ?? 0) > 0,
           onTap: () => unawaited(_share()),
           trailing: IconButton(
             key: const ValueKey('settings-delete-corrections'),
-            tooltip: 'Delete kept corrections',
+            tooltip: 'Delete kept writing samples',
             icon: const Icon(Icons.delete_outline_rounded),
             onPressed: (count ?? 0) > 0 && !_busy ? () => unawaited(_delete()) : null,
           ),

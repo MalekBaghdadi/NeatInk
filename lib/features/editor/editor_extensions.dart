@@ -313,6 +313,9 @@ class EditorExtensions {
   /// Overflow menu "Export PDF". Disabled when null.
   EditorAction? exportPdf;
 
+  /// Overflow menu "Send writing samples" (hidden when null).
+  EditorAction? sendWritingSamples;
+
   /// Overflow menu "Paste" (what Copy / Cut put on the clipboard, in the
   /// middle of the view), shown while [canPaste] says so.
   EditorAction? paste;

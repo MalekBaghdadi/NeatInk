@@ -733,6 +733,45 @@ void main() {
     });
   });
 
+  // v1.11.0: Mariam mostly uses Auto, whose lines were never kept, and
+  // sharing them had to be one tap.
+  group('writing samples', () {
+    testWidgets('Auto keeps the lines it types, and the menu sends them with what they say now', (tester) async {
+      final h = await ConvertHarness.open(tester, recognizer: reader(), autoConvert: true);
+      final first = writeLine('a', ['hello'], y: 104);
+      await h.write(first);
+      await wait(tester, 1100);
+      await h.write(writeLine('b', ['hello'], x: rightOf(first) + 20, y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello second']);
+      final box = h.page.texts.single;
+      expect([for (final e in h.kept.lines) '${e['finalText']} ${e['source']} ${e['boxId'] == box.id} ${e['joinedBox']}'],
+          ['hello auto true false', 'second auto true true']);
+      expect(h.kept.lines.first['strokes'], isNotEmpty, reason: 'the pen data comes along');
+
+      // She fixes the text by hand; the file says what it is now.
+      h.controller.execute(PageItemsCommand(h.pageIdAt(0),
+          label: 'Edit text', textChanges: [(box, box.copyWith(text: 'hello seconds'))]));
+      await tester.tap(key('editor-menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(key('menu-writing-samples'));
+      await tester.pumpAndSettle();
+      final json = jsonDecode(h.share.shared.single.json) as Map<String, dynamic>;
+      final lines = (json['lines'] as List).cast<Map<String, dynamic>>();
+      expect(lines.map((l) => l['boxTextNow']), ['hello seconds', 'hello seconds']);
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('with "Keep my writing samples" off nothing is kept', (tester) async {
+      final h = await ConvertHarness.open(tester, recognizer: reader(), autoConvert: true);
+      h.container.read(settingsProvider.notifier).update((s) => s.copyWith(keepCorrections: false));
+      await h.write(writeLine('a', ['hello'], y: 104));
+      await wait(tester, 1100);
+      expect(texts(h), ['hello']);
+      expect(h.kept.lines, isEmpty);
+    });
+  });
+
   group('feedback', () {
     testWidgets('a small chip shows while it reads, and drawing is not blocked',
         (tester) async {

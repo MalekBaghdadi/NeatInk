@@ -20,7 +20,9 @@ import 'convert_scope.dart';
 import 'convert_sheet.dart';
 import 'kept_corrections.dart';
 import 'sample_share.dart';
+import 'send_writing_samples.dart';
 import 'user_lexicon.dart';
+import 'writing_samples.dart';
 
 export 'convert_providers.dart' show htrRecognizerProvider, wordImageRendererProvider;
 export 'kept_corrections.dart' show keptCorrectionsProvider;
@@ -93,6 +95,7 @@ final EditorIntegration convertIntegration = (controller, ref) {
       return open(context, useSelection ? selection : null);
     }
     ..convertSelection = ((context, c, selection) => open(context, selection))
+    ..sendWritingSamples = ((context, c) => sendWritingSamples(context, ref, open: c))
     ..convertSettings = (context, c) => showConvertStyleSheet(context,
         page: c.isReady && c.pageCount > 0
             ? c.doc.meta.pages[c.currentPageIndex]
@@ -105,6 +108,12 @@ final EditorIntegration convertIntegration = (controller, ref) {
     readStyle: () =>
         ConvertStyle.fromPrefs(ref.read(convertStylePrefsProvider)),
     readAutoFix: () => ref.read(settingsProvider).autocorrect,
+    onConverted: (lines) {
+      if (!ref.read(settingsProvider).keepCorrections || !controller.isReady) return;
+      final entries = autoKeptEntries(controller.notebookId, lines, DateTime.now());
+      unawaited(ref.read(keptCorrectionsProvider).addAll(entries).catchError(
+          (Object e) => debugPrint('NeatInk: keeping auto-converted lines failed: $e')));
+    },
     readIdle: () =>
         Duration(milliseconds: ref.read(settingsProvider).autoConvertDelayMs),
     enabled: ref.read(settingsProvider).autoConvert,

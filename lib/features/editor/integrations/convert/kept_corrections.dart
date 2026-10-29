@@ -26,6 +26,9 @@ abstract interface class KeptCorrections {
   /// How many lines are kept.
   Future<int> count();
 
+  /// Every kept line entry, oldest first.
+  Future<List<Map<String, dynamic>>> entries();
+
   /// Every kept line as one samples file (format 2, oldest first), or null
   /// when nothing is kept.
   Future<String?> exportJson({required String appVersion, required DateTime createdAt});
@@ -81,6 +84,9 @@ class InMemoryKeptCorrections implements KeptCorrections {
 
   @override
   Future<int> count() async => lines.length;
+
+  @override
+  Future<List<Map<String, dynamic>>> entries() async => List.of(lines);
 
   @override
   Future<String?> exportJson({required String appVersion, required DateTime createdAt}) async =>
@@ -181,6 +187,16 @@ class FileKeptCorrections implements KeptCorrections {
         } catch (e) {
           debugPrint('NeatInk: kept corrections unreadable: $e');
           return 0;
+        }
+      });
+
+  @override
+  Future<List<Map<String, dynamic>>> entries() => _serial(() async {
+        try {
+          return [for (final l in await _readLines(await _file())) jsonDecode(l) as Map<String, dynamic>];
+        } catch (e) {
+          debugPrint('NeatInk: kept corrections unreadable: $e');
+          return const [];
         }
       });
 
