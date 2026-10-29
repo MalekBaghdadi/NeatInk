@@ -62,7 +62,9 @@ import kotlin.math.roundToInt
  * Output pages are always built in a new document: PDF-backed pages are
  * copied in from the source with `importPage` (so reordered, repeated or
  * interleaved pages work, and their text stays selectable), blank pages are
- * created at the app's size. The ink is appended as filled paths.
+ * created at the app's size. The ink is appended as filled paths. The
+ * source's bookmarks and form fields are carried over at the end
+ * ([PdfStructure]).
  */
 class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private var channel: MethodChannel? = null
@@ -183,6 +185,20 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val s = session(args)
         try {
             if (s.doc.numberOfPages == 0) throw ExportError("empty", "There are no pages to export.")
+            // The source's bookmarks and form fields, pointing at the exported
+            // pages. Losing them must never fail the export.
+            s.source?.let { source ->
+                try {
+                    PdfStructure.copyOutline(source, s.doc, s.exported)
+                } catch (e: Exception) {
+                    android.util.Log.w("NeatInk", "PDF export: bookmarks not copied", e)
+                }
+                try {
+                    PdfStructure.copyForm(source, s.doc)
+                } catch (e: Exception) {
+                    android.util.Log.w("NeatInk", "PDF export: form fields not copied", e)
+                }
+            }
             s.doc.documentInformation = PDDocumentInformation().apply {
                 s.title?.let { title = it }
                 producer = "NeatInk"
@@ -252,6 +268,7 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 throw ExportError("bad_page", "PDF page $pdfIndex does not exist.")
             }
             page = s.doc.importPage(source.getPage(pdfIndex))
+            s.exported.putIfAbsent(pdfIndex, page)
         } else {
             page = PDPage(PDRectangle(width.toFloat(), height.toFloat()))
             s.doc.addPage(page)
@@ -633,6 +650,9 @@ class PdfExportPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val fontAssets: FontAssets?,
     ) {
         var done = 0
+
+        /** Source page index -> the first exported page made from it. */
+        val exported = HashMap<Int, PDPage>()
 
         /** Decoded images by file path, so one picture used twice is embedded once. */
         val images = HashMap<String, PDImageXObject>()
