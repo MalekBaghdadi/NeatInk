@@ -15,8 +15,9 @@ const Duration searchDebounce = Duration(milliseconds: 250);
 
 /// What search covers, shown above the results.
 const String searchScopeInfo =
-    'Searches notebook titles, tags, folder names, typed text and PDF text. '
-    "Handwriting isn't searchable.";
+    'Searches notebook titles, tags, folder names, typed text, PDF text and '
+    'handwriting. Handwriting is read while a notebook is open and you pause, '
+    'so open a notebook once to make its writing searchable.';
 
 /// Full-screen search over the library. Results are grouped by notebook;
 /// tapping one opens the editor at the matching page.
@@ -320,6 +321,7 @@ class _HitRow extends StatelessWidget {
         SearchMatchKind.tag => Icons.sell_outlined,
         SearchMatchKind.folder => Icons.folder_outlined,
         SearchMatchKind.text => Icons.text_fields,
+        SearchMatchKind.handwriting => Icons.draw_outlined,
         SearchMatchKind.pdf => Icons.picture_as_pdf_outlined,
       };
 

@@ -18,13 +18,14 @@ const int defaultMaxSnippetHits = 5;
 ///
 /// Matching is a case-, accent- and whitespace-insensitive substring test
 /// (see [foldForSearch]) against the title, tags, the names of the
-/// notebook's folder and its ancestors in [library], text boxes and PDF
-/// text. Text and PDF hits report one excerpt per page, at most
-/// [maxSnippetHits] per notebook, text boxes before PDF text.
+/// notebook's folder and its ancestors in [library], text boxes, handwriting
+/// (as the reader read it) and PDF text. Those report one excerpt per page,
+/// at most [maxSnippetHits] per notebook: text boxes first, then
+/// handwriting, then PDF text.
 ///
 /// Results are grouped by notebook. Groups are ordered by their best hit
-/// (title, then tag/folder, then text, then PDF), then most recently
-/// edited first, then title and id so the order is stable.
+/// (title, then tag/folder, then text, handwriting, PDF), then most
+/// recently edited first, then title and id so the order is stable.
 List<SearchHit> searchNotebooks(
   String query,
   Iterable<SearchableNotebook> notebooks,
@@ -55,7 +56,8 @@ int rankOf(SearchMatchKind kind) => switch (kind) {
       SearchMatchKind.title => 0,
       SearchMatchKind.tag || SearchMatchKind.folder => 1,
       SearchMatchKind.text => 2,
-      SearchMatchKind.pdf => 3,
+      SearchMatchKind.handwriting => 3,
+      SearchMatchKind.pdf => 4,
     };
 
 List<SearchHit> _hitsFor(
@@ -98,21 +100,20 @@ List<SearchHit> _hitsFor(
   }
 
   var snippetHits = 0;
-  for (final pdf in const [false, true]) {
+  for (final kind in const [SearchMatchKind.text, SearchMatchKind.handwriting, SearchMatchKind.pdf]) {
     for (var i = 0; i < meta.pages.length; i++) {
       if (snippetHits >= maxSnippetHits) break;
       final pageId = meta.pages[i].id;
       final page = notebook.data.pages[pageId];
       if (page == null) continue;
-      final folded = pdf ? page.foldedPdf : page.foldedText;
+      final (folded, original) = switch (kind) {
+        SearchMatchKind.pdf => (page.foldedPdf, page.pdf),
+        SearchMatchKind.handwriting => (page.foldedInk, page.ink),
+        _ => (page.foldedText, page.text),
+      };
       final at = folded.indexOf(q);
       if (at < 0) continue;
-      hits.add(hit(
-        pdf ? SearchMatchKind.pdf : SearchMatchKind.text,
-        pageId: pageId,
-        pageIndex: i,
-        snippet: buildSnippet(pdf ? page.pdf : page.text, at, q.length),
-      ));
+      hits.add(hit(kind, pageId: pageId, pageIndex: i, snippet: buildSnippet(original, at, q.length)));
       snippetHits++;
     }
   }

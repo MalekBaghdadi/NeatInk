@@ -19,6 +19,7 @@ class AppSettings {
     this.tidyHighlighter = true,
     this.scribbleToDelete = true,
     this.keepCorrections = true,
+    this.searchHandwriting = true,
     this.pdfMargins = PdfMargins.none,
     this.exportPaperLines = true,
     this.autoConvert = false,
@@ -42,6 +43,7 @@ class AppSettings {
         tidyHighlighter: j['tidyHighlighter'] is bool ? j['tidyHighlighter'] as bool : true,
         scribbleToDelete: j['scribbleToDelete'] is bool ? j['scribbleToDelete'] as bool : true,
         keepCorrections: j['keepCorrections'] is bool ? j['keepCorrections'] as bool : true,
+        searchHandwriting: j['searchHandwriting'] is bool ? j['searchHandwriting'] as bool : true,
         pdfMargins: PdfMargins.byName(j['pdfMargins']),
         exportPaperLines: j['exportPaperLines'] as bool? ?? true,
         autoConvert: j['autoConvert'] as bool? ?? false,
@@ -89,6 +91,11 @@ class AppSettings {
   /// on the tablet with the text the user checked, to measure and improve
   /// recognition (see `KeptCorrections`). On by default; nothing is sent.
   final bool keepCorrections;
+
+  /// "Search handwriting": while a notebook is open and left alone, its
+  /// handwriting is read in the background so search finds it (see
+  /// `HandwritingIndexer`). On by default.
+  final bool searchHandwriting;
 
   /// Writing margins last chosen when importing a PDF (the next import
   /// offers the same).
@@ -147,6 +154,7 @@ class AppSettings {
     bool? tidyHighlighter,
     bool? scribbleToDelete,
     bool? keepCorrections,
+    bool? searchHandwriting,
     PdfMargins? pdfMargins,
     bool? exportPaperLines,
     bool? autoConvert,
@@ -169,6 +177,7 @@ class AppSettings {
         tidyHighlighter: tidyHighlighter ?? this.tidyHighlighter,
         scribbleToDelete: scribbleToDelete ?? this.scribbleToDelete,
         keepCorrections: keepCorrections ?? this.keepCorrections,
+        searchHandwriting: searchHandwriting ?? this.searchHandwriting,
         pdfMargins: pdfMargins ?? this.pdfMargins,
         exportPaperLines: exportPaperLines ?? this.exportPaperLines,
         autoConvert: autoConvert ?? this.autoConvert,
@@ -193,6 +202,7 @@ class AppSettings {
         'tidyHighlighter': tidyHighlighter,
         'scribbleToDelete': scribbleToDelete,
         'keepCorrections': keepCorrections,
+        'searchHandwriting': searchHandwriting,
         'pdfMargins': pdfMargins.name,
         'exportPaperLines': exportPaperLines,
         'autoConvert': autoConvert,

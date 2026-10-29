@@ -642,6 +642,29 @@ class FileNotebookRepository implements NotebookRepository {
   }
 
   @override
+  Future<void> saveHandwritingText(String notebookId, String pageId, {required String text, required String key}) async {
+    checkStorageId(notebookId, 'notebookId');
+    checkStorageId(pageId, 'pageId');
+    return _locks.run(notebookId, () async {
+      await _requireNotebook(notebookId);
+      final data = await _loadSearchData(notebookId);
+      final old = data.pages[pageId];
+      if (old != null && old.ink == text && old.inkKey == key) return;
+      await _writeSearchData(notebookId, data.withInkText(pageId, text, key));
+    });
+  }
+
+  @override
+  Future<Map<String, String>> handwritingKeys(String notebookId) async {
+    checkStorageId(notebookId, 'notebookId');
+    final data = await _searchDataOrEmpty(notebookId);
+    return {
+      for (final e in data.pages.entries)
+        if (e.value.inkKey.isNotEmpty) e.key: e.value.inkKey,
+    };
+  }
+
+  @override
   Future<List<SearchHit>> search(String query) async {
     if (query.trim().isEmpty) return const [];
     if (!_metasComplete) await listNotebooks();

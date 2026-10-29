@@ -79,6 +79,7 @@ String searchMatchKindLabel(SearchMatchKind kind) => switch (kind) {
       SearchMatchKind.tag => 'Tag',
       SearchMatchKind.folder => 'Folder',
       SearchMatchKind.text => 'Typed text',
+      SearchMatchKind.handwriting => 'Handwriting',
       SearchMatchKind.pdf => 'PDF text',
     };
 

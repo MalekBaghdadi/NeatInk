@@ -49,6 +49,10 @@ class InMemoryNotebookRepository implements NotebookRepository {
   /// notebook id → page id → PDF text (from [savePdfText]).
   final Map<String, Map<String, String>> _pdfText = {};
 
+  /// notebook id → page id → (handwriting text, key) (from
+  /// [saveHandwritingText]).
+  final Map<String, Map<String, (String, String)>> _inkText = {};
+
   /// notebook id → asset file name → bytes.
   final Map<String, Map<String, Uint8List>> _assets = {};
 
@@ -315,6 +319,19 @@ class InMemoryNotebookRepository implements NotebookRepository {
     _pdfText[notebookId] = Map.of(textByPage);
   }
 
+  @override
+  Future<void> saveHandwritingText(String notebookId, String pageId, {required String text, required String key}) async {
+    _inkText.putIfAbsent(notebookId, () => {})[pageId] = (text, key);
+  }
+
+  @override
+  Future<Map<String, String>> handwritingKeys(String notebookId) async => {
+        for (final e in (_inkText[notebookId] ?? const <String, (String, String)>{}).entries) e.key: e.value.$2,
+      };
+
+  /// Test helper: the handwriting text stored for a page, or null.
+  String? handwritingText(String notebookId, String pageId) => _inkText[notebookId]?[pageId]?.$1;
+
   /// Notebooks are visited most recently edited first (ties by id), and each
   /// notebook's hits come in this order: title, tags, folders (its folder
   /// and the folders above it), then typed text and PDF text page by page.
@@ -357,6 +374,7 @@ class InMemoryNotebookRepository implements NotebookRepository {
         final pageId = m.pages[i].id;
         for (final (kind, source) in [
           (SearchMatchKind.text, _typedText[m.id]),
+          (SearchMatchKind.handwriting, {for (final e in (_inkText[m.id] ?? const <String, (String, String)>{}).entries) e.key: e.value.$1}),
           (SearchMatchKind.pdf, _pdfText[m.id]),
         ]) {
           final text = source?[pageId];

@@ -12,7 +12,7 @@ class PdfPageSize {
 }
 
 /// What a search result matched.
-enum SearchMatchKind { title, tag, folder, text, pdf }
+enum SearchMatchKind { title, tag, folder, text, handwriting, pdf }
 
 class SearchHit {
   const SearchHit({
@@ -121,7 +121,15 @@ abstract class NotebookRepository {
   /// Stores text extracted from the notebook's PDF (page id → text).
   Future<void> savePdfText(String notebookId, Map<String, String> textByPage);
 
-  /// Case-insensitive search over titles, tags, folder names, text boxes and
-  /// PDF text. Results are grouped by notebook in a stable order.
+  /// Stores what the handwriting reader read on a page, with the [key] of
+  /// the strokes it read (see `HandwritingIndexer`).
+  Future<void> saveHandwritingText(String notebookId, String pageId, {required String text, required String key});
+
+  /// The handwriting keys stored so far, page id → key.
+  Future<Map<String, String>> handwritingKeys(String notebookId);
+
+  /// Case-insensitive search over titles, tags, folder names, text boxes,
+  /// handwriting and PDF text. Results are grouped by notebook in a stable
+  /// order.
   Future<List<SearchHit>> search(String query);
 }

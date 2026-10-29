@@ -1,12 +1,15 @@
 import 'text_fold.dart';
 
-/// Searchable text of one page: typed text boxes and PDF text.
+/// Searchable text of one page: typed text boxes, PDF text and what the
+/// handwriting reader read in its ink.
 class PageSearchText {
-  PageSearchText({this.text = '', this.pdf = ''});
+  PageSearchText({this.text = '', this.pdf = '', this.ink = '', this.inkKey = ''});
 
   factory PageSearchText.fromJson(Map<String, dynamic> j) => PageSearchText(
         text: j['text'] as String? ?? '',
         pdf: j['pdf'] as String? ?? '',
+        ink: j['ink'] as String? ?? '',
+        inkKey: j['inkKey'] as String? ?? '',
       );
 
   /// Text of the page's text boxes, one box per line.
@@ -15,20 +18,38 @@ class PageSearchText {
   /// Text extracted from the page's PDF background.
   final String pdf;
 
+  /// The page's handwriting as the reader read it (v1.7.0), one line of
+  /// writing per line; see `HandwritingIndexer`.
+  final String ink;
+
+  /// Which strokes [ink] was read from (a hash of their ids), so a page is
+  /// read again only when its writing changed. Set also when nothing could
+  /// be read (a drawing), so it is not tried again.
+  final String inkKey;
+
+  /// [ink] folded for matching, computed on first search.
+  late final String foldedInk = foldForSearch(ink);
+
   /// [text] folded for matching, computed on first search.
   late final String foldedText = foldForSearch(text);
 
   /// [pdf] folded for matching, computed on first search.
   late final String foldedPdf = foldForSearch(pdf);
 
-  bool get isEmpty => text.isEmpty && pdf.isEmpty;
+  bool get isEmpty => text.isEmpty && pdf.isEmpty && ink.isEmpty && inkKey.isEmpty;
 
-  PageSearchText copyWith({String? text, String? pdf}) =>
-      PageSearchText(text: text ?? this.text, pdf: pdf ?? this.pdf);
+  PageSearchText copyWith({String? text, String? pdf, String? ink, String? inkKey}) => PageSearchText(
+        text: text ?? this.text,
+        pdf: pdf ?? this.pdf,
+        ink: ink ?? this.ink,
+        inkKey: inkKey ?? this.inkKey,
+      );
 
   Map<String, dynamic> toJson() => {
         if (text.isNotEmpty) 'text': text,
         if (pdf.isNotEmpty) 'pdf': pdf,
+        if (ink.isNotEmpty) 'ink': ink,
+        if (inkKey.isNotEmpty) 'inkKey': inkKey,
       };
 }
 
@@ -65,6 +86,11 @@ class SearchData {
   /// Sets the text-box text of [pageId] (empty removes it).
   SearchData withPageText(String pageId, String text) =>
       _withPage(pageId, (old) => old.copyWith(text: text));
+
+  /// Sets what the handwriting reader read on [pageId] and the [key] of the
+  /// strokes it read.
+  SearchData withInkText(String pageId, String text, String key) =>
+      _withPage(pageId, (old) => old.copyWith(ink: text, inkKey: key));
 
   /// Sets the PDF text of each page in [textByPage] (empty removes it).
   /// Pages not mentioned keep their PDF text.

@@ -30,6 +30,10 @@ const List<Tip> appTips = [
   Tip(Icons.spellcheck, 'Undo an autocorrect',
       'Words that autocorrect changed have a dotted blue underline. Tap one '
           'to get back what you wrote.'),
+  Tip(Icons.manage_search, 'Search your handwriting',
+      'Search finds words in your handwriting too. The app reads a notebook '
+          'while it is open and you pause, so open a notebook once to make it '
+          'searchable.'),
   Tip(Icons.content_paste, 'Copy and paste',
       'Select with the lasso and tap Copy or Cut. Then, in any page or '
           'notebook, tap an empty spot with the lasso and choose Paste.'),

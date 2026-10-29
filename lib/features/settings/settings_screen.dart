@@ -151,6 +151,18 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 const KeptCorrectionsSettings(),
                 SwitchListTile(
+                  key: const ValueKey('settings-search-handwriting'),
+                  secondary: const Icon(Icons.manage_search),
+                  title: const Text('Search handwriting'),
+                  subtitle: const Text(
+                      'While a notebook is open and you pause, its handwriting '
+                      'is read in the background so search can find it. '
+                      'Nothing on the page changes.'),
+                  value: settings.searchHandwriting,
+                  onChanged: (v) =>
+                      change((s) => s.copyWith(searchHandwriting: v)),
+                ),
+                SwitchListTile(
                   key: const ValueKey('settings-draw-with-finger'),
                   secondary: const Icon(Icons.touch_app_outlined),
                   title: const Text('Draw with finger'),
