@@ -541,6 +541,7 @@ class AutoConvertSession with WidgetsBindingObserver {
         for (final l in lines) {
           ids.addAll(l.strokeIds);
         }
+        final column = textColumnAt(meta, geometry.left);
         var merge = planMerge(
           boxes: boxes?.values ?? const <AutoBox>[],
           pageTexts: occupied(),
@@ -552,7 +553,8 @@ class AutoConvertSession with WidgetsBindingObserver {
           metrics: metrics,
           taken: takenBoxes,
           joinLines: style.joinLines,
-          ruling: ruling,
+          ruling: column == null ? ruling : column.ruling,
+          column: column,
         );
         // Growing a box over text written earlier would hide it: the line
         // gets a box of its own instead.
@@ -570,7 +572,7 @@ class AutoConvertSession with WidgetsBindingObserver {
           ));
         } else {
           final item = placeClear(out.item, occupied(),
-              pageHeight: meta.height, metrics: metrics, ruling: ruling);
+              pageHeight: meta.height, metrics: metrics, ruling: column == null ? ruling : column.ruling);
           placed.add(item);
           items.add(item);
           newBoxes.putIfAbsent(pageId, () => []).add(
@@ -584,7 +586,7 @@ class AutoConvertSession with WidgetsBindingObserver {
         if (live == null) return;
         final punctuated = live.copyWith(text: '${live.text.trimRight()}$mark');
         final natural = metrics.naturalWidth(punctuated) + ConvertConfig.lineSlack;
-        final room = meta.width - ConvertConfig.rightMargin - live.x;
+        final room = (textColumnAt(meta, live.x)?.right ?? meta.width - ConvertConfig.rightMargin) - live.x;
         final wider = natural > live.width && natural <= room
             ? punctuated.copyWith(width: natural)
             : punctuated;

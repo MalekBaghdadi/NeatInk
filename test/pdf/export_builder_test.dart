@@ -8,6 +8,7 @@ import 'package:neatink/document/paper.dart';
 import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/pdf/export_builder.dart';
+import 'package:neatink/render/paper_painter.dart' show pdfMarginEdgeColor;
 
 Stroke stroke(String id, StrokeTool tool, {int color = 0xFF112233}) => Stroke(
       id: id,
@@ -135,7 +136,7 @@ void main() {
       expect(ruled.any((l) => l.x1 == 0 && l.x2 == 150), isTrue);
       expect(ruled.any((l) => l.x1 == 750 && l.x2 == 1000), isTrue);
       // Hairlines along the PDF page's edges.
-      final edges = page.lines.where((l) => l.x1 == l.x2 && l.color == 0x33000000).map((l) => l.x1);
+      final edges = page.lines.where((l) => l.x1 == l.x2 && l.color == pdfMarginEdgeColor).map((l) => l.x1);
       expect(edges, containsAll([150.0, 750.0]));
       expect(page.toMap()['marginLeft'], 150);
 

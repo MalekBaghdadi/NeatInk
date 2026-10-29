@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/painting.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../document/notebook_meta.dart';
 import '../../../../document/page_items.dart';
 import '../../../../document/paper.dart';
 import '../../../../recognition/stroke_grouping.dart';
@@ -129,6 +130,48 @@ class PageRuling {
   }
 }
 
+/// Where converted text goes across a page: [left] is the first x a box may
+/// start at, [right] the edge it wraps at, [ruling] the ruled lines it sits
+/// on (null: none).
+class TextColumn {
+  const TextColumn({required this.left, required this.right, this.ruling});
+
+  final double left;
+  final double right;
+  final PageRuling? ruling;
+
+  double get width => right - left;
+
+  /// Whether a box at [x] is in this column.
+  bool holds(double x) => x >= left - 1 && x < right;
+}
+
+/// The column of [page] for writing that starts at [x], or null for a page
+/// without PDF writing margins (the whole page, as always). On a PDF page
+/// with margins (v1.9.0): the margin [x] is in, with the margin paper's
+/// ruled lines, so typed notes wrap at the PDF's edge instead of running
+/// over it and sit on the margin's lines; or the PDF page between them.
+TextColumn? textColumnAt(PageMeta page, double x) {
+  if (!page.isPdf || !page.hasMargins) return null;
+  final ruling = PageRuling.of(page.paper, page.width, page.height);
+  if (page.marginLeft > 0 && x < page.contentLeft) {
+    return TextColumn(left: 0, right: page.contentLeft - ConvertConfig.pdfEdgeGap, ruling: ruling);
+  }
+  if (page.marginRight > 0 && x >= page.contentRight) {
+    return TextColumn(
+        left: page.contentRight + ConvertConfig.pdfEdgeGap,
+        right: page.width - ConvertConfig.rightMargin,
+        ruling: ruling);
+  }
+  return TextColumn(left: page.contentLeft, right: page.contentRight - ConvertConfig.pdfEdgeGap);
+}
+
+/// Whether writing that ends at [right] ran out of room in [column] (as
+/// [ranToRightEdge] does for the page).
+bool ranToColumnEdge(double right, double xHeight, TextColumn column) =>
+    column.right - right <=
+    math.max(ConvertConfig.joinEdgeFraction * column.width, ConvertConfig.joinEdgeXHeights * xHeight);
+
 /// The look the user picked in the review sheet.
 class ConvertStyle {
   const ConvertStyle({
@@ -227,6 +270,7 @@ bool continuesOnNextLine({
   required String nextText,
   required double pageWidth,
   PageRuling? ruling,
+  TextColumn? column,
 }) {
   if (text.trim().isEmpty || endsSentence(text)) return false;
   if (nextText.trim().isEmpty || startsListItem(nextText)) return false;
@@ -235,7 +279,8 @@ bool continuesOnNextLine({
   if (next.left > line.left + ConvertConfig.joinIndentXHeights * xh) return false;
   final drop = next.baselineAt(next.left) - line.baselineAt(line.left);
   if (drop <= 0 || drop > maxLineDrop(xh, ruling)) return false;
-  return ranToRightEdge(line.right, xh, pageWidth) || textCarriesOn(text, nextText);
+  final atEdge = column == null ? ranToRightEdge(line.right, xh, pageWidth) : ranToColumnEdge(line.right, xh, column);
+  return atEdge || textCarriesOn(text, nextText);
 }
 
 /// Words that do not end a sentence: after them the sentence goes on
@@ -447,14 +492,16 @@ List<LaidOutLine> layoutPage({
   required List<LayoutLineInput> lines,
   required ConvertStyle style,
   PageRuling? ruling,
+  TextColumn? column,
   ConvertTextMetrics metrics = const FlutterTextMetrics(),
   Uuid? uuid,
 }) {
   final joined = style.joinLines
-      ? _joinParagraphs(lines, pageWidth, ruling)
+      ? _joinParagraphs(lines, pageWidth, ruling, column)
       : (lines: lines, members: <List<String>>[for (final _ in lines) const []]);
   return _layoutLines(
     pageWidth: pageWidth,
+    column: column,
     lines: joined.lines,
     members: joined.members,
     style: style,
@@ -468,7 +515,7 @@ List<LaidOutLine> layoutPage({
 /// (the first line's place and colour, the texts joined), and for each
 /// input the ids of the lines it holds (empty when just itself).
 ({List<LayoutLineInput> lines, List<List<String>> members}) _joinParagraphs(
-    List<LayoutLineInput> lines, double pageWidth, PageRuling? ruling) {
+    List<LayoutLineInput> lines, double pageWidth, PageRuling? ruling, TextColumn? column) {
   final out = <LayoutLineInput>[];
   final members = <List<String>>[];
   for (var i = 0; i < lines.length; i++) {
@@ -485,7 +532,8 @@ List<LaidOutLine> layoutPage({
             next: l.geometry,
             nextText: text,
             pageWidth: pageWidth,
-            ruling: ruling)) {
+            ruling: ruling,
+            column: column)) {
       final last = out.last;
       out[out.length - 1] = LayoutLineInput(
         id: last.id,
@@ -505,6 +553,7 @@ List<LaidOutLine> layoutPage({
 
 List<LaidOutLine> _layoutLines({
   required double pageWidth,
+  TextColumn? column,
   required List<LayoutLineInput> lines,
   required List<List<String>> members,
   required ConvertStyle style,
@@ -565,6 +614,7 @@ List<LaidOutLine> _layoutLines({
                   ? baseline[i - 1]
                   : lines[i - 1].geometry.baselineAt(lines[i - 1].geometry.left)),
       pageWidth: pageWidth,
+      column: column,
       style: style,
       ruling: ruling,
       metrics: metrics,
@@ -623,15 +673,17 @@ LaidOutLine _placeLine({
   required double nextTop,
   required double gapAbove,
   required double pageWidth,
+  TextColumn? column,
   required ConvertStyle style,
   required PageRuling? ruling,
   required ConvertTextMetrics metrics,
   bool paragraph = false,
 }) {
   const slack = ConvertConfig.lineSlack;
-  final rightEdge = pageWidth - ConvertConfig.rightMargin;
-  var x = math.max(0.0, geometry.left);
-  if (rightEdge - x < 60) x = math.max(0.0, rightEdge - 60);
+  final rightEdge = column?.right ?? pageWidth - ConvertConfig.rightMargin;
+  final leftEdge = column?.left ?? 0.0;
+  var x = math.max(leftEdge, geometry.left);
+  if (rightEdge - x < 60) x = math.max(leftEdge, rightEdge - 60);
   final avail = math.max(rightEdge - x, ConvertConfig.minBoxWidth);
 
   var base = style.evenSize

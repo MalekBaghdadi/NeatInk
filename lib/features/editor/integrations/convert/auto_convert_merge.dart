@@ -95,6 +95,7 @@ MergePlan? planMerge({
   Set<String> taken = const {},
   bool joinLines = false,
   PageRuling? ruling,
+  TextColumn? column,
 }) {
   final xh = line.xHeight;
   if (!xh.isFinite || xh <= 0 || text.isEmpty) return null;
@@ -140,6 +141,10 @@ MergePlan? planMerge({
     return live.y + metrics.firstBaseline(live) + (lines - 1) * one;
   }
 
+  // Whether writing ending at [right] ran out of room (in [column], if any).
+  bool atRightEdge(double right) =>
+      column == null ? ranToRightEdge(right, xh, pageWidth) : ranToColumnEdge(right, xh, column);
+
   // How far below the box's last line [line] starts, when it carries on the
   // box's unfinished sentence; else null.
   double? dropBelow(TextItem live, AutoBoxVersion? base) {
@@ -148,12 +153,12 @@ MergePlan? planMerge({
     final double lastBaseline;
     final bool atEdge;
     if (base != null) {
-      atEdge = ranToRightEdge(base.inkRight, xh, pageWidth);
+      atEdge = atRightEdge(base.inkRight);
       lastBaseline = base.inkBaseline;
     } else {
       // A typed box: its text wraps, or reaches the edge itself.
       atEdge = metrics.naturalWidth(live) > live.width + 1e-6 ||
-          ranToRightEdge(live.x + live.width, xh, pageWidth);
+          atRightEdge(live.x + live.width);
       lastBaseline = lastBaselineOf(live);
     }
     if (!atEdge && !textCarriesOn(live.text, text)) return null;
@@ -163,6 +168,8 @@ MergePlan? planMerge({
 
   void consider(AutoBox box, TextItem live, AutoBoxVersion? base) {
     if (live.align != TextAlignKind.left) return;
+    // On a PDF page with writing margins, only text in the same margin.
+    if (column != null && !column.holds(live.x)) return;
     final typedEnd = live.x + metrics.naturalWidth(live);
     final typedBaseline = live.y + metrics.firstBaseline(live);
     // Where the handwriting the box replaced ended: remembered, or estimated
@@ -211,7 +218,7 @@ MergePlan? planMerge({
             for (final c in corrections)
               if (c.start >= lead) c.shifted(tailStart - lead),
           ]);
-    final room = pageWidth - ConvertConfig.rightMargin - live.x;
+    final room = (column?.right ?? pageWidth - ConvertConfig.rightMargin) - live.x;
     final natural = metrics.naturalWidth(joined);
     // One line when it fits; else, joining sentences, it wraps at the margin.
     final double width;

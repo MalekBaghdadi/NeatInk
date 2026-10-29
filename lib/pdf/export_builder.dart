@@ -8,6 +8,7 @@ import '../document/notebook_meta.dart';
 import '../document/page_content.dart';
 import '../document/page_items.dart';
 import '../document/paper.dart';
+import '../render/paper_painter.dart' show pdfMarginEdgeColor, pdfMarginEdgeWidth;
 import '../render/stroke_outline.dart';
 import '../render/text_style.dart';
 import '../storage/notebook_repository.dart';
@@ -136,10 +137,10 @@ ExportPage buildExportPage(
         ...ruling.lines,
         // A hairline along the PDF page's edges, as on screen.
         if (margins) ...[
-          ExportLine(page.contentLeft, 0, page.contentLeft, page.height, 0.75,
-              _pdfEdgeColor),
+          ExportLine(page.contentLeft, 0, page.contentLeft, page.height,
+              pdfMarginEdgeWidth, pdfMarginEdgeColor),
           ExportLine(page.contentRight, 0, page.contentRight, page.height,
-              0.75, _pdfEdgeColor),
+              pdfMarginEdgeWidth, pdfMarginEdgeColor),
         ],
       ],
       dots: ruling.dots,
@@ -173,9 +174,6 @@ ExportPage buildExportPage(
     ink: ink,
   );
 }
-
-/// The hairline at the edges of a PDF page between writing margins.
-const int _pdfEdgeColor = 0x33000000;
 
 /// [paper]'s lines and dots for a page of [width] x [height] points. With
 /// [xRanges], only the parts inside those horizontal ranges (the margins

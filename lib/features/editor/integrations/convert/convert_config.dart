@@ -73,6 +73,10 @@ abstract final class ConvertConfig {
   /// Space kept free at the right page edge (points).
   static const double rightMargin = 24;
 
+  /// Space kept free beside a PDF page by text in its writing margins
+  /// (points): margin text wraps this far from the PDF's edge.
+  static const double pdfEdgeGap = 6;
+
   /// A line that is too wide first shrinks down to this fraction of its
   /// intended size (still counted as a gentle shrink)...
   static const double softShrinkFactor = 0.85;

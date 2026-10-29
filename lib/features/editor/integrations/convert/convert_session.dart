@@ -360,8 +360,9 @@ class ConvertSession extends ChangeNotifier {
       final occupied = [...controller.doc.page(plan.pageId).texts];
       final items = <TextItem>[];
       for (final l in laid) {
+        final column = textColumnAt(meta, l.item.x);
         final item = placeClear(l.item, occupied,
-            pageHeight: meta.height, metrics: _metrics, ruling: ruling);
+            pageHeight: meta.height, metrics: _metrics, ruling: column == null ? ruling : column.ruling);
         occupied.add(item);
         items.add(item);
       }

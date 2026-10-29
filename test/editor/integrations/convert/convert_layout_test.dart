@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:neatink/document/notebook_meta.dart';
 import 'package:neatink/document/page_items.dart';
 import 'package:neatink/document/paper.dart';
 import 'package:neatink/features/editor/integrations/convert/convert_config.dart';
@@ -596,6 +597,60 @@ void main() {
       expect(endsSentence('really?"'), isTrue);
       expect(endsSentence('(see above)'), isFalse);
       expect(endsSentence('the end'), isFalse);
+    });
+  });
+
+  group('PDF writing margins', () {
+    // A 595 pt PDF page with 150 pt margins each side.
+    const pdf = PageMeta(id: 'p', width: 895, height: 842, pdfPageIndex: 0, marginLeft: 150, marginRight: 150);
+
+    test('each margin is a column with the margin paper\'s lines; the PDF between has none', () {
+      final left = textColumnAt(pdf, 20)!;
+      expect(left.left, 0);
+      expect(left.right, 150 - ConvertConfig.pdfEdgeGap);
+      expect(left.ruling, isNotNull);
+      final middle = textColumnAt(pdf, 400)!;
+      expect((middle.left, middle.ruling), (150, null));
+      final right = textColumnAt(pdf, 800)!;
+      expect(right.left, 745 + ConvertConfig.pdfEdgeGap);
+      expect(right.right, 895 - ConvertConfig.rightMargin);
+      expect(textColumnAt(const PageMeta(id: 'q'), 20), isNull, reason: 'a plain page is one page');
+      expect(textColumnAt(const PageMeta(id: 'r', pdfPageIndex: 0), 20), isNull, reason: 'no margins');
+    });
+
+    test('typed notes in a margin wrap at the PDF\'s edge and sit on its lines', () {
+      final column = textColumnAt(pdf, 20)!;
+      final ruling = column.ruling!;
+      final out = layoutPage(
+        pageWidth: pdf.width,
+        pageHeight: pdf.height,
+        lines: [input('a', 'the hippocampus consolidates memories', geo(left: 20, right: 140, baseline: ruling.baselines[5] + 3))],
+        style: const ConvertStyle(evenSize: true),
+        ruling: ruling,
+        column: column,
+        metrics: const FakeMetrics(),
+      ).single;
+      expect(out.item.x, greaterThanOrEqualTo(0));
+      expect(out.item.x + out.item.width, lessThanOrEqualTo(column.right + 1e-9));
+      expect(out.snapped, isTrue);
+      expect(out.baselineY, ruling.baselines[5]);
+      expect(out.item.height, greaterThan(ruling.spacing), reason: 'it wraps inside the margin');
+    });
+
+    test('a margin line that ran to the PDF\'s edge carries on below', () {
+      final column = textColumnAt(pdf, 20)!;
+      final ruling = column.ruling!;
+      bool joins(double right) => continuesOnNextLine(
+            line: geo(left: 20, right: right, baseline: ruling.baselines[3]),
+            text: 'Neurons send',
+            next: geo(left: 20, right: 100, baseline: ruling.baselines[4]),
+            nextText: 'Signals',
+            pageWidth: pdf.width,
+            ruling: ruling,
+            column: column,
+          );
+      expect(joins(140), isTrue);
+      expect(joins(60), isFalse);
     });
   });
 }

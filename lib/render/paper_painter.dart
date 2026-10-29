@@ -41,6 +41,11 @@ class PaperPainter extends CustomPainter {
       oldDelegate.pageHeightPt != pageHeightPt;
 }
 
+/// The line between a PDF page and its writing margins: colour (ARGB) and
+/// width in points. The PDF export draws the same.
+const int pdfMarginEdgeColor = 0x73000000;
+const double pdfMarginEdgeWidth = 1.0;
+
 /// The background of a PDF page ([PageMeta.isPdf]) onto a [size] canvas:
 /// white, or with writing margins ([PageMeta.hasMargins]) the page's paper
 /// in the margins and a hairline along the PDF page's edges. The PDF page
@@ -55,9 +60,11 @@ void paintPdfPageFrame(Canvas canvas, Size size, PageMeta page) {
   final sx = size.width / page.width;
   final pdf = Rect.fromLTWH(page.contentLeft * sx, 0, page.contentWidth * sx, size.height);
   canvas.drawRect(pdf, Paint()..color = white);
+  // A clear edge between the notes and the PDF (v1.9.0: was a faint
+  // hairline, 20% black).
   final edge = Paint()
-    ..color = const Color(0x33000000)
-    ..strokeWidth = math.max(1.0, 0.75 * sx);
+    ..color = const Color(pdfMarginEdgeColor)
+    ..strokeWidth = math.max(1.0, pdfMarginEdgeWidth * sx);
   canvas.drawLine(pdf.topLeft, pdf.bottomLeft, edge);
   canvas.drawLine(pdf.topRight, pdf.bottomRight, edge);
 }
