@@ -50,6 +50,11 @@ void _install(EditorController controller, WidgetRef ref) {
   );
   ext.imageLayer = imageLayer;
   ext.toolHandlers[EditorTool.text] = TextToolHandler(controller, textEditor);
+  // The lasso menu's Edit: the text tool, editing that box.
+  ext.editText = (pageId, item) {
+    controller.selectTool(EditorTool.text);
+    textEditor.begin(pageId, item);
+  };
   ext.toolHandlers[EditorTool.image] = ImageToolHandler(controller, imageEditor);
   ext.toolOptions[EditorTool.text] =
       (context, c) => TextFormatBar(editor: textEditor, controller: c);

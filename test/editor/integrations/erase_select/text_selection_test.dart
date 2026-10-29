@@ -59,10 +59,21 @@ void main() {
     expect(h.lasso.state.selection, isNotNull);
   });
 
+  testWidgets('Edit text opens the selected box for typing', (tester) async {
+    final h = await EraseSelectHarness.open(tester, texts: const [box]);
+    TextItem? edited;
+    h.controller.extensions.editText = (pageId, item) => edited = item;
+    await h.lassoRect(210, 92, 330, 130);
+    await tester.tap(key('selection-edit'));
+    await tester.pump();
+    expect(edited?.id, 't');
+  });
+
   testWidgets('no Text style for a selection of handwriting only', (tester) async {
     final h = await EraseSelectHarness.open(tester, texts: const [box]);
     await h.lassoRect(600, 600, 700, 700);
     expect(key('selection-text-style'), findsNothing);
+    expect(key('selection-edit'), findsNothing);
     expect(Vec2.zero, isNotNull);
   });
 }

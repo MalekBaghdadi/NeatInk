@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../document/notebook_meta.dart';
 import '../../document/page_content.dart';
+import '../../document/page_items.dart';
 import '../../ink/stroke.dart';
 import '../../ink/vec2.dart';
 import 'canvas/live_ink.dart';
@@ -334,6 +335,10 @@ class EditorExtensions {
   /// Selection menu "Convert" button: handwriting in the selection to typed
   /// text. Hidden when null.
   SelectionAction? convertSelection;
+
+  /// Selection menu "Edit" button: opens the typed text box [item] on
+  /// [pageId] for typing (the text tool's editor). Hidden when null.
+  void Function(String pageId, TextItem item)? editText;
 
   /// Committed pen / highlighter strokes with these ids are not painted
   /// (the tidy animation draws them itself meanwhile). After changing it,

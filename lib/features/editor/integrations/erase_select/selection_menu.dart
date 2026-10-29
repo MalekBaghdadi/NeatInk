@@ -83,6 +83,16 @@ class _SelectionMenuState extends State<SelectionMenu> {
       ));
   }
 
+  /// Opens the first selected text box for typing.
+  void _editText() {
+    final item = _handler.firstSelectedText;
+    final pageId = _handler.state.selection?.pageId;
+    final edit = _controller.extensions.editText;
+    if (item == null || pageId == null || edit == null) return;
+    // Switching to the text tool ends the lasso selection.
+    edit(pageId, item);
+  }
+
   void _convert() {
     final sel = _handler.state.selection;
     final action = _controller.extensions.convertSelection;
@@ -104,6 +114,13 @@ class _SelectionMenuState extends State<SelectionMenu> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_handler.firstSelectedText != null && _controller.extensions.editText != null)
+                  _MenuButton(
+                    key: const ValueKey('selection-edit'),
+                    icon: Icons.edit_outlined,
+                    label: 'Edit text',
+                    onPressed: _editText,
+                  ),
                 _MenuButton(
                   key: const ValueKey('selection-delete'),
                   icon: Icons.delete_outline,
