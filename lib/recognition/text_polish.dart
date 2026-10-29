@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'lexicon.dart';
 import 'user_lexicon.dart';
 
@@ -62,6 +64,11 @@ class PolishConfig {
     this.ambiguityMargin = 1.0,
     this.splitCost = 0.3,
     this.splitMinRank = 25000,
+    this.realWordMinRank = 15000,
+    this.realWordMaxTargetRank = 3000,
+    this.realWordMinRatio = 25,
+    this.realWordMaxCost = 1.0,
+    this.userWordRank = 5000,
     this.candidateLimit = 200,
     this.abbreviations = defaultAbbreviations,
     this.repeatableWords = defaultRepeatableWords,
@@ -112,6 +119,24 @@ class PolishConfig {
   /// [splitMinRank] and the split scores better than any correction.
   final double splitCost;
   final int splitMinRank;
+
+  /// A listed word can be a misread one too: `wrong` read without its `r`
+  /// is `wong`, a surname of the list (v1.8.0, the owner's paragraph); such
+  /// words are only marked for the user, never changed ([suspectsFor]). A
+  /// word below rank [realWordMinRank] (rarer than about the 15000th word),
+  /// not in the study vocabulary or My words and not capitalised inside a
+  /// sentence (a name), is changed to a word of rank [realWordMaxTargetRank]
+  /// or better that is [realWordMinRatio] times more frequent and at most
+  /// [realWordMaxCost] away ([handwritingDistance]). `lobe` (rank 9260)
+  /// stays a lobe.
+  final int realWordMinRank;
+  final int realWordMaxTargetRank;
+  final double realWordMinRatio;
+  final double realWordMaxCost;
+
+  /// The prior a word of My words gets as part of a split glued word, as if
+  /// it were this frequent.
+  final int userWordRank;
 
   /// The farthest correction ([handwritingDistance]) allowed for a word of
   /// [length] letters: one look-alike letter for 4, about one edit for 5-6,
@@ -343,6 +368,10 @@ class TextPolisher {
     if (lex == null) return null;
     if (core.length < config.minWordLength) return null;
     if (_known(lower)) return null;
+    // A contraction glued to the word before it (`Baghdadidoesn't`): split
+    // even when that word is a name the list does not know.
+    final glued = _contractionTail(core, lower);
+    if (glued != null) return glued;
     // Words in capitals and camel case are acronyms and brand names.
     if (core.length >= 2 && core == core.toUpperCase()) return null;
     if (core.substring(1) != core.substring(1).toLowerCase()) return null;
@@ -384,6 +413,59 @@ class TextPolisher {
     return capitalised ? best[0].toUpperCase() + best.substring(1) : best;
   }
 
+  /// The far more frequent words [core] (a listed word) may have been
+  /// meant to be (see [PolishConfig.realWordMinRank]), best first, at most
+  /// three; empty when it looks fine. They keep its first letter (first
+  /// letters are written carefully). Never applied by itself: on the whole
+  /// word list the rule would change one rare word in 13, `testis` and
+  /// `cations` among them, so the word is only marked in typed text for the
+  /// user to check.
+  List<String> suspectsFor(String core, {bool startsSentence = false}) {
+    final lex = lexicon;
+    if (lex == null || core.length < config.minWordLength) return const [];
+    final lower = core.toLowerCase();
+    if (_isUserWord(lower) || lex.studyWords.contains(lower) || lower.contains("'")) return const [];
+    final rank = lex.rankOf(lower);
+    if (rank == null || rank < config.realWordMinRank) return const [];
+    if (core.substring(1) != lower.substring(1)) return const [];
+    final capitalised = core[0] != lower[0];
+    if (capitalised && !startsSentence) return const [];
+    final minLp = lex.logProb(lower)! + math.log(config.realWordMinRatio);
+    final options = <(String, double)>[];
+    for (final c in lex.candidates(lower, maxEdits: 1, limit: config.candidateLimit)) {
+      final w = c.word;
+      if (w == lower || w.contains("'") || w[0] != lower[0]) continue;
+      final r = lex.rankOf(w);
+      if (r == null || r > config.realWordMaxTargetRank) continue;
+      final lp = lex.logProb(w)!;
+      if (lp < minLp) continue;
+      final distance = handwritingDistance(lower, w);
+      if (distance <= 0 || distance > config.realWordMaxCost + 1e-9) continue;
+      options.add((w, lp - config.channelWeight * distance));
+    }
+    options.sort((a, b) => b.$2.compareTo(a.$2));
+    return [
+      for (final (w, _) in options.take(3)) capitalised ? w[0].toUpperCase() + w.substring(1) : w,
+    ];
+  }
+
+  /// [core] with a space before the contraction it ends with
+  /// (`Baghdadidoesn't` -> `Baghdadi doesn't`), or null.
+  String? _contractionTail(String core, String lower) {
+    final apostrophe = lower.indexOf("'");
+    if (apostrophe < 0) return null;
+    // The longest contraction that ends the word, at least `n't`/`'re` long
+    // and with a word of 2+ letters before it.
+    for (var k = 2; k < apostrophe; k++) {
+      final tail = lower.substring(k);
+      if (contractionLogProb(tail) == null) continue;
+      final head = core.substring(0, k);
+      if (!RegExp(r'^[A-Za-z]+$').hasMatch(head)) return null;
+      return '$head ${core.substring(k)}';
+    }
+    return null;
+  }
+
   /// [lower] as two words with the space put back, scored like a correction
   /// with [PolishConfig.splitCost] for the missing space and the prior of
   /// the two words together (`ham berger` is far less likely than
@@ -408,7 +490,9 @@ class TextPolisher {
   double? _partLogProb(String part) {
     if (part.contains("'") || part.contains('\u2019')) return contractionLogProb(part.replaceAll('\u2019', "'"));
     if (part.length == 1 && part != 'a' && part != 'i') return null;
-    return lexicon!.logProb(part) ?? contractionLogProb(part);
+    final listed = lexicon!.logProb(part) ?? contractionLogProb(part);
+    if (listed != null) return listed;
+    return _isUserWord(part) ? lexicon!.logProbAtRank(config.userWordRank) : null;
   }
 
   /// How a part of a split word is written: `i` -> `I`, `isnt` -> `isn't`.

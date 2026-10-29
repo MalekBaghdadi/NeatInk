@@ -470,6 +470,36 @@ void main() {
       expect(fixed(p, 'I a not in danger'), 'I am not in danger');
     });
 
+    test("the owner's paragraph (v1.8.0): a name glued to a contraction, My words in splits", () {
+      if (real == null) return;
+      final p = TextPolisher(real);
+      expect(fixed(p, "my name is Malek Baghdadidoesn't know"), "my name is Malek Baghdadi doesn't know",
+          reason: 'a contraction glued to a name the list does not know');
+      expect(fixed(p, "it isn't sodoesn't"), "it isn't so doesn't");
+      final mine = UserLexicon()..add('Mariam');
+      final withNames = TextPolisher(real, userLexicon: mine);
+      expect(fixed(withNames, 'hello mariamwent home'), 'hello mariam went home', reason: 'My words split glued words');
+      expect(fixed(p, "Mariam's notes"), "Mariam's notes", reason: 'a possessive is no contraction');
+    });
+
+    test('a rare listed word next to a common one is only a suspect, never changed', () {
+      if (real == null) return;
+      final study = File('assets/htr/subject_words.txt');
+      final lex = study.existsSync()
+          ? Lexicon.parse(file!.readAsStringSync(), studyText: study.readAsStringSync())
+          : real;
+      final p = TextPolisher(lex);
+      expect(fixed(p, 'it went wong'), 'it went wong', reason: 'not changed by itself');
+      expect(p.suspectsFor('wong'), contains('wrong'));
+      expect(p.suspectsFor('wong').length, lessThanOrEqualTo(3));
+      expect(p.suspectsFor('wong').every((w) => w.startsWith('w')), isTrue);
+      expect(p.suspectsFor('Wong'), isEmpty, reason: 'a name inside a sentence');
+      expect(p.suspectsFor('Wong', startsSentence: true), contains('Wrong'));
+      expect(p.suspectsFor('lobe'), isEmpty, reason: 'lobe is common enough');
+      expect(p.suspectsFor('wrong'), isEmpty);
+      if (study.existsSync()) expect(p.suspectsFor('soma'), isEmpty, reason: 'study words are never suspects');
+    });
+
     test('an unclear word is left alone rather than turned into another word', () {
       if (real == null) return;
       final p = TextPolisher(real);

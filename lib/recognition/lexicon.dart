@@ -280,12 +280,14 @@ class _BkNode {
 /// Levenshtein distance: about 5 ms per query for 50k words, and it needs no
 /// large delete index in memory).
 class Lexicon {
-  Lexicon._(this._words, this._counts, this._byWord, this._total);
+  Lexicon._(this._words, this._counts, this._byWord, this._total, this.studyWords);
 
   /// Parses `word count` lines. Lines that do not parse are skipped, words
   /// are lowercased, and only the first [maxWords] distinct words are kept. A
   /// word listed twice keeps its larger count (so lists can be concatenated).
-  factory Lexicon.parse(String text, {int maxWords = 100000}) {
+  /// The words of [studyText] (same format) are added too and marked as
+  /// [studyWords].
+  factory Lexicon.parse(String text, {int maxWords = 100000, String? studyText}) {
     final words = <String>[];
     final counts = <int>[];
     final index = <String, int>{};
@@ -310,7 +312,10 @@ class Lexicon {
       counts.add(count);
       total += count;
     }
-    return Lexicon._(words, counts, index, total);
+    if (studyText == null) return Lexicon._(words, counts, index, total, const {});
+    final study = Lexicon.parse(studyText, maxWords: maxWords);
+    final merged = Lexicon.parse('$text\n$studyText', maxWords: maxWords);
+    return Lexicon._(merged._words, merged._counts, merged._byWord, merged._total, Set.unmodifiable(study._words));
   }
 
   /// Loads and parses the bundled lists: the general one (about 50k words)
@@ -322,15 +327,16 @@ class Lexicon {
     List<String> extra = const [subjectWordsAsset],
   }) async {
     final b = bundle ?? rootBundle;
-    final texts = [await b.loadString(path)];
+    final general = await b.loadString(path);
+    final study = <String>[];
     for (final e in extra) {
       try {
-        texts.add(await b.loadString(e));
+        study.add(await b.loadString(e));
       } catch (_) {
         // An optional list; the general one is enough to work.
       }
     }
-    return Lexicon.parse(texts.join('\n'));
+    return Lexicon.parse(general, studyText: study.isEmpty ? null : study.join('\n'));
   }
 
   final List<String> _words;
@@ -340,6 +346,14 @@ class Lexicon {
   _BkNode? _root;
 
   int get length => _words.length;
+
+  /// The study vocabulary (`subject_words.txt`): words autocorrect never
+  /// turns into more common ones.
+  final Set<String> studyWords;
+
+  /// Position of [word] in the list (0 = most frequent; the study words
+  /// the general list lacks come after it), or null when it is not listed.
+  int? rankOf(String word) => _byWord[word.toLowerCase()];
 
   bool contains(String word) => _byWord.containsKey(word.toLowerCase());
 
