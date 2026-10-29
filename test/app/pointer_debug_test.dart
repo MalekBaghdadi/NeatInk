@@ -188,7 +188,7 @@ void main() {
     final report = log.report();
     expect(report, contains('Kinds: stylus'));
     expect(report, contains('Pen pressure seen: 0.200 to 0.900'));
-    expect(report, contains('Device pressure range: 0.000 to 1.000'));
+    expect(report, contains('Device pressure range: 1.000 to 1.000'), reason: 'the sample events leave pressureMin at its default');
     expect(report, contains('with pressure'));
     expect(PointerDebugLog().report(), contains('Pen pressure seen: none'));
   });
