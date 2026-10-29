@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../editor_controller.dart';
+import '../../../../document/page_items.dart';
 import '../convert/convert_scope.dart';
+import '../text_images/text_format_bar.dart';
 import '../../tool_prefs.dart';
 import '../../toolbar/color_picker_dialog.dart';
 import '../../toolbar/toolbar_widgets.dart';
@@ -13,7 +15,8 @@ import 'lasso_state.dart';
 import 'selection_geometry.dart';
 
 /// The floating menu over the selection (screen space): delete, colour,
-/// restore original, cut, copy, duplicate and convert. It sits above the selection, or below it
+/// restore original, cut, copy, duplicate, convert, and the style of
+/// selected typed text (font, size, bold, italic, underline). It sits above the selection, or below it
 /// when there is no room, and hides while the selection is being dragged.
 class SelectionMenu extends StatefulWidget {
   const SelectionMenu({super.key, required this.handler, required this.controller});
@@ -27,6 +30,7 @@ class SelectionMenu extends StatefulWidget {
 
 class _SelectionMenuState extends State<SelectionMenu> {
   bool _colorsOpen = false;
+  bool _textOpen = false;
 
   LassoHandler get _handler => widget.handler;
   EditorController get _controller => widget.controller;
@@ -44,6 +48,7 @@ class _SelectionMenuState extends State<SelectionMenu> {
         if (sel == null || index < 0 || state.busy || !_controller.isReady) {
           state.menuRect = null;
           _colorsOpen = false;
+          _textOpen = false;
           return const SizedBox.shrink();
         }
         final frame = selectionFrame(sel.bounds, _controller.viewport.scale);
@@ -111,9 +116,23 @@ class _SelectionMenuState extends State<SelectionMenu> {
                   label: 'Colour',
                   selected: _colorsOpen,
                   onPressed: _handler.canRecolor
-                      ? () => setState(() => _colorsOpen = !_colorsOpen)
+                      ? () => setState(() {
+                            _colorsOpen = !_colorsOpen;
+                            if (_colorsOpen) _textOpen = false;
+                          })
                       : null,
                 ),
+                if (_handler.firstSelectedText != null)
+                  _MenuButton(
+                    key: const ValueKey('selection-text-style'),
+                    icon: Icons.text_format,
+                    label: 'Text style',
+                    selected: _textOpen,
+                    onPressed: () => setState(() {
+                      _textOpen = !_textOpen;
+                      if (_textOpen) _colorsOpen = false;
+                    }),
+                  ),
                 _MenuButton(
                   key: const ValueKey('selection-restore'),
                   icon: Icons.history,
@@ -151,9 +170,65 @@ class _SelectionMenuState extends State<SelectionMenu> {
               ],
             ),
             if (_colorsOpen) _colors(context),
+            if (_textOpen && _handler.firstSelectedText != null) _textStyle(_handler.firstSelectedText!),
           ],
         ),
       ),
+    );
+  }
+
+  /// Font, size, bold, italic and underline of the selected typed text
+  /// (all selected boxes; the first one's style is shown).
+  Widget _textStyle(TextItem t) {
+    void apply(TextItem Function(TextItem t) change) => _handler.restyleTexts(change);
+    Widget toggle(String key, String tip, IconData icon, bool on, TextItem Function(TextItem t) change) =>
+        _MenuButton(key: ValueKey(key), icon: icon, label: tip, selected: on, onPressed: () => apply(change));
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        PopupMenuButton<FontKind>(
+          key: const ValueKey('selection-font'),
+          tooltip: 'Font',
+          initialValue: t.font,
+          onSelected: (f) => apply((x) => x.copyWith(font: f)),
+          itemBuilder: (_) => TextFormatBar.fontPickerItems(t.font),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: SizedBox(
+              height: toolbarTargetSize,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(t.font.label, style: TextStyle(fontFamily: t.font.family)),
+                const Icon(Icons.arrow_drop_down),
+              ]),
+            ),
+          ),
+        ),
+        _MenuButton(
+          key: const ValueKey('selection-size-down'),
+          icon: Icons.remove,
+          label: 'Smaller',
+          onPressed: () => apply((x) => x.copyWith(fontSize: steppedFontSize(x.fontSize, up: false))),
+        ),
+        SizedBox(
+          width: 32,
+          child: Text(
+            t.fontSize == t.fontSize.roundToDouble() ? t.fontSize.round().toString() : t.fontSize.toStringAsFixed(1),
+            key: const ValueKey('selection-size'),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        _MenuButton(
+          key: const ValueKey('selection-size-up'),
+          icon: Icons.add,
+          label: 'Larger',
+          onPressed: () => apply((x) => x.copyWith(fontSize: steppedFontSize(x.fontSize, up: true))),
+        ),
+        toggle('selection-bold', 'Bold', Icons.format_bold, t.bold, (x) => x.copyWith(bold: !t.bold)),
+        toggle('selection-italic', 'Italic', Icons.format_italic, t.italic, (x) => x.copyWith(italic: !t.italic)),
+        toggle('selection-underline', 'Underline', Icons.format_underlined, t.underline,
+            (x) => x.copyWith(underline: !t.underline)),
+      ],
     );
   }
 

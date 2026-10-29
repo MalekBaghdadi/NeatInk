@@ -15,7 +15,8 @@ class ToolConfig {
     this.pixelEraserMinPieceLengthPt = 1.0,
     this.pixelEraserMinPiecePoints = 2,
     // Lasso.
-    this.lassoStrokeInsideFraction = 0.6,
+    this.lassoStrokeInsideFraction = 0.5,
+    this.lassoStrokeCenterFraction = 0.3,
     this.lassoItemMinCornersInside = 2,
     this.lassoTapMaxAreaPt2 = 25,
     this.tapHitRadiusPt = 5,
@@ -142,6 +143,11 @@ class ToolConfig {
 
   /// A stroke is lassoed when at least this fraction of its points is inside.
   final double lassoStrokeInsideFraction;
+
+  /// ...or at least this fraction when the middle of its bounds is inside
+  /// too (a letter the lasso cuts through: v1.8.0, the owner's "the lasso
+  /// mostly doesn't select words or letters"; it was 0.6 with no centre rule).
+  final double lassoStrokeCenterFraction;
 
   /// A text box or image is lassoed when its centre is inside or at least
   /// this many of its 4 corners are.

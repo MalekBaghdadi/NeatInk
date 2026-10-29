@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/painting.dart';
 
 import '../document/page_items.dart';
+import '../ink/ink_rect.dart';
 
 /// The single mapping from a [TextItem] to Flutter text styling. The editor
 /// renders text boxes with it and the PDF exporter lays text out with it, so
@@ -101,5 +102,31 @@ List<(TextCorrection, List<Rect>)> correctionBoxes(TextItem item,
     ];
   } finally {
     if (laidOut == null) painter.dispose();
+  }
+}
+
+/// A word of a text box: its characters `text[start, end)` and where it is
+/// on the page (page points; a word broken over two lines has two boxes).
+typedef TextWord = ({int start, int end, List<InkRect> boxes});
+
+/// The words of [item] where the page shows them (laid out by
+/// [layoutTextItem]). Used by the lasso, the eraser and scribble to delete.
+List<TextWord> textWordsOf(TextItem item) {
+  if (item.text.trim().isEmpty) return const [];
+  final painter = layoutTextItem(item);
+  try {
+    return [
+      for (final m in RegExp(r'\S+').allMatches(item.text))
+        (
+          start: m.start,
+          end: m.end,
+          boxes: [
+            for (final b in painter.getBoxesForSelection(TextSelection(baseOffset: m.start, extentOffset: m.end)))
+              InkRect(item.x + b.left, item.y + b.top, item.x + b.right, item.y + b.bottom),
+          ],
+        ),
+    ];
+  } finally {
+    painter.dispose();
   }
 }

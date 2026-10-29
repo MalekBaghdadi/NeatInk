@@ -20,7 +20,10 @@ export 'selection.dart';
 ///   [ToolConfig.lassoStrokeInsideFraction] of its displayed points (or its
 ///   only point) are inside.
 /// * A text box or image is selected when its centre is inside, or at least
-///   [ToolConfig.lassoItemMinCornersInside] of its corners are.
+///   [ToolConfig.lassoItemMinCornersInside] of its corners are. A text box
+///   is also selected when the middle of any of its words is inside
+///   ([wordBoxesOf] gives where its words are): converted text makes wide
+///   boxes, and a lasso around a phrase in one never held its corners.
 /// * A lasso enclosing less than [ToolConfig.lassoTapMaxAreaPt2] (a tap or
 ///   a tiny scribble) selects the topmost item under its first point
 ///   instead; see [tapSelect]. [tapRadius] overrides the tap tolerance (the
@@ -34,6 +37,7 @@ Selection lassoSelect({
   required List<Vec2> lasso,
   SpatialIndex? index,
   double? tapRadius,
+  List<InkRect> Function(TextItem item)? wordBoxesOf,
   ToolConfig config = ToolConfig.defaults,
 }) {
   final path = [
@@ -57,12 +61,17 @@ Selection lassoSelect({
 
   final strokeIds = <String>{
     for (final s in strokes)
-      if (_strokeInLasso(s, path, area, config.lassoStrokeInsideFraction))
+      if (_strokeInLasso(s, path, area, config.lassoStrokeInsideFraction, config.lassoStrokeCenterFraction))
         s.id,
   };
+  bool wordInside(TextItem t) {
+    final words = wordBoxesOf?.call(t) ?? const <InkRect>[];
+    return words.any((w) => pointInPolygon(w.center.x, w.center.y, path));
+  }
+
   final textIds = <String>{
     for (final t in texts)
-      if (_frameInLasso(t.frame, path, config.lassoItemMinCornersInside)) t.id,
+      if (_frameInLasso(t.frame, path, config.lassoItemMinCornersInside) || wordInside(t)) t.id,
   };
   final imageIds = <String>{
     for (final i in images)
@@ -102,24 +111,18 @@ bool isTinyLasso(List<Vec2> lasso, double maxArea) {
 /// Grid resolution of the even-odd area estimate in [isTinyLasso].
 const int _areaSamplesPerSide = 24;
 
-bool _strokeInLasso(
-    Stroke s, List<Vec2> lasso, InkRect lassoBox, double fraction) {
+bool _strokeInLasso(Stroke s, List<Vec2> lasso, InkRect lassoBox, double fraction, double centerFraction) {
   final pts = s.points;
   if (pts.isEmpty || !s.bounds.overlaps(lassoBox)) return false;
   final n = pts.length;
-  // inside ≥ fraction·n, with a little slack so 3 of 5 counts as 60%.
-  final needed = fraction * n - 1e-9;
   var inside = 0;
-  for (var i = 0; i < n; i++) {
-    final p = pts[i];
-    if (lassoBox.contains(p.pos) && pointInPolygon(p.x, p.y, lasso)) {
-      inside++;
-      if (inside >= needed) return true;
-    } else if (n - (i + 1 - inside) < needed) {
-      return false; // too many outside already
-    }
+  for (final p in pts) {
+    if (lassoBox.contains(p.pos) && pointInPolygon(p.x, p.y, lasso)) inside++;
   }
-  return inside >= needed;
+  // A little slack, so 3 of 5 counts as 60%.
+  if (inside >= fraction * n - 1e-9) return true;
+  final c = s.bounds.center;
+  return inside >= centerFraction * n - 1e-9 && pointInPolygon(c.x, c.y, lasso);
 }
 
 bool _frameInLasso(InkRect frame, List<Vec2> lasso, int minCorners) {

@@ -11,7 +11,9 @@ import '../../../../document/page_content.dart';
 import '../../../../document/page_items.dart';
 import '../../../../ink/affine2.dart';
 import '../../../../ink/stroke.dart';
+import '../../../../ink/ink_rect.dart';
 import '../../../../ink/vec2.dart';
+import '../../../../render/text_style.dart';
 import '../../editor_controller.dart';
 import '../../editor_extensions.dart';
 import '../../editor_tool.dart';
@@ -225,6 +227,7 @@ class LassoHandler extends CanvasToolHandler {
       lasso: path,
       index: SpatialIndex.forPage(content),
       tapRadius: tapRadius,
+      wordBoxesOf: _wordBoxes,
     );
     state.setSelection(selection);
     // A tap on an empty spot offers to paste there.
@@ -417,6 +420,49 @@ class LassoHandler extends CanvasToolHandler {
         strokeIds: [for (final s in strokes) s.id],
         textIds: [for (final t in texts) t.id],
         imageIds: [for (final i in images) i.id]));
+  }
+
+  static List<InkRect> _wordBoxes(TextItem t) => [
+        for (final w in textWordsOf(t)) ...w.boxes,
+      ];
+
+  // ---------------------------------------------------------------------------
+  // Text style
+
+  /// The first selected text box (what the style panel shows), or null.
+  TextItem? get firstSelectedText {
+    final sel = state.selection;
+    final page = _content;
+    if (sel == null || page == null) return null;
+    final texts = sel.textsOn(page);
+    return texts.isEmpty ? null : texts.first;
+  }
+
+  /// Applies [change] (font, size, bold...) to every selected text box, as
+  /// one undo step "Text style"; each box keeps its place and width and
+  /// grows or shrinks to fit its text.
+  void restyleTexts(TextItem Function(TextItem t) change) {
+    final sel = state.selection;
+    final page = _content;
+    if (sel == null || page == null) return;
+    final changes = <(TextItem?, TextItem?)>[];
+    for (final t in sel.textsOn(page)) {
+      final next = change(t);
+      changes.add((t, next.copyWith(height: _textHeight(next))));
+    }
+    if (changes.isEmpty) return;
+    controller.execute(PageItemsCommand(sel.pageId, label: 'Text style', textChanges: changes));
+    state.setSelection(Selection.fromPage(controller.doc.page(sel.pageId),
+        pageId: sel.pageId, strokeIds: sel.strokeIds, textIds: sel.textIds, imageIds: sel.imageIds));
+  }
+
+  static double _textHeight(TextItem t) {
+    final painter = layoutTextItem(t.copyWith(text: t.text.isEmpty ? ' ' : t.text));
+    try {
+      return painter.height;
+    } finally {
+      painter.dispose();
+    }
   }
 
   // ---------------------------------------------------------------------------

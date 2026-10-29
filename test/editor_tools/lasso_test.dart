@@ -29,19 +29,48 @@ Stroke hStroke(String id, double x0, double x1, double y,
 
 void main() {
   group('lassoSelect', () {
-    test('strokes need at least 60% of their points inside', () {
+    test('strokes need half their points inside', () {
       final page = PageContent(strokes: [
         hStroke('all', 10, 90, 20), // fully inside
         hStroke('sixty', 35, 135, 40), // 7 of 11 points inside (x < 100)
-        hStroke('half', 45, 145, 60), // 6 of 11 inside: 54.5% < 60%
+        hStroke('half', 45, 145, 60), // 6 of 11 inside: 54.5%
+        hStroke('less', 55, 155, 70), // 5 of 11 inside, middle outside
         hStroke('out', 200, 300, 20),
         strokeOf('dot', [const Vec2(50, 80)]),
         strokeOf('dotOut', [const Vec2(150, 80)]),
       ]);
       final sel = lassoSelect(
           pageId: pageId, page: page, lasso: rectLasso(0, 0, 100, 100));
-      expect(sel.strokeIds, {'all', 'sixty', 'dot'});
+      expect(sel.strokeIds, {'all', 'sixty', 'half', 'dot'});
       expect(sel.pageId, pageId);
+    });
+
+    test('a letter the lasso cuts through counts when its middle is inside', () {
+      // A tall letter: 4 of 11 points inside, but the middle of its bounds is.
+      final page = PageContent(strokes: [
+        strokeOf('l', [for (var i = 0; i <= 10; i++) Vec2(50, 30.0 + i * 10)]),
+        strokeOf('far', [for (var i = 0; i <= 10; i++) Vec2(50, 70.0 + i * 10)]),
+      ]);
+      final sel = lassoSelect(pageId: pageId, page: page, lasso: rectLasso(0, 55, 100, 100));
+      expect(sel.strokeIds, {'l'}, reason: 'far: 3 of 11 inside, middle outside');
+    });
+
+    test('a phrase in a wide text box selects the box', () {
+      // A converted line: the box spans the page, the lasso goes around two
+      // words in the middle (its centre and corners are all outside).
+      const box = TextItem(id: 'para', x: 20, y: 200, width: 500, height: 40, text: 'one two three four');
+      final page = PageContent(texts: const [box]);
+      List<InkRect> words(TextItem t) => const [
+            InkRect(20, 200, 60, 220),
+            InkRect(70, 200, 110, 220),
+            InkRect(120, 200, 170, 220),
+            InkRect(180, 200, 220, 220),
+          ];
+      final around = rectLasso(110, 190, 230, 230);
+      expect(lassoSelect(pageId: pageId, page: page, lasso: around).textIds, isEmpty, reason: 'no word boxes: the old rule');
+      expect(lassoSelect(pageId: pageId, page: page, lasso: around, wordBoxesOf: words).textIds, {'para'});
+      expect(lassoSelect(pageId: pageId, page: page, lasso: rectLasso(300, 190, 400, 230), wordBoxesOf: words).textIds,
+          isEmpty, reason: 'empty part of the box');
     });
 
     test('exactly 60% counts', () {

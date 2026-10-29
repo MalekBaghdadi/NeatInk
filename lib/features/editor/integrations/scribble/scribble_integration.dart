@@ -1,9 +1,7 @@
-import 'package:flutter/painting.dart';
 import 'package:flutter/widgets.dart' show debugPrint;
 
 import '../../../../document/commands.dart';
 import '../../../../document/page_items.dart';
-import '../../../../ink/ink_rect.dart';
 import '../../../../ink/stroke.dart';
 import '../../../../render/text_style.dart';
 import '../../editor_controller.dart';
@@ -58,21 +56,4 @@ bool applyScribble(EditorController controller, String pageId, Stroke scribble) 
 }
 
 /// The words of [item] where the page shows them.
-List<ScribbleWord> scribbleWordsOf(TextItem item) {
-  final painter = layoutTextItem(item);
-  try {
-    return [
-      for (final m in RegExp(r'\S+').allMatches(item.text))
-        (
-          start: m.start,
-          end: m.end,
-          boxes: [
-            for (final b in painter.getBoxesForSelection(TextSelection(baseOffset: m.start, extentOffset: m.end)))
-              InkRect(item.x + b.left, item.y + b.top, item.x + b.right, item.y + b.bottom),
-          ],
-        ),
-    ];
-  } finally {
-    painter.dispose();
-  }
-}
+List<ScribbleWord> scribbleWordsOf(TextItem item) => textWordsOf(item);
