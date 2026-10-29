@@ -27,6 +27,12 @@ bool isStylusKind(PointerDeviceKind kind) =>
 /// is meaningless (contact size, or a constant 1.0), so they get a flat 0.5,
 /// which makes the stroke renderer simulate pressure from speed instead.
 /// A pen that reports no usable range also gets 0.5.
+///
+/// Android normalises pen pressure to about 0..1, but some devices report
+/// the range in raw sensor units (0..4096) while the readings are already
+/// 0..1: dividing by that range made every reading about 0, a pen that
+/// "never changes pressure". A reading of at most [_normalisedCeiling] with
+/// such a range is taken as already normalised (v1.8.0).
 double normalizePressure({
   required PointerDeviceKind kind,
   required double pressure,
@@ -36,8 +42,17 @@ double normalizePressure({
   if (!isStylusKind(kind)) return 0.5;
   final range = pressureMax - pressureMin;
   if (!pressure.isFinite || !range.isFinite || range <= 1e-6) return 0.5;
+  if (range > _rawRangeAbove && pressure >= 0 && pressure <= _normalisedCeiling) {
+    return pressure.clamp(0.0, 1.0).toDouble();
+  }
   return ((pressure - pressureMin) / range).clamp(0.0, 1.0).toDouble();
 }
+
+/// A pressure range wider than this is in raw sensor units.
+const double _rawRangeAbove = 4;
+
+/// Android readings go a little over 1 on a hard press.
+const double _normalisedCeiling = 1.5;
 
 /// [normalizePressure] for a pointer event.
 double normalizedPressureOf(PointerEvent e) => normalizePressure(

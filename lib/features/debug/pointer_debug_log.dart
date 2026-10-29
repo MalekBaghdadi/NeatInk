@@ -221,6 +221,44 @@ class PointerDebugLog extends ChangeNotifier {
         rateHz: _rateHz(),
       );
 
+  /// A few lines to paste into a message: what the pen reported.
+  String report() {
+    final sm = summary;
+    final pen = _recent.lastWhere(
+        (r) => r.isContact && (r.kind == PointerDeviceKind.stylus || r.kind == PointerDeviceKind.invertedStylus),
+        orElse: () => _recent.isEmpty ? _empty : _recent.last);
+    String n(double v) => v.toStringAsFixed(3);
+    final p = sm.stylusPressure;
+    return [
+      'Pointer test',
+      'Kinds: ${sm.kindsSeen.map((k) => k.name).join(', ')}',
+      'Pen pressure seen: ${p == null ? 'none' : '${n(p.min)} to ${n(p.max)}'}',
+      'Device pressure range: ${n(pen.pressureMin)} to ${n(pen.pressureMax)}',
+      'Tilt: ${sm.maxStylusTilt == null ? 'none' : n(sm.maxStylusTilt!)}; hover: ${sm.hoverSeen ? 'yes' : 'no'}',
+      'Events: ${sm.eventCount}${sm.rateHz == null ? '' : ', ${sm.rateHz!.round()} per second'}',
+      sm.verdict,
+    ].join('\n');
+  }
+
+  static const PointerSample _empty = PointerSample(
+    type: 'none',
+    kind: PointerDeviceKind.unknown,
+    device: 0,
+    pointer: 0,
+    position: Offset.zero,
+    pressure: 0,
+    pressureMin: 0,
+    pressureMax: 0,
+    tilt: 0,
+    orientation: 0,
+    distance: 0,
+    distanceMax: 0,
+    radiusMajor: 0,
+    radiusMinor: 0,
+    buttons: 0,
+    timeStamp: Duration.zero,
+  );
+
   void record(PointerEvent event) {
     final s = PointerSample.fromEvent(event);
     _eventCount++;

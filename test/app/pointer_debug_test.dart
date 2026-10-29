@@ -180,6 +180,19 @@ void main() {
     });
   });
 
+  test('report: a few lines to paste into a message', () {
+    final log = PointerDebugLog();
+    for (final e in penStroke()) {
+      log.record(e);
+    }
+    final report = log.report();
+    expect(report, contains('Kinds: stylus'));
+    expect(report, contains('Pen pressure seen: 0.200 to 0.900'));
+    expect(report, contains('Device pressure range: 0.000 to 1.000'));
+    expect(report, contains('with pressure'));
+    expect(PointerDebugLog().report(), contains('Pen pressure seen: none'));
+  });
+
   group('describeButtons', () {
     test('names pen and mouse buttons', () {
       expect(describeButtons(0, PointerDeviceKind.stylus), '0 (none)');

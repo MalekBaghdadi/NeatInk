@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'pointer_debug_log.dart';
 import 'pointer_trace_painter.dart';
@@ -45,6 +46,17 @@ class _PointerDebugScreenState extends State<PointerDebugScreen> {
       appBar: AppBar(
         title: const Text('Pointer test'),
         actions: [
+          TextButton.icon(
+            key: const ValueKey('pointer-copy'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: _log.report()));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Copied. Paste it in a message to Malek.'),
+              ));
+            },
+            icon: const Icon(Icons.content_copy_outlined),
+            label: const Text('Copy'),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: TextButton.icon(

@@ -109,7 +109,16 @@ String? _markOf(Stroke s, TextItem box, AutoBoxVersion? mem, ConvertTextMetrics 
   final w = b.right - b.left, h = b.bottom - b.top;
   if ((b.left + b.right) / 2 < end - 0.5 * xh) return null; // not at the end
   final cy = (b.top + b.bottom) / 2;
-  if (w <= 0.6 * xh && h <= 0.6 * xh && (cy - baseline).abs() <= 0.5 * xh) return '.';
-  if (b.bottom > baseline + 0.2 * xh && b.top >= baseline - 0.6 * xh && h <= 1.2 * xh && w <= 0.7 * xh) return ',';
+  // A full stop sits on the line or a little below it (small writing puts
+  // it most of an x-height below: Mariam's 1.6 test); higher up it is the
+  // dot of an i. v1.8.0: the band was +-0.5 x-heights.
+  // A thin upright mark is a comma even when it is short.
+  final upright = h >= 2.5 * math.max(w, 0.5) && h >= 0.45 * xh;
+  final small = w <= 0.7 * xh && h <= 0.7 * xh && !upright;
+  if (small && cy >= baseline - 0.8 * xh && cy <= baseline + 1.1 * xh) return '.';
+  // A comma: taller than a dot, hanging below the line.
+  if (!small && w <= 0.8 * xh && h <= 1.6 * xh && b.top >= baseline - 0.8 * xh && b.bottom > baseline + 0.3 * xh) {
+    return ',';
+  }
   return null;
 }

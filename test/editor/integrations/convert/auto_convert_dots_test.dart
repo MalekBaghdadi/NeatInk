@@ -57,8 +57,16 @@ void main() {
       expect(t.mark, '.');
     });
 
+    test('a full stop a little below the line, as small writing puts it, still counts', () {
+      expect(target([stroke('p', 162, 104, 2, 2)])!.mark, '.', reason: '0.5 x-height below');
+      expect(target([stroke('p', 162, 108, 2, 2)])!.mark, '.', reason: '0.9 x-height below');
+      expect(target([stroke('p', 162, 91, 2, 2)])!.mark, '.', reason: 'just above the line');
+      expect(target([stroke('i', 162, 84, 2, 2)])!.mark, isNull, reason: 'an i-dot height');
+    });
+
     test('one reaching below the baseline is a comma', () {
       expect(target([stroke('c', 162, 98, 2, 7)])!.mark, ',');
+      expect(target([stroke('c', 161, 97, 3, 12)])!.mark, ',', reason: 'a long comma');
     });
 
     test('a dot above the writing is an i-dot: it goes, nothing is added', () {
