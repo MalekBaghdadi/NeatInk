@@ -37,17 +37,21 @@ and copy it to the tablet.
 - **Knows your subjects**: neuroscience, psychology, biology, physics and chemistry terms and acronyms (OCD, ADHD, GABA) are part of its word list.
 - **My words**: teach it names (like family names); it also learns from the words you correct.
 - Text boxes and pictures on any page. The page grid shows every page, PDF pages included.
-- Import a PDF, write on it, and export a new PDF with your writing on it. Add lined **margins** beside the PDF pages for notes (when importing, or later from the editor menu); exports keep them, and the PDF's text stays selectable.
+- **Copy and paste** with the lasso: Copy or Cut, then tap an empty spot (on any page, in any notebook) and Paste. Copied typed text can be pasted into other apps too.
+- Import a PDF, write on it, and export a new PDF with your writing on it. Add lined **margins** beside the PDF pages for notes (when importing, or later from the editor menu); exports keep them, the PDF's text stays selectable, and its bookmarks and form fields are kept.
 - **Covers**: 16 colours, patterns, science pictures (brain, neuron, DNA, cell, atom, periodic table, planets, galaxy and more) or your own photo.
-- Folders, tags, favourites, search, dark mode and an optional PIN lock.
+- Folders, tags, favourites, dark mode and an optional PIN lock.
+- **Search** over titles, tags, folders, typed text, PDF text and **your handwriting**: the app reads a notebook's writing in the background while it is open and you pause (switch it off in Settings).
 - **Backup & restore** (Settings > Backup): all notebooks, folders, settings and My words in one file you save wherever you like (Downloads, a USB stick, a PC). Restoring only adds: notebooks already on the tablet are left alone, changed ones come back as copies.
 - **Tips** open once after installing or updating, and any time from Settings > About.
+- **Keep my corrections**: lines you check in the Convert sheet are kept on the tablet, so recognition can be improved for your writing; Settings > Share my corrections sends them when you choose.
+- **Share diagnostics** (Settings > About): problems the app ran into are kept on the tablet, to send when something goes wrong.
 
 ## Private by design
 
 It works fully offline. The app has no internet permission, no accounts, no
-tracking and no ads. Your notebooks leave the tablet only when you export or
-back them up yourself.
+tracking and no ads. Your notebooks, corrections and diagnostics leave the
+tablet only when you export, back up or share them yourself.
 
 ## For developers
 

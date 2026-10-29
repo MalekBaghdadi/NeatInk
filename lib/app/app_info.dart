@@ -16,7 +16,7 @@ abstract final class AppInfo {
       '100% offline: no internet permission, no accounts, no tracking';
 
   static const String legalese =
-      'Your notebooks never leave this device unless you export or back them '
-      'up yourself. '
+      'Your notebooks, kept corrections and diagnostics never leave this '
+      'device unless you export, back up or share them yourself. '
       "Mariam's Notes is built with open-source software; see the licenses below.";
 }
