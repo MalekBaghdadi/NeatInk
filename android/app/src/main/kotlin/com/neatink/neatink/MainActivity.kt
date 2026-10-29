@@ -9,5 +9,6 @@ class MainActivity : FlutterActivity() {
         flutterEngine.plugins.add(PdfExportPlugin())
         flutterEngine.plugins.add(HtrPlugin())
         flutterEngine.plugins.add(FileSavePlugin())
+        flutterEngine.plugins.add(AudioPlugin())
     }
 }
