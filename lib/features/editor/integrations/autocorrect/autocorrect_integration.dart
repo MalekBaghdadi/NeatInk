@@ -11,6 +11,7 @@ import '../../../../ink/vec2.dart';
 import '../../../../recognition/htr_channel.dart';
 import '../../../../recognition/spell_check.dart';
 import '../../../../render/text_style.dart';
+import '../../canvas/overlay_hit_area.dart';
 import '../../editor_controller.dart';
 import '../../editor_integrations.dart';
 import '../convert/convert_config.dart';
@@ -395,18 +396,21 @@ class AutocorrectBubbleView extends StatelessWidget {
           final word = Rect.fromPoints(topLeft, bottomRight);
           return CustomSingleChildLayout(
             delegate: _BubbleLayout(word),
-            child: hit != null
-                ? _Bubble(
-                    original: hit.correction.original,
-                    onRestore: bubble.restoreOriginal,
-                    onKeep: bubble.keep,
-                  )
-                : _SpellingBubble(
-                    hit: spelling!,
-                    onPick: bubble.applySpelling,
-                    onAdd: bubble.addToMyWords,
-                    onIgnore: bubble.ignoreSpelling,
-                  ),
+            child: OverlayHitArea(
+              controller: c,
+              child: hit != null
+                  ? _Bubble(
+                      original: hit.correction.original,
+                      onRestore: bubble.restoreOriginal,
+                      onKeep: bubble.keep,
+                    )
+                  : _SpellingBubble(
+                      hit: spelling!,
+                      onPick: bubble.applySpelling,
+                      onAdd: bubble.addToMyWords,
+                      onIgnore: bubble.ignoreSpelling,
+                    ),
+            ),
           );
         },
       );

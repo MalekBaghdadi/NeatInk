@@ -102,10 +102,14 @@ class _Harness {
   /// The middle of "sensoy" on screen.
   Offset get sensoy => at(const Vec2(240, 310));
 
-  Future<void> tap(Offset where, {PointerDeviceKind kind = PointerDeviceKind.stylus}) async {
-    final g = await tester.startGesture(where, kind: kind);
+  /// A tap at [where]; [time] is its event time (test gestures default to
+  /// zero, so a finger right after the pen is taken for a palm).
+  Future<void> tap(Offset where,
+      {PointerDeviceKind kind = PointerDeviceKind.stylus, Duration time = Duration.zero}) async {
+    final g = await tester.createGesture(kind: kind);
+    await g.down(where, timeStamp: time);
     await tester.pump(const Duration(milliseconds: 60));
-    await g.up();
+    await g.up(timeStamp: time + const Duration(milliseconds: 60));
     await tester.pumpAndSettle();
   }
 }
@@ -161,6 +165,31 @@ void main() {
     final h = await _Harness.open(tester);
     await h.tap(h.word, kind: PointerDeviceKind.touch);
     expect(key('autocorrect-bubble'), findsOneWidget);
+  });
+
+  // v1.9.0 on the tablet: the bubble showed but tapping it did nothing. The
+  // page under it took the tap first and closed the bubble.
+  for (final kind in [PointerDeviceKind.stylus, PointerDeviceKind.touch]) {
+    testWidgets('the bubble answers a ${kind.name} tap, and the page under it does not', (tester) async {
+      final h = await _Harness.open(tester);
+      h.controller.selectTool(EditorTool.pen);
+      await tester.pump();
+      await h.tap(h.word);
+      // Late enough for a finger not to count as a palm after the pen.
+      await h.tap(tester.getCenter(key('autocorrect-restore')), kind: kind, time: const Duration(seconds: 2));
+      expect(h.page.texts.single.text, 'Nuerons are in the brain');
+      expect(h.page.strokes, isEmpty, reason: 'no dot under the bubble');
+    });
+  }
+
+  testWidgets('a pen tap on a spelling picks it', (tester) async {
+    final h = await _Harness.open(tester, texts: [box, misspelt]);
+    h.controller.selectTool(EditorTool.pen);
+    await tester.pump();
+    await h.tap(h.sensoy);
+    await h.tap(tester.getCenter(key('spelling-suggestion-0')));
+    expect(h.page.texts.last.text, 'The sensory info');
+    expect(h.page.strokes, isEmpty);
   });
 
   testWidgets('a tap elsewhere closes the bubble; with it closed, a pen tap is a dot',

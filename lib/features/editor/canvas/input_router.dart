@@ -94,6 +94,15 @@ class InputRouter {
 
   final Set<int> _stylusDown = {};
   Duration? _lastStylusEvent;
+  final Set<int> _overlayPointers = {};
+
+  /// A control drawn over the pages (a bubble, a chip) takes [pointer]: the
+  /// canvas then neither draws, scrolls nor sees a page tap with it. Called
+  /// from the control's own pointer-down, which runs before the canvas's.
+  void claimForOverlay(int pointer) => _overlayPointers.add(pointer);
+
+  /// Whether a control claimed [pointer] (forgets the claim).
+  bool takeOverlayClaim(int pointer) => _overlayPointers.remove(pointer);
 
   /// True while any pen pointer is in contact.
   bool get stylusDown => _stylusDown.isNotEmpty;
@@ -159,6 +168,7 @@ class InputRouter {
   /// Forgets all pointer state (e.g. when the view is rebuilt).
   void reset() {
     _stylusDown.clear();
+    _overlayPointers.clear();
     _lastStylusEvent = null;
   }
 }

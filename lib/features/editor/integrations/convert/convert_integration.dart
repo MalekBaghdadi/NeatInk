@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/app_info.dart';
 import '../../../settings/convert_style_prefs.dart';
 import '../../../settings/settings_controller.dart';
+import '../../canvas/overlay_hit_area.dart';
 import '../../editor_integrations.dart';
 import '../../editor_tool.dart';
 import '../../tools/selection.dart';
@@ -112,9 +113,12 @@ final EditorIntegration convertIntegration = (controller, ref) {
     settingsProvider.select((s) => s.autoConvert),
     (_, enabled) => auto.setEnabled(enabled),
   );
-  controller.extensions.viewportOverlays.add((context, c) => AutoConvertIndicator(
-        session: auto,
-        onReview: (context) => open(context, null),
+  controller.extensions.viewportOverlays.add((context, c) => OverlayHitArea(
+        controller: c,
+        child: AutoConvertIndicator(
+          session: auto,
+          onReview: (context) => open(context, null),
+        ),
       ));
   controller.addDisposeCallback(() {
     subscription.close();

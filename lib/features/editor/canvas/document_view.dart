@@ -207,7 +207,7 @@ class _DocumentViewState extends State<DocumentView>
   void _onPointerDown(PointerDownEvent e) {
     final router = _controller.inputRouter..observe(e);
     _tap = null; // Another pointer: no longer a lone finger tap.
-    if (!_controller.isReady) {
+    if (!_controller.isReady || router.takeOverlayClaim(e.pointer)) {
       _ignored.add(e.pointer);
       return;
     }
