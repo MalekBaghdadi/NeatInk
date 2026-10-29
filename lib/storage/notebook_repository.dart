@@ -46,10 +46,23 @@ class SearchHit {
 /// <root>/notebooks/<id>/assets/<file>       images placed on pages
 /// <root>/notebooks/<id>/thumb.png           cover thumbnail
 /// <root>/notebooks/<id>/search.json         extracted text for search
+/// <root>/trash/<id>/...                      a deleted notebook (same
+///                                            files) + trashed.json
 /// ```
 ///
 /// Every write is atomic (temp file + rename). Nothing ever leaves the
 /// device.
+/// A notebook in the Trash.
+class TrashedNotebook {
+  const TrashedNotebook({required this.meta, required this.deletedAt, this.thumbnailPath});
+
+  final NotebookMeta meta;
+  final DateTime deletedAt;
+
+  /// Its cover thumbnail, when it has one.
+  final String? thumbnailPath;
+}
+
 abstract class NotebookRepository {
   /// All notebooks, unsorted. Corrupt notebooks are skipped (and logged),
   /// never deleted.
@@ -87,7 +100,29 @@ abstract class NotebookRepository {
   Future<void> savePage(String notebookId, String pageId, PageContent content);
 
   Future<void> renameNotebook(String notebookId, String title);
+
+  /// Deletes a notebook for good (not through the Trash).
   Future<void> deleteNotebook(String notebookId);
+
+  /// Moves a notebook to the Trash (v1.8.0): it leaves the library and
+  /// search with all its files, until [restoreFromTrash] brings it back or
+  /// [deleteFromTrash] / [emptyTrash] delete it.
+  Future<void> trashNotebook(String notebookId);
+
+  /// The notebooks in the Trash, most recently deleted first.
+  Future<List<TrashedNotebook>> listTrash();
+
+  /// Puts a notebook from the Trash back in the library and returns it (with
+  /// a new id when a notebook with its id came back meanwhile, at the top of
+  /// the library when its folder is gone).
+  Future<NotebookMeta> restoreFromTrash(String notebookId);
+
+  /// Deletes a notebook in the Trash for good.
+  Future<void> deleteFromTrash(String notebookId);
+
+  /// Deletes the notebooks that went to the Trash before [before] (all of
+  /// them when null) for good; returns how many.
+  Future<int> emptyTrash({DateTime? before});
 
   /// Deep copy with new notebook/page ids and the title "<title> (copy)".
   Future<NotebookMeta> duplicateNotebook(String notebookId);

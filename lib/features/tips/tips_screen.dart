@@ -26,10 +26,16 @@ const List<Tip> appTips = [
           'to Auto sets the font, size and colour.'),
   Tip(Icons.gesture, 'Scribble to delete',
       'Scribble back and forth over handwriting or typed text with the pen to '
-          'delete it. Undo brings it back.'),
+          'delete it. Undo brings it back. The eraser removes typed words too.'),
   Tip(Icons.spellcheck, 'Undo an autocorrect',
       'Words that autocorrect changed have a dotted blue underline. Tap one '
           'to get back what you wrote.'),
+  Tip(Icons.format_underlined, 'Wavy underlines',
+      'A red wavy line marks a word the app does not know, an amber one a word '
+          'that may be a slip. Tap it to pick a spelling or add it to My words.'),
+  Tip(Icons.format_size, 'Restyle typed text',
+      'Select typed text with the lasso and tap Text style to change its font, '
+          'size, bold, italic or underline; Colour changes its colour.'),
   Tip(Icons.manage_search, 'Search your handwriting',
       'Search finds words in your handwriting too. The app reads a notebook '
           'while it is open and you pause, so open a notebook once to make it '
@@ -46,6 +52,9 @@ const List<Tip> appTips = [
   Tip(Icons.picture_as_pdf_outlined, 'Room to write beside a PDF',
       'In a PDF notebook, the More menu (three dots) has PDF margins… to add '
           'writing space beside every page.'),
+  Tip(Icons.delete_outline, 'Deleted by mistake?',
+      'Deleted notebooks wait in the Trash (at the bottom of the side menu) '
+          'for 30 days. Open it to bring one back.'),
   Tip(Icons.backup_outlined, 'Back up your notebooks',
       'Your notes are kept only on this tablet. Now and then use Settings › '
           'Back up all notebooks and keep the file somewhere else.'),

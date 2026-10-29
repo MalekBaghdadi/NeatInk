@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -98,6 +99,13 @@ class FileNotebookRepository implements NotebookRepository {
   // ---- Paths ------------------------------------------------------------
 
   String get _notebooksPath => p.join(root.path, 'notebooks');
+  String get _trashPath => p.join(root.path, 'trash');
+  String _trashDir(String notebookId) =>
+      p.join(_trashPath, checkStorageId(notebookId, 'notebookId'));
+
+  /// When a notebook went to the Trash (`{"deletedAt": ISO 8601}`), inside
+  /// its folder there.
+  static const String _trashedFile = 'trashed.json';
   String get _libraryPath => p.join(root.path, 'library.json');
 
   String _dir(String notebookId) =>
@@ -329,6 +337,132 @@ class FileNotebookRepository implements NotebookRepository {
       _metas.remove(notebookId);
       _generation++;
     });
+  }
+
+  // ---- Trash ----------------------------------------------------------------
+
+  @override
+  Future<void> trashNotebook(String notebookId) async {
+    checkStorageId(notebookId, 'notebookId');
+    return _locks.run(notebookId, () async {
+      final dir = Directory(_dir(notebookId));
+      if (!await dir.exists()) throw NotebookNotFoundException(notebookId);
+      await Directory(_trashPath).create(recursive: true);
+      // An older notebook with this id in the Trash makes room.
+      final old = Directory(_trashDir(notebookId));
+      if (await old.exists()) await _deleteTrashFolder(old);
+      // The date goes in first: a crash before the move leaves a harmless
+      // extra file in a notebook that is still in the library.
+      await AtomicFile.writeBytes(p.join(dir.path, _trashedFile),
+          encodeJsonBytes({'deletedAt': _clock().toUtc().toIso8601String()}));
+      await dir.rename(old.path);
+      _forgetNotebook(notebookId);
+      _metas.remove(notebookId);
+      _generation++;
+    });
+  }
+
+  @override
+  Future<List<TrashedNotebook>> listTrash() async {
+    final dir = Directory(_trashPath);
+    if (!await dir.exists()) return const [];
+    final out = <TrashedNotebook>[];
+    final leftovers = <Directory>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final name = p.basename(entity.path);
+      if (name.startsWith(_trashPrefix)) {
+        leftovers.add(entity);
+        continue;
+      }
+      if (!isValidStorageId(name)) continue;
+      try {
+        final item = await _readTrashed(name, entity);
+        if (item != null) out.add(item);
+      } catch (e) {
+        _log('NeatInk storage: skipping unreadable notebook $name in the Trash: $e');
+      }
+    }
+    for (final d in leftovers) {
+      await _deleteFolderQuietly(d);
+    }
+    out.sort((a, b) => b.deletedAt.compareTo(a.deletedAt));
+    return out;
+  }
+
+  Future<TrashedNotebook?> _readTrashed(String id, Directory dir) async {
+    final meta = await _store.read(p.join(dir.path, _metaFile), parseNotebookMeta);
+    if (meta == null) return null;
+    DateTime? deletedAt;
+    final when = File(p.join(dir.path, _trashedFile));
+    if (await when.exists()) {
+      try {
+        deletedAt = DateTime.tryParse('${(jsonDecode(await when.readAsString()) as Map)['deletedAt']}');
+      } catch (_) {
+        // Unreadable: the folder's own date below.
+      }
+    }
+    deletedAt ??= (await dir.stat()).modified;
+    final thumb = File(p.join(dir.path, _thumbFile));
+    return TrashedNotebook(
+      meta: meta.id == id ? meta : meta.copyWith(id: id),
+      deletedAt: deletedAt,
+      thumbnailPath: await thumb.exists() ? thumb.path : null,
+    );
+  }
+
+  @override
+  Future<NotebookMeta> restoreFromTrash(String notebookId) async {
+    checkStorageId(notebookId, 'notebookId');
+    return _locks.run(notebookId, () async {
+      final src = Directory(_trashDir(notebookId));
+      if (!await src.exists()) throw NotebookNotFoundException(notebookId);
+      // A notebook with this id came back meanwhile (from a backup): this
+      // one gets a new id (the folder name is the id).
+      var id = notebookId;
+      if (await Directory(_dir(id)).exists()) id = _uuid.v4();
+      await Directory(_notebooksPath).create(recursive: true);
+      await src.rename(_dir(id));
+      await _bestEffort(() => File(p.join(_dir(id), _trashedFile)).delete());
+      var meta = await _readMeta(id);
+      if (meta == null) throw NotebookNotFoundException(id);
+      // Its folder may be gone: then it comes back at the top level.
+      if (meta.folderId != null && (await loadLibrary()).folderById(meta.folderId) == null) {
+        meta = meta.copyWith(clearFolder: true);
+        await _writeMeta(meta);
+      } else {
+        _metas[id] = meta;
+        _generation++;
+      }
+      return meta;
+    });
+  }
+
+  @override
+  Future<void> deleteFromTrash(String notebookId) async {
+    checkStorageId(notebookId, 'notebookId');
+    return _locks.run(notebookId, () async {
+      final dir = Directory(_trashDir(notebookId));
+      if (await dir.exists()) await _deleteTrashFolder(dir);
+    });
+  }
+
+  @override
+  Future<int> emptyTrash({DateTime? before}) async {
+    var n = 0;
+    for (final t in await listTrash()) {
+      if (before != null && !t.deletedAt.isBefore(before)) continue;
+      await deleteFromTrash(t.meta.id);
+      n++;
+    }
+    return n;
+  }
+
+  /// Renames (atomic) then deletes, like [deleteNotebook].
+  Future<void> _deleteTrashFolder(Directory dir) async {
+    final token = _uuid.v4().substring(0, 8);
+    final gone = await dir.rename(p.join(_trashPath, '$_trashPrefix${p.basename(dir.path)}-$token'));
+    await _deleteFolderQuietly(gone);
   }
 
   @override

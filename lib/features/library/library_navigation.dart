@@ -1,7 +1,8 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/routes.dart';
+import 'trash_screen.dart';
 
 /// The screen changes the library and search screens trigger.
 ///
@@ -21,6 +22,12 @@ class LibraryNavigator {
 
   Future<void> openSettings(BuildContext context) =>
       AppRoutes.openSettings(context);
+
+  Future<void> openTrash(BuildContext context) =>
+      Navigator.of(context).push<void>(MaterialPageRoute<void>(
+        builder: (_) => const TrashScreen(),
+        settings: const RouteSettings(name: '/trash'),
+      ));
 }
 
 final libraryNavigatorProvider =

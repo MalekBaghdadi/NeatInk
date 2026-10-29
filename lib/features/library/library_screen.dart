@@ -64,6 +64,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           onSetFilter: _controller.setFilter,
           onNewFolder: () => _actions.newFolder(),
           onFolderAction: _actions.onFolderAction,
+          onOpenTrash: _actions.openTrash,
         );
 
     final content = LibraryContent(

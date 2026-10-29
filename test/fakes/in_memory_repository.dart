@@ -214,6 +214,73 @@ class InMemoryNotebookRepository implements NotebookRepository {
     _pdfSources.remove(notebookId);
   }
 
+  /// notebook id -> a notebook in the Trash.
+  final Map<String, _Trashed> _trash = {};
+
+  @override
+  Future<void> trashNotebook(String notebookId) async {
+    final meta = await _requireMeta(notebookId);
+    _trash[notebookId] = _Trashed(
+      deletedAt: _clock(),
+      meta: _metas.remove(notebookId)!,
+      pages: _pages.remove(notebookId),
+      typedText: _typedText.remove(notebookId),
+      pdfText: _pdfText.remove(notebookId),
+      inkText: _inkText.remove(notebookId),
+      assets: _assets.remove(notebookId),
+      thumbnail: _thumbnails.remove(notebookId),
+      pdfSource: _pdfSources.remove(notebookId),
+    );
+    assert(meta.id == notebookId);
+  }
+
+  @override
+  Future<List<TrashedNotebook>> listTrash() async {
+    final out = [
+      for (final MapEntry(key: id, value: t) in _trash.entries)
+        TrashedNotebook(
+          meta: _decodeMeta(t.meta).copyWith(id: id),
+          deletedAt: t.deletedAt,
+          thumbnailPath: t.thumbnail == null ? null : p.join(rootPath, 'trash', id, 'thumb.png'),
+        ),
+    ];
+    out.sort((a, b) => b.deletedAt.compareTo(a.deletedAt));
+    return out;
+  }
+
+  @override
+  Future<NotebookMeta> restoreFromTrash(String notebookId) async {
+    final t = _trash.remove(notebookId);
+    if (t == null) throw StateError('Not in the Trash: $notebookId');
+    final id = _metas.containsKey(notebookId) ? _uuid.v4() : notebookId;
+    var meta = _decodeMeta(t.meta).copyWith(id: id);
+    if (meta.folderId != null && (await loadLibrary()).folderById(meta.folderId) == null) {
+      meta = meta.copyWith(clearFolder: true);
+    }
+    _metas[id] = _encode(meta.toJson());
+    if (t.pages != null) _pages[id] = t.pages!;
+    if (t.typedText != null) _typedText[id] = t.typedText!;
+    if (t.pdfText != null) _pdfText[id] = t.pdfText!;
+    if (t.inkText != null) _inkText[id] = t.inkText!;
+    if (t.assets != null) _assets[id] = t.assets!;
+    if (t.thumbnail != null) _thumbnails[id] = t.thumbnail!;
+    if (t.pdfSource != null) _pdfSources[id] = t.pdfSource!;
+    return meta;
+  }
+
+  @override
+  Future<void> deleteFromTrash(String notebookId) async => _trash.remove(notebookId);
+
+  @override
+  Future<int> emptyTrash({DateTime? before}) async {
+    final gone = [
+      for (final MapEntry(key: id, value: t) in _trash.entries)
+        if (before == null || t.deletedAt.isBefore(before)) id,
+    ];
+    gone.forEach(_trash.remove);
+    return gone.length;
+  }
+
   @override
   Future<NotebookMeta> duplicateNotebook(String notebookId) async {
     final source = await _requireMeta(notebookId);
@@ -433,4 +500,30 @@ class InMemoryNotebookRepository implements NotebookRepository {
 
   static NotebookMeta _decodeMeta(String json) =>
       NotebookMeta.fromJson(_decode(json));
+}
+
+/// A notebook in the Trash of [InMemoryNotebookRepository]: everything it
+/// had, as stored.
+class _Trashed {
+  _Trashed({
+    required this.deletedAt,
+    required this.meta,
+    this.pages,
+    this.typedText,
+    this.pdfText,
+    this.inkText,
+    this.assets,
+    this.thumbnail,
+    this.pdfSource,
+  });
+
+  final DateTime deletedAt;
+  final String meta;
+  final Map<String, String>? pages;
+  final Map<String, String>? typedText;
+  final Map<String, String>? pdfText;
+  final Map<String, (String, String)>? inkText;
+  final Map<String, Uint8List>? assets;
+  final Uint8List? thumbnail;
+  final String? pdfSource;
 }

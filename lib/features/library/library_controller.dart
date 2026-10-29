@@ -53,6 +53,7 @@ class LibraryController extends AsyncNotifier<LibraryState> {
       settingsProvider.select((s) => s.librarySort),
       (_, sort) => _emit((s) => s.copyWith(sort: sort)),
     );
+    unawaited(_emptyOldTrash());
     final snapshot = await _loadSnapshot();
     return _applySnapshot(
       LibraryState(
@@ -232,11 +233,33 @@ class LibraryController extends AsyncNotifier<LibraryState> {
         return copy;
       });
 
-  /// Permanently deletes the notebook and its files.
-  Future<void> deleteNotebook(String notebookId) => _serial(() async {
-        await _repo.deleteNotebook(notebookId);
+  /// How long a notebook stays in the Trash before it is deleted for good.
+  static const Duration trashKeep = Duration(days: 30);
+
+  /// Moves the notebook to the Trash ([trashKeep] to bring it back).
+  Future<void> moveToTrash(String notebookId) => _serial(() async {
+        await _repo.trashNotebook(notebookId);
         _removeNotebook(notebookId);
       });
+
+  /// Brings a notebook back from the Trash (the Undo of [moveToTrash]).
+  Future<NotebookMeta> restoreFromTrash(String notebookId) => _serial(() async {
+        final meta = await _repo.restoreFromTrash(notebookId);
+        _upsert(meta);
+        return meta;
+      });
+
+  /// Deletes what has been in the Trash longer than [trashKeep] (once per
+  /// start of the library).
+  Future<void> _emptyOldTrash() async {
+    try {
+      final now = ref.read(clockProvider)();
+      final n = await _repo.emptyTrash(before: now.subtract(trashKeep));
+      if (n > 0) debugPrint('NeatInk: emptied $n notebooks from the Trash');
+    } catch (e) {
+      debugPrint('NeatInk: could not empty the Trash: $e');
+    }
+  }
 
   Future<void> setFavorite(String notebookId, bool favorite) =>
       _editMeta(notebookId, (m) => m.copyWith(favorite: favorite));

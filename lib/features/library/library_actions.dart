@@ -74,6 +74,12 @@ class LibraryActions {
     if (context.mounted) await refresh();
   }
 
+  /// The Trash; the library shows what was brought back.
+  Future<void> openTrash() async {
+    await _nav.openTrash(context);
+    if (context.mounted) await refresh();
+  }
+
   Future<void> refresh() async {
     await _attempt(_controller.refresh, "Couldn't refresh the library.");
   }
@@ -246,17 +252,24 @@ class LibraryActions {
         final confirmed = await showConfirmDialog(
           context,
           title: 'Delete “${nb.title}”?',
-          message: 'The notebook and '
-              '${nb.pages.length == 1 ? 'its page' : 'its ${nb.pages.length} pages'} '
-              "will be deleted from this device. This can't be undone.",
-          confirmLabel: 'Delete',
+          message: 'It moves to the Trash (at the bottom of the side menu), '
+              'where you can bring it back for '
+              '${LibraryController.trashKeep.inDays} days.',
+          confirmLabel: 'Move to Trash',
           destructive: true,
         );
         if (!confirmed || !context.mounted) return;
         final ok = await _attempt(
-            () => _controller.deleteNotebook(nb.id).then((_) => true),
+            () => _controller.moveToTrash(nb.id).then((_) => true),
             "Couldn't delete the notebook.");
-        if (ok == true) _snack('Deleted “${nb.title}”');
+        if (ok == true) {
+          _snack('Moved “${nb.title}” to the Trash',
+              action: SnackBarAction(
+                label: 'Undo',
+                onPressed: () => _attempt(() => _controller.restoreFromTrash(nb.id),
+                    "Couldn't bring the notebook back."),
+              ));
+        }
     }
   }
 
@@ -339,10 +352,10 @@ class LibraryActions {
     }
   }
 
-  void _snack(String message) {
+  void _snack(String message, {SnackBarAction? action}) {
     if (!context.mounted) return;
     ScaffoldMessenger.maybeOf(context)
       ?..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: Text(message), action: action));
   }
 }

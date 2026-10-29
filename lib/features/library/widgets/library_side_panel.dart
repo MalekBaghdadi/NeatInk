@@ -16,6 +16,7 @@ class LibrarySidePanel extends StatefulWidget {
     required this.onSetFilter,
     required this.onNewFolder,
     required this.onFolderAction,
+    this.onOpenTrash,
     this.inDrawer = false,
   });
 
@@ -26,6 +27,9 @@ class LibrarySidePanel extends StatefulWidget {
   /// Create a top-level folder.
   final VoidCallback onNewFolder;
   final void Function(Folder folder, FolderAction action) onFolderAction;
+
+  /// Opens the Trash (deleted notebooks).
+  final VoidCallback? onOpenTrash;
   final bool inDrawer;
 
   @override
@@ -156,6 +160,20 @@ class _LibrarySidePanelState extends State<LibrarySidePanel> {
               selected: s.filter == LibraryFilter.tag(tag),
               onTap: () => _setFilter(LibraryFilter.tag(tag)),
             ),
+        if (widget.onOpenTrash != null) ...[
+          const Divider(indent: 24, endIndent: 24, height: 24),
+          _NavRow(
+            key: const Key('nav-trash'),
+            icon: Icons.delete_outline,
+            label: 'Trash',
+            count: 0,
+            selected: false,
+            onTap: () {
+              _done();
+              widget.onOpenTrash!();
+            },
+          ),
+        ],
       ],
     );
   }

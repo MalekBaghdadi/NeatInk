@@ -45,6 +45,9 @@ void main() {
     final saved = jsonDecode(prefs.getString(AppSettings.prefsKey)!) as Map<String, dynamic>;
     expect(saved['tipsSeen'], isTrue);
 
+    await tester.scrollUntilVisible(find.byKey(const ValueKey('tips-done')), 200,
+        scrollable: find.descendant(
+            of: find.byKey(const ValueKey('tips-list')), matching: find.byType(Scrollable)));
     await tester.tap(find.byKey(const ValueKey('tips-done')));
     await tester.pumpAndSettle();
     expect(find.byType(TipsScreen), findsNothing);
