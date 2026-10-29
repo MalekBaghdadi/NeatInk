@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:neatink/document/page_items.dart';
 import 'package:neatink/features/editor/tools/scribble.dart';
+import 'package:neatink/ink/ink_point.dart';
 import 'package:neatink/ink/ink_rect.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/ink/vec2.dart';
@@ -73,6 +74,44 @@ void main() {
 
     test('a tiny scribble (a filled-in dot) is not one', () {
       expect(shape(scratch(100, 105, 100, 103)), isFalse);
+    });
+  });
+
+  group('short scribbles', () {
+    test('three zig-zags or three passes are a short scribble; a letter M is too', () {
+      List<InkPoint> pts(List<Vec2> v) => strokeOf('s', v).points;
+      expect(scribbleShapeOf(pts(zigzag(100, 140, 86, 104, turns: 4))), ScribbleShape.short);
+      expect(scribbleShapeOf(pts(scratch(100, 160, 92, 100, turns: 4))), ScribbleShape.short);
+      expect(scribbleShapeOf(pts(zigzag(100, 160, 86, 104, turns: 10))), ScribbleShape.clear);
+      expect(scribbleShapeOf(pts(linePoints(100, 100, 200, 100))), ScribbleShape.none);
+      expect(scribbleShapeOf(pts(zigzag(100, 120, 86, 104, turns: 2))), ScribbleShape.none, reason: 'a V');
+    });
+
+    test('a quick up-and-down scribble over a word deletes it (it used to become an "A")', () {
+      final letters = word('w', 100, 140, 100);
+      final p = plan(zigzag(100, 134, 91, 101, turns: 4), strokes: letters)!;
+      expect(p.strokeIds, {for (final s in letters) s.id});
+    });
+
+    test('a short scribble needs more under it than a clear one', () {
+      // A loop spanning 59% of the scribble's width.
+      final loop = strokeOf('o', [
+        for (var a = 0; a <= 32; a++) Vec2(120 + 10 * math.cos(a * math.pi / 16), 95 + 6 * math.sin(a * math.pi / 16)),
+      ]);
+      expect(plan(scratch(106, 136, 88, 102, turns: 4), strokes: [loop]), isNull, reason: 'short: needs 60% of the width');
+      expect(plan(scratch(106, 136, 88, 102, turns: 6), strokes: [loop])!.strokeIds, {'o'}, reason: 'clear: half is enough');
+    });
+
+    test('a scribble much taller than the word it covers still deletes it', () {
+      final letters = word('w', 100, 140, 100); // 8 pt tall
+      expect(plan(zigzag(98, 142, 72, 108, turns: 8), strokes: letters)!.strokeIds, {for (final s in letters) s.id});
+      // Over a flat underline it is ink: nothing tall enough under it.
+      final rule = strokeOf('rule', linePoints(98, 104, 142, 104));
+      expect(plan(zigzag(98, 142, 72, 108, turns: 8), strokes: [rule]), isNull);
+    });
+
+    test('on empty paper a W stays a W', () {
+      expect(plan(zigzag(300, 330, 90, 104, turns: 4)), isNull);
     });
   });
 

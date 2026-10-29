@@ -105,8 +105,16 @@ class ToolConfig {
     this.scribbleStrokeInsideFraction = 0.6,
     this.scribbleAcrossFraction = 0.6,
     this.scribbleDownFraction = 0.35,
-    this.scribbleMinContentFraction = 0.3,
+    this.scribbleMinContentWidth = 0.5,
+    this.scribbleMinContentHeight = 0.2,
     this.scribbleClosedGapFraction = 0.2,
+    this.scribbleShortMinReversals = 3,
+    this.scribbleShortMinPathRatio = 2.0,
+    this.scribbleShortZigzagMinReversals = 3,
+    this.scribbleShortZigzagSwingFraction = 0.5,
+    this.scribbleShortZigzagMinPathRatio = 1.4,
+    this.scribbleShortMinContentWidth = 0.6,
+    this.scribbleShortMinContentHeight = 0.25,
   });
 
   /// The values the app ships with.
@@ -391,13 +399,34 @@ class ToolConfig {
   final double scribbleAcrossFraction;
   final double scribbleDownFraction;
 
-  /// What it covers must fill at least this fraction of the scribble's area,
-  /// or the scribble is a drawing (or writing) that happens to cross
-  /// something, and stays.
-  final double scribbleMinContentFraction;
+  /// What it covers must span at least [scribbleMinContentWidth] of its
+  /// width and [scribbleMinContentHeight] of its height, or the scribble is a
+  /// drawing (or writing) that happens to cross something, and stays. Width
+  /// and height apart, since a scribble is usually drawn taller than the
+  /// word it covers (v1.8.0; was one area fraction, 0.3).
+  final double scribbleMinContentWidth;
+  final double scribbleMinContentHeight;
 
   /// A stroke whose ends are closer than this fraction of its size is a
   /// closed outline (a circle, a box, a cell drawn by hand). One around the
   /// whole scribble stays: that is shading inside a drawing.
   final double scribbleClosedGapFraction;
+
+  /// A shorter scribble (v1.8.0: the owner's quick ones, more up and down,
+  /// were read as an "A"): back and forth at least
+  /// [scribbleShortMinReversals] times with a path of
+  /// [scribbleShortMinPathRatio] lengths, or zig-zagging with
+  /// [scribbleShortZigzagMinReversals] turns of
+  /// [scribbleShortZigzagSwingFraction] of its height and a path of
+  /// [scribbleShortZigzagMinPathRatio] lengths. Letters have shapes like
+  /// these too (W, M, N), so what it covers must span at least
+  /// [scribbleShortMinContentWidth] of its width and
+  /// [scribbleShortMinContentHeight] of its height.
+  final int scribbleShortMinReversals;
+  final double scribbleShortMinPathRatio;
+  final int scribbleShortZigzagMinReversals;
+  final double scribbleShortZigzagSwingFraction;
+  final double scribbleShortZigzagMinPathRatio;
+  final double scribbleShortMinContentWidth;
+  final double scribbleShortMinContentHeight;
 }

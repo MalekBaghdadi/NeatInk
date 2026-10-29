@@ -12,16 +12,34 @@ import 'tool_config.dart';
 // Recognising the gesture from its shape alone is not enough: cursive "mm",
 // an "M" or "ll" go back and forth just like a scribble. What makes it a
 // scribble is that it is drawn *over* something: whatever it covers must
-// fill a good part of its area ([ToolConfig.scribbleMinContentFraction]).
+// span a good part of it ([ToolConfig.scribbleMinContentWidth] and
+// [ToolConfig.scribbleMinContentHeight]).
 // Writing goes on empty paper, so it stays writing. Shading inside a closed
 // outline (a cell drawn as a circle) leaves the outline alone.
+
+/// How much [points] look like a scribble.
+enum ScribbleShape {
+  /// Not a scribble.
+  none,
+
+  /// A short scribble (few turns): only over a lot of content.
+  short,
+
+  /// A clear scribble.
+  clear,
+}
+
+/// Whether [points] have the shape of a clear scribble (see
+/// [scribbleShapeOf]).
+bool isScribbleShape(List<InkPoint> points, {ToolConfig config = ToolConfig.defaults}) =>
+    scribbleShapeOf(points, config: config) == ScribbleShape.clear;
 
 /// Whether [points] have the shape of a scribble: back and forth along their
 /// main direction, or zig-zagging across it, with a path much longer than
 /// they are wide. The main direction is the points' principal axis, so a
 /// scribble slanted over slanted writing counts too.
-bool isScribbleShape(List<InkPoint> points, {ToolConfig config = ToolConfig.defaults}) {
-  if (points.length < config.scribbleMinPoints) return false;
+ScribbleShape scribbleShapeOf(List<InkPoint> points, {ToolConfig config = ToolConfig.defaults}) {
+  if (points.length < config.scribbleMinPoints) return ScribbleShape.none;
   // Principal axis from the covariance of the points: the angle that
   // maximises the spread is 0.5 atan2(2 sxy, sxx - syy).
   var mx = 0.0, my = 0.0;
@@ -43,21 +61,34 @@ bool isScribbleShape(List<InkPoint> points, {ToolConfig config = ToolConfig.defa
   final along = [for (final p in points) (p.x - mx) * ux + (p.y - my) * uy];
   final across = [for (final p in points) -(p.x - mx) * uy + (p.y - my) * ux];
   final length = _extent(along), height = _extent(across);
-  if (length < config.scribbleMinWidthPt) return false;
+  if (length < config.scribbleMinWidthPt) return ScribbleShape.none;
 
   var path = 0.0;
   for (var i = 1; i < points.length; i++) {
     path += math.sqrt(math.pow(points[i].x - points[i - 1].x, 2) + math.pow(points[i].y - points[i - 1].y, 2));
   }
 
-  final backAndForth = path >= config.scribbleMinPathRatio * length &&
-      _reversals(along, math.max(config.scribbleSwingFraction * length, config.scribbleMinSwingPt)) >=
-          config.scribbleMinReversals;
-  if (backAndForth) return true;
-  return path >= config.scribbleZigzagMinPathRatio * length &&
-      height >= config.scribbleMinSwingPt &&
-      _reversals(across, math.max(config.scribbleZigzagSwingFraction * height, config.scribbleMinSwingPt)) >=
-          config.scribbleZigzagMinReversals;
+  final turnsAlong = _reversals(along, math.max(config.scribbleSwingFraction * length, config.scribbleMinSwingPt));
+  if (path >= config.scribbleMinPathRatio * length && turnsAlong >= config.scribbleMinReversals) {
+    return ScribbleShape.clear;
+  }
+  final tall = height >= config.scribbleMinSwingPt;
+  final turnsAcross =
+      tall ? _reversals(across, math.max(config.scribbleZigzagSwingFraction * height, config.scribbleMinSwingPt)) : 0;
+  if (path >= config.scribbleZigzagMinPathRatio * length && turnsAcross >= config.scribbleZigzagMinReversals) {
+    return ScribbleShape.clear;
+  }
+  if (path >= config.scribbleShortMinPathRatio * length && turnsAlong >= config.scribbleShortMinReversals) {
+    return ScribbleShape.short;
+  }
+  final shortTurnsAcross = tall
+      ? _reversals(across, math.max(config.scribbleShortZigzagSwingFraction * height, config.scribbleMinSwingPt))
+      : 0;
+  if (path >= config.scribbleShortZigzagMinPathRatio * length &&
+      shortTurnsAcross >= config.scribbleShortZigzagMinReversals) {
+    return ScribbleShape.short;
+  }
+  return ScribbleShape.none;
 }
 
 double _extent(List<double> values) => values.reduce(math.max) - values.reduce(math.min);
@@ -127,7 +158,11 @@ ScribblePlan? planScribble({
   required double Function(TextItem item) measureHeight,
   ToolConfig config = ToolConfig.defaults,
 }) {
-  if (!isScribbleShape(scribble.points, config: config)) return null;
+  final shape = scribbleShapeOf(scribble.points, config: config);
+  if (shape == ScribbleShape.none) return null;
+  final clear = shape == ScribbleShape.clear;
+  final minWidth = clear ? config.scribbleMinContentWidth : config.scribbleShortMinContentWidth;
+  final minHeight = clear ? config.scribbleMinContentHeight : config.scribbleShortMinContentHeight;
   final area = scribble.bounds.inflate(config.scribbleMarginPt);
   if (area.isEmpty) return null;
 
@@ -171,7 +206,7 @@ ScribblePlan? planScribble({
 
   final covered = content;
   if (covered == null || (strokeIds.isEmpty && textChanges.isEmpty)) return null;
-  if (covered.area < config.scribbleMinContentFraction * area.area) return null;
+  if (covered.width < minWidth * area.width || covered.height < minHeight * area.height) return null;
   return ScribblePlan(strokeIds: strokeIds, textChanges: textChanges);
 }
 
