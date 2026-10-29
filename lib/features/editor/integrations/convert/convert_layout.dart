@@ -166,12 +166,6 @@ TextColumn? textColumnAt(PageMeta page, double x) {
   return TextColumn(left: page.contentLeft, right: page.contentRight - ConvertConfig.pdfEdgeGap);
 }
 
-/// Whether writing that ends at [right] ran out of room in [column] (as
-/// [ranToRightEdge] does for the page).
-bool ranToColumnEdge(double right, double xHeight, TextColumn column) =>
-    column.right - right <=
-    math.max(ConvertConfig.joinEdgeFraction * column.width, ConvertConfig.joinEdgeXHeights * xHeight);
-
 /// The look the user picked in the review sheet.
 class ConvertStyle {
   const ConvertStyle({
@@ -260,9 +254,8 @@ bool endsSentence(String text) => _sentenceEnd.hasMatch(text.trimRight());
 /// Never across a sentence end or into a list item, never when the next line
 /// starts further right (an indent) or too far below ([maxLineDrop]: one
 /// skipped ruled line is fine, many writers leave one). Then either the
-/// writing ran to the right edge of the page ([pageWidth]), or the words say
-/// the sentence goes on ([textCarriesOn]): writers often break a line long
-/// before the edge.
+/// words say the sentence goes on ([textCarriesOn]), or the writing ran out
+/// of room on the line ([sentenceWraps]).
 bool continuesOnNextLine({
   required LineGeometry line,
   required String text,
@@ -279,8 +272,33 @@ bool continuesOnNextLine({
   if (next.left > line.left + ConvertConfig.joinIndentXHeights * xh) return false;
   final drop = next.baselineAt(next.left) - line.baselineAt(line.left);
   if (drop <= 0 || drop > maxLineDrop(xh, ruling)) return false;
-  final atEdge = column == null ? ranToRightEdge(line.right, xh, pageWidth) : ranToColumnEdge(line.right, xh, column);
-  return atEdge || textCarriesOn(text, nextText);
+  return textCarriesOn(text, nextText) ||
+      sentenceWraps(
+          right: line.right, next: next, nextText: nextText, xHeight: xh, pageWidth: pageWidth, column: column);
+}
+
+/// Whether a line of writing that ended at [right] broke there for want of
+/// room: the first word of the next line ([next], saying [nextText]) would
+/// not have fitted after it, a gap on, before the right margin (of
+/// [column] if any). The word's width is its share of the next line's ink
+/// by letters. A next line starting with a capital is a new thought, not
+/// the rest of a sentence (`I` aside).
+bool sentenceWraps({
+  required double right,
+  required LineGeometry next,
+  required String nextText,
+  required double xHeight,
+  required double pageWidth,
+  TextColumn? column,
+}) {
+  final words = nextText.trim().split(RegExp(r'\s+'));
+  final first = words.first;
+  if (RegExp('^[A-Z]').hasMatch(first) && first != 'I' && !first.startsWith("I'")) return false;
+  final letters = nextText.trim().length;
+  final inkWidth = next.right - next.left;
+  final wordWidth = letters > 0 && inkWidth > 0 ? inkWidth * first.length / letters : first.length * xHeight;
+  final edge = column?.right ?? pageWidth - ConvertConfig.rightMargin;
+  return right + ConvertConfig.joinWordGapXHeights * xHeight + wordWidth > edge;
 }
 
 /// Words that do not end a sentence: after them the sentence goes on
@@ -302,31 +320,16 @@ final RegExp _listMarker = RegExp(r'^\s*([-–—•·*+>]|\(?\d{1,3}[.)]|\(?[a-
 bool startsListItem(String text) => _listMarker.hasMatch(text);
 
 /// Whether the words of a line ([text]) and of the line below ([nextText])
-/// read as one sentence broken over the two: the line ends with a comma or
-/// hyphen or with a word a sentence cannot end on ([continuationWords]), or
-/// the next line starts in lowercase and both lines are more than a word or
-/// two (so a list written one word per line, `brain` / `neurons`, stays a
-/// list).
+/// read as one sentence broken over the two: the line ends with a comma,
+/// hyphen or open bracket, or on a word a sentence cannot end on
+/// ([continuationWords]).
 bool textCarriesOn(String text, String nextText) {
   final a = text.trim(), b = nextText.trim();
   if (a.isEmpty || b.isEmpty) return false;
   if (RegExp(r'[,\-–—(]$').hasMatch(a)) return true;
-  final words = a.split(RegExp(r'\s+'));
-  final last = words.last.replaceAll(RegExp(r"[^A-Za-z']"), '').toLowerCase();
-  if (continuationWords.contains(last)) return true;
-  final lowerStart = RegExp('^[a-z]').hasMatch(b);
-  final nextWords = b.split(RegExp(r'\s+')).length;
-  return lowerStart &&
-      words.length >= ConvertConfig.joinMinWords &&
-      nextWords >= ConvertConfig.joinMinNextWords;
+  final last = a.split(RegExp(r'\s+')).last.replaceAll(RegExp(r"[^A-Za-z']"), '').toLowerCase();
+  return continuationWords.contains(last);
 }
-
-/// Whether writing that ends at [right] ran out of room on the page: less
-/// is left than [ConvertConfig.joinEdgeFraction] of the page width (or
-/// [ConvertConfig.joinEdgeXHeights] letters, if more).
-bool ranToRightEdge(double right, double xHeight, double pageWidth) =>
-    pageWidth - right <=
-    math.max(ConvertConfig.joinEdgeFraction * pageWidth, ConvertConfig.joinEdgeXHeights * xHeight);
 
 /// How far below a line the next line of the same sentence may start.
 double maxLineDrop(double xHeight, PageRuling? ruling) => ruling != null

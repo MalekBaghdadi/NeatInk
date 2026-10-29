@@ -320,6 +320,42 @@ void main() {
       expect(plan(line(), live: (_) => item(width: 30)), isNull);
     });
 
+    group('a line below (joining lines)', () {
+      // A box whose last line has its baseline at 84 + 12.8; the new line
+      // one 26 pt ruling lower, from the box's left edge.
+      LineGeometry below({double right = 400}) => LineGeometry(
+            left: 100, right: right, baselineY: 122.8, xHeight: 10, inkTop: 102.8);
+
+      MergePlan? join(TextItem t, String text, {List<AutoBox> boxes = const []}) => planMerge(
+            boxes: boxes,
+            pageTexts: [t],
+            liveItem: (id) => id == t.id ? t : null,
+            line: below(),
+            text: text,
+            pageWidth: pageWidth,
+            metrics: metrics,
+            joinLines: true,
+          );
+
+      test('a wrapped box nothing remembers takes a line only when its words go on', () {
+        // v1.9.0 took any wrapped box for writing that ran to the edge, so
+        // every line of notes below joined it.
+        final wrapped = item(text: 'chemical synapses use neurotransmitters between cells', width: 300);
+        expect(join(wrapped, 'electrical synapses use gap junctions'), isNull);
+        final unfinished = item(text: 'electrical synapses are much faster than', width: 300);
+        expect(join(unfinished, 'chemical ones')?.after.text, 'electrical synapses are much faster than chemical ones');
+      });
+
+      test("an auto box goes on below when its ink ran out of room for the next line's first word", () {
+        final t = item(text: 'Neurons pass electrical', width: 200);
+        AutoBox inkTo(double right) => AutoBox(AutoBoxVersion(t, right, 96.8));
+        expect(join(t, 'signals to each other', boxes: [inkTo(540)])?.after.text,
+            'Neurons pass electrical signals to each other');
+        expect(join(t, 'Signals are fast', boxes: [inkTo(540)]), isNull, reason: 'a capital: something new');
+        expect(join(t, 'signals to each other', boxes: [inkTo(400)]), isNull, reason: 'it had room');
+      });
+    });
+
     test('the nearest of several boxes wins', () {
       final far = AutoBox(AutoBoxVersion(item().copyWith(id: 'i2'), 190, 100));
       final near = AutoBox(AutoBoxVersion(item(), 215, 100));

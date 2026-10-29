@@ -624,6 +624,40 @@ void main() {
         expect(texts(h), ['I am the danger. When a man gets knocked']);
       });
 
+      testWidgets('notes written line after line stay lines (Mariam, 1.9.0)', (tester) async {
+        // No full stops, lowercase starts: 1.9.0 joined each line to the one
+        // above once a few were written.
+        final notes = [
+          ['Synapse', 'types'],
+          ['chemical', 'synapses', 'use', 'transmitters'],
+          ['electrical', 'ones', 'use', 'gap', 'junctions'],
+          ['they', 'are', 'faster', 'than'],
+          ['chemical', 'ones'],
+          ['resting', 'potential', 'is', 'negative'],
+        ];
+        final h = await ConvertHarness.open(tester,
+            recognizer: FakeRecognizer({
+              for (final (i, words) in notes.indexed)
+                for (final (k, w) in words.indexed) 'l${i}w$k': (w, 0.9),
+            }),
+            autoConvert: true,
+            prefsValues: {
+              ConvertStylePrefs.prefsKey: jsonEncode(const ConvertStylePrefs().toJson()),
+            });
+        for (final (i, words) in notes.indexed) {
+          await h.write(writeLine('l$i', [for (final _ in words) 'hello'], y: 104.0 + 26 * i, gap: 20));
+          await wait(tester, 1100);
+        }
+        expect(h.page.strokes, isEmpty);
+        expect(texts(h), [
+          'Synapse types',
+          'chemical synapses use transmitters',
+          'electrical ones use gap junctions',
+          'they are faster than chemical ones',
+          'resting potential is negative',
+        ]);
+      });
+
       testWidgets('a list written one word per line stays a list', (tester) async {
         final h = await shortLines(tester, 'brain', 'neurons');
         expect(texts(h), ['brain', 'neurons']);

@@ -80,8 +80,8 @@ class MergePlan {
 /// autocorrect marks of both texts ([corrections] are those of [text]).
 ///
 /// With [joinLines] a line also carries on a box on a line above when the
-/// box's sentence goes on there ([continuesOnNextLine]'s rules: it ran to the
-/// right edge, or the words carry on); the box then wraps at the right
+/// box's sentence goes on there ([continuesOnNextLine]'s rules: the words
+/// carry on, or the line ran out of room); the box then wraps at the right
 /// margin.
 MergePlan? planMerge({
   required Iterable<AutoBox> boxes,
@@ -141,27 +141,22 @@ MergePlan? planMerge({
     return live.y + metrics.firstBaseline(live) + (lines - 1) * one;
   }
 
-  // Whether writing ending at [right] ran out of room (in [column], if any).
-  bool atRightEdge(double right) =>
-      column == null ? ranToRightEdge(right, xh, pageWidth) : ranToColumnEdge(right, xh, column);
-
   // How far below the box's last line [line] starts, when it carries on the
   // box's unfinished sentence; else null.
   double? dropBelow(TextItem live, AutoBoxVersion? base) {
     if (endsSentence(live.text) || startsListItem(text)) return null;
     if (line.left > live.x + ConvertConfig.joinIndentXHeights * xh) return null;
-    final double lastBaseline;
-    final bool atEdge;
-    if (base != null) {
-      atEdge = atRightEdge(base.inkRight);
-      lastBaseline = base.inkBaseline;
-    } else {
-      // A typed box: its text wraps, or reaches the edge itself.
-      atEdge = metrics.naturalWidth(live) > live.width + 1e-6 ||
-          atRightEdge(live.x + live.width);
-      lastBaseline = lastBaselineOf(live);
-    }
-    if (!atEdge && !textCarriesOn(live.text, text)) return null;
+    // Where the handwriting of the box's last line ended is known only for
+    // the boxes auto-convert made (and has not seen changed since). For
+    // others only the words decide: a typed box that wraps says nothing of
+    // where its last written line ended (v1.9.0 took any wrapped box for a
+    // line that ran to the edge, so everything below joined it).
+    final carriesOn = textCarriesOn(live.text, text) ||
+        (base != null &&
+            sentenceWraps(
+                right: base.inkRight, next: line, nextText: text, xHeight: xh, pageWidth: pageWidth, column: column));
+    if (!carriesOn) return null;
+    final lastBaseline = base?.inkBaseline ?? lastBaselineOf(live);
     final drop = start - lastBaseline;
     return drop > 0 && drop <= maxLineDrop(xh, ruling) ? drop : null;
   }

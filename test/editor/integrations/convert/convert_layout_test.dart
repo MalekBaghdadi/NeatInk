@@ -544,13 +544,58 @@ void main() {
           ], style: style, ruling: ruling);
       expect(two('I am the danger. When', 'a man gets knocked').single.item.text,
           'I am the danger. When a man gets knocked', reason: 'ends on a word no sentence ends on');
-      expect(two('The lines are not auto joining', 'even when a sentence is not').single.item.text,
-          'The lines are not auto joining even when a sentence is not', reason: 'goes on in lowercase');
-      expect(two('Neurons send signals', 'to other neurons.', skip: 1), hasLength(1));
+      // v1.10.0: a lowercase start alone no longer joins: the writer had
+      // room for "even" and went to a new line (notes rarely end in a full
+      // stop; v1.9.0 joined a page of them into one paragraph).
+      expect(two('The lines are not auto joining', 'even when a sentence is not'), hasLength(2),
+          reason: 'room was left for the next word');
+      expect(two('Neurons send signals', 'to other neurons.', skip: 1), hasLength(2), reason: 'room was left for "to"');
       expect(two('signals travel along the axon,', 'Then they cross'), hasLength(1), reason: 'a comma');
       expect(two('a man gets knocked', 'The lines are not joining'), hasLength(2), reason: 'a new sentence');
       expect(two('Neurons send signals', 'to other neurons.', skip: 3), hasLength(2), reason: 'too far below');
       expect(two('Key points of the lecture', '- neurons send signals'), hasLength(2), reason: 'a list item');
+    });
+
+    test('a line that ran out of room carries on in lowercase, not with a capital', () {
+      const style = ConvertStyle(evenSize: true, joinLines: true);
+      final ruling = lined();
+      final r = ruling.baselines;
+      // The next line's first word gets its share of the 230 pt of ink by
+      // letters: 'signals' about 77 pt, 'I' 11 pt. The margin is at 571.
+      List<LaidOutLine> two(String b, {double right = 555}) => layout([
+            input('a', 'Neurons pass electrical', geo(baseline: r[4], right: right)),
+            input('b', b, geo(baseline: r[5], left: 100, right: 330)),
+          ], style: style, ruling: ruling);
+      expect(two('signals to each other').single.item.text, 'Neurons pass electrical signals to each other');
+      expect(two('Signals are fast'), hasLength(2), reason: 'a capital starts something new');
+      expect(two('I think they are fast'), hasLength(1), reason: '"I" is no new start');
+      expect(two('signals to each other', right: 420), hasLength(2), reason: 'there was room for "signals"');
+    });
+
+    test('a page of notes without full stops stays line by line (Mariam, 1.9.0)', () {
+      const style = ConvertStyle(evenSize: true, joinLines: true);
+      final ruling = lined();
+      final r = ruling.baselines;
+      final notes = [
+        ('Synapse types', 220.0),
+        ('chemical synapses use neurotransmitters between cells', 470.0),
+        ('electrical synapses use gap junctions which are faster than', 480.0),
+        ('chemical ones', 210.0),
+        ('Action potential steps', 300.0),
+        ('resting potential is about minus seventy', 430.0),
+        ('depolarisation opens the sodium channels', 440.0),
+      ];
+      final out = layout([
+        for (final (i, (text, right)) in notes.indexed) input('l$i', text, geo(baseline: r[4 + i], right: right)),
+      ], style: style, ruling: ruling);
+      expect(out.map((l) => l.item.text), [
+        'Synapse types',
+        'chemical synapses use neurotransmitters between cells',
+        'electrical synapses use gap junctions which are faster than chemical ones',
+        'Action potential steps',
+        'resting potential is about minus seventy',
+        'depolarisation opens the sodium channels',
+      ]);
     });
 
     test("a list written one word per line stays a list (Mariam's step 7)", () {
@@ -644,13 +689,13 @@ void main() {
             line: geo(left: 20, right: right, baseline: ruling.baselines[3]),
             text: 'Neurons send',
             next: geo(left: 20, right: 100, baseline: ruling.baselines[4]),
-            nextText: 'Signals',
+            nextText: 'signals',
             pageWidth: pdf.width,
             ruling: ruling,
             column: column,
           );
       expect(joins(140), isTrue);
-      expect(joins(60), isFalse);
+      expect(joins(30), isFalse, reason: '"signals" (80 pt) fitted in the margin after it');
     });
   });
 }

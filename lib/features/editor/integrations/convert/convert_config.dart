@@ -59,16 +59,17 @@ abstract final class ConvertConfig {
   static const double joinMaxRulings = 2.6;
   static const double joinMaxXHeights = 8;
 
-  /// ...and either the writing ended closer to the right page edge than
-  /// this fraction of the page width (or this many x-heights, if more)...
-  static const double joinEdgeFraction = 0.2;
-  static const double joinEdgeXHeights = 8;
-
-  /// ...or the words carry on (`textCarriesOn`): the line ends on a word no
-  /// sentence ends on, or the next line starts in lowercase and the lines
-  /// have at least this many words (fewer is a list: `brain` / `neurons`).
-  static const int joinMinWords = 3;
-  static const int joinMinNextWords = 2;
+  /// ...and either the words carry on (`textCarriesOn`: the line ends with
+  /// a comma or hyphen, or on a word no sentence ends on), or the line ran
+  /// out of room: the first word of the next line would not have fitted
+  /// after it before the right margin, with a gap of this many x-heights (a
+  /// little more than a word gap: nobody squeezes a word in up to the
+  /// margin), and the next line does not start with a capital. A writer who
+  /// had room for the word and went to a new line meant a new line: notes
+  /// rarely end in a full stop and their lines often start in lowercase
+  /// (v1.10.0; before, a lowercase start was enough, and a page of notes
+  /// became one paragraph after a few lines).
+  static const double joinWordGapXHeights = 1.0;
 
   /// Space kept free at the right page edge (points).
   static const double rightMargin = 24;
