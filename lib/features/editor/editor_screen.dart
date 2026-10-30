@@ -451,6 +451,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
             EditorToolRow(controller: c),
             for (final bar in c.extensions.editorBars) ?bar(context, c),
             Expanded(child: DocumentView(controller: c)),
+            for (final bar in c.extensions.bottomBars) ?bar(context, c),
           ],
         );
     }

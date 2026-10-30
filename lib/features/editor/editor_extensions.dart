@@ -344,9 +344,18 @@ class EditorExtensions {
   /// text. Hidden when null.
   SelectionAction? convertSelection;
 
-  /// Selection menu "Edit" button: opens the typed text box [item] on
-  /// [pageId] for typing (the text tool's editor). Hidden when null.
-  void Function(String pageId, TextItem item)? editText;
+  /// Selection menu "Edit" buttons: opens the typed text box [item] on
+  /// [pageId] in the text tool's editor, with the pen writing bar
+  /// ([keyboard] false) or the keyboard. Hidden when null.
+  void Function(String pageId, TextItem item, {bool keyboard})? editText;
+
+  /// Reads handwriting written outside the page, in the writing bar of a
+  /// text box (v1.13.0): [strokes] form one line, in any units; [before] is
+  /// the text before the cursor (null at the start of the box), which
+  /// decides capitals. Autocorrect's own fixes are applied when it is on.
+  /// Returns '' when nothing could be read. Null: the bar offers the
+  /// keyboard only.
+  Future<String> Function(List<Stroke> strokes, {String? before})? readHandwriting;
 
   /// Committed pen / highlighter strokes with these ids are not painted
   /// (the tidy animation draws them itself meanwhile). After changing it,
@@ -360,6 +369,10 @@ class EditorExtensions {
   /// Bars between the tool row and the pages, top to bottom (the recording
   /// and player bars, v1.12.0).
   final List<EditorWidgetBuilder> editorBars = [];
+
+  /// Bars under the pages, top to bottom (the writing bar of a text box
+  /// being edited, v1.13.0).
+  final List<EditorWidgetBuilder> bottomBars = [];
 
   /// Extra app bar buttons, before Undo.
   final List<EditorWidgetBuilder> appBarActions = [];

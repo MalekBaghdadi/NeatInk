@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/app_info.dart';
+import '../../../../recognition/stroke_grouping.dart';
+import '../../../../recognition/text_polish.dart';
 import '../../../settings/convert_style_prefs.dart';
 import '../../../settings/settings_controller.dart';
 import '../../canvas/overlay_hit_area.dart';
@@ -15,6 +17,7 @@ import 'auto_convert_indicator.dart';
 import 'auto_convert_session.dart';
 import 'convert_style_sheet.dart';
 import 'convert_layout.dart';
+import 'convert_plan.dart';
 import 'convert_providers.dart';
 import 'convert_scope.dart';
 import 'convert_sheet.dart';
@@ -95,6 +98,19 @@ final EditorIntegration convertIntegration = (controller, ref) {
       return open(context, useSelection ? selection : null);
     }
     ..convertSelection = ((context, c, selection) => open(context, selection))
+    // The writing bar of a text box: what was written there, as one line.
+    ..readHandwriting = (strokes, {String? before}) async {
+      final lines = groupStrokes(strokes);
+      if (lines.isEmpty) return '';
+      final results = await ref
+          .read(htrRecognizerProvider)
+          .recognizeLines(lines, previousLineText: before);
+      final autoFix = ref.read(settingsProvider).autocorrect;
+      return [
+        for (final r in results)
+          autoFix ? applyPolish(r.text, applicableSuggestions(r.text, r.suggestions)) : r.text,
+      ].where((t) => t.trim().isNotEmpty).join(' ');
+    }
     ..sendWritingSamples = ((context, c) => sendWritingSamples(context, ref, open: c))
     ..convertSettings = (context, c) => showConvertStyleSheet(context,
         page: c.isReady && c.pageCount > 0

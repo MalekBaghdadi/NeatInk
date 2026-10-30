@@ -191,7 +191,8 @@ List<TourStep> notebookTour() => const [
         icon: Icons.gesture_rounded,
         title: 'Lasso',
         text: 'Draw a loop around some notes. Then move or resize them, change their colour, copy them, '
-            'turn them into typed text, or delete them.',
+            'turn them into typed text, or delete them. Around typed text, the pencil lets you add words '
+            'anywhere in it.',
       ),
       TourStep(
         target: 'tool-text',

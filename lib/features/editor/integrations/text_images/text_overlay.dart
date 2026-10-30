@@ -106,6 +106,10 @@ class _EditField extends StatelessWidget {
         maxLines: null,
         minLines: 1,
         keyboardType: TextInputType.multiline,
+        // With the pen writing bar the keyboard stays away, but a tap still
+        // places the cursor where the words go.
+        readOnly: !session.keyboard,
+        showCursor: true,
         textCapitalization: TextCapitalization.sentences,
         cursorColor: Color(item.color).withAlpha(0xFF),
         scrollPhysics: const NeverScrollableScrollPhysics(),

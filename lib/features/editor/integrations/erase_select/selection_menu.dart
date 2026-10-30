@@ -83,14 +83,15 @@ class _SelectionMenuState extends State<SelectionMenu> {
       ));
   }
 
-  /// Opens the first selected text box for typing.
-  void _editText() {
+  /// Opens the first selected text box for changes: with the pen writing
+  /// bar, or with the keyboard.
+  void _editText({bool keyboard = false}) {
     final item = _handler.firstSelectedText;
     final pageId = _handler.state.selection?.pageId;
     final edit = _controller.extensions.editText;
     if (item == null || pageId == null || edit == null) return;
     // Switching to the text tool ends the lasso selection.
-    edit(pageId, item);
+    edit(pageId, item, keyboard: keyboard);
   }
 
   void _convert() {
@@ -114,13 +115,20 @@ class _SelectionMenuState extends State<SelectionMenu> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_handler.firstSelectedText != null && _controller.extensions.editText != null)
+                if (_handler.firstSelectedText != null && _controller.extensions.editText != null) ...[
                   _MenuButton(
                     key: const ValueKey('selection-edit'),
                     icon: Icons.edit_outlined,
-                    label: 'Edit text',
+                    label: 'Edit text with the pen: tap where words go, then write them',
                     onPressed: _editText,
                   ),
+                  _MenuButton(
+                    key: const ValueKey('selection-edit-keyboard'),
+                    icon: Icons.keyboard_outlined,
+                    label: 'Edit text with the keyboard',
+                    onPressed: () => _editText(keyboard: true),
+                  ),
+                ],
                 _MenuButton(
                   key: const ValueKey('selection-delete'),
                   icon: Icons.delete_outline,

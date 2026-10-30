@@ -16,6 +16,7 @@ import 'text_format_bar.dart';
 import 'text_layer.dart';
 import 'text_overlay.dart';
 import 'text_tool.dart';
+import 'text_write_bar.dart';
 
 export 'image_source.dart' show ImagePicker, PickedImage, imagePickerProvider;
 
@@ -50,11 +51,16 @@ void _install(EditorController controller, WidgetRef ref) {
   )..reveal = () => ext.inkReveal;
   ext.imageLayer = imageLayer;
   ext.toolHandlers[EditorTool.text] = TextToolHandler(controller, textEditor);
-  // The lasso menu's Edit: the text tool, editing that box.
-  ext.editText = (pageId, item) {
+  // The lasso menu's Edit: the text tool, editing that box with the pen
+  // writing bar (or the keyboard); Done goes back to the lasso.
+  ext.editText = (pageId, item, {bool keyboard = false}) {
+    final from = controller.tool;
     controller.selectTool(EditorTool.text);
-    textEditor.begin(pageId, item);
+    textEditor
+      ..begin(pageId, item, keyboard: keyboard)
+      ..returnTool = from == EditorTool.text ? null : from;
   };
+  ext.bottomBars.add((context, c) => TextWriteBar(editor: textEditor, controller: c));
   ext.toolHandlers[EditorTool.image] = ImageToolHandler(controller, imageEditor);
   ext.toolOptions[EditorTool.text] =
       (context, c) => TextFormatBar(editor: textEditor, controller: c);

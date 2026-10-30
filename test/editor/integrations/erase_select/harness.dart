@@ -32,6 +32,7 @@ class EraseSelectHarness {
     List<Stroke> strokes = const [],
     List<TextItem> texts = const [],
     List<ImageItem> images = const [],
+    List<EditorIntegration> extra = const [],
   }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -57,6 +58,7 @@ class EraseSelectHarness {
       editorIntegrationsProvider.overrideWithValue([
         (controller, ref) => captured = controller,
         eraseSelectIntegration,
+        ...extra,
       ]),
     ]);
     addTearDown(container.dispose);

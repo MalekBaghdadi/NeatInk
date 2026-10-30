@@ -8,6 +8,7 @@ import '../../../../document/page_items.dart';
 import '../../../../ink/vec2.dart';
 import '../../../../render/text_style.dart';
 import '../../editor_controller.dart';
+import '../../editor_tool.dart';
 import 'frame_geometry.dart';
 
 /// One text box being edited: the committed item it started from (null for a
@@ -19,6 +20,7 @@ class TextEditSession {
     required this.original,
     required this.draft,
     required this.wantFocus,
+    this.keyboard = true,
   }) : input = TextEditingController(text: draft.text);
 
   final String pageId;
@@ -32,6 +34,10 @@ class TextEditSession {
 
   /// Focus the field (and so show the keyboard) when it appears.
   bool wantFocus;
+
+  /// Typed with the system keyboard; false: the field only shows the cursor
+  /// (read-only to the keyboard) and words come from the pen writing bar.
+  bool keyboard;
 
   bool get isNew => original == null;
 
@@ -66,6 +72,10 @@ class TextBoxEditor extends ChangeNotifier {
   TextEditSession? _session;
   TextEditSession? get session => _session;
 
+  /// The tool to go back to when the writing bar's Done ends the edit (the
+  /// lasso, when the edit came from its menu); null stays on the text tool.
+  EditorTool? returnTool;
+
   static const double defaultBoxWidth = 220;
   static const double pageMargin = 24;
 
@@ -93,14 +103,16 @@ class TextBoxEditor extends ChangeNotifier {
   /// Starts editing [item] (an existing box, or a new one when [isNew]),
   /// committing any other box first.
   void begin(String pageId, TextItem item,
-      {bool isNew = false, bool focus = true}) {
+      {bool isNew = false, bool focus = true, bool keyboard = true}) {
     commit();
+    returnTool = null;
     final fixed = item.copyWith(height: measureHeight(item));
     _session = TextEditSession(
       pageId: pageId,
       original: isNew ? null : item,
       draft: fixed,
       wantFocus: focus,
+      keyboard: keyboard,
     );
     controller.invalidatePageRender(pageId);
     notifyListeners();
@@ -153,7 +165,11 @@ class TextBoxEditor extends ChangeNotifier {
     final target =
         hitTextItem(controller.doc.page(pageId).texts, p, slop: 4 / scale);
     if (target != null) {
-      begin(pageId, target);
+      // Another box opens the way the last one was being edited, and Done
+      // still goes back where that edit came from.
+      final back = s == null ? null : returnTool;
+      begin(pageId, target, keyboard: s?.keyboard ?? true);
+      returnTool = back;
     } else if (s != null) {
       commit();
     } else {
@@ -260,6 +276,26 @@ class TextBoxEditor extends ChangeNotifier {
 
   // ---------------------------------------------------------------------------
   // Live changes
+
+  /// Switches the box being edited between the keyboard and the pen writing
+  /// bar. The field keeps its focus and cursor; it opens or closes the
+  /// keyboard as it becomes editable or read-only.
+  void useKeyboard(bool on) {
+    final s = _session;
+    if (s == null || s.keyboard == on) return;
+    s.keyboard = on;
+    s.wantFocus = true;
+    notifyListeners();
+    s.focus.requestFocus();
+  }
+
+  /// Sets the text and cursor of the box being edited (the writing bar).
+  void setValue(TextEditingValue value) {
+    final s = _session;
+    if (s == null) return;
+    s.input.value = value;
+    textChanged();
+  }
 
   /// The field's text changed.
   void textChanged() {

@@ -33,6 +33,11 @@ const List<Tip> appTips = [
   Tip(Icons.format_underlined, 'Wavy underlines',
       'A red wavy line marks a word the app does not know, an amber one a word '
           'that may be a slip. Tap it to pick a spelling or add it to My words.'),
+  Tip(Icons.edit_note, 'Add words in the middle of typed text',
+      'Select the text with the lasso and tap the pencil (Edit text). Tap in '
+          'the text where the words go and write them in the bar at the '
+          'bottom: they go in right there. Tap a word twice to select it and '
+          'write over it. The keyboard button is there too.'),
   Tip(Icons.format_size, 'Restyle typed text',
       'Select typed text with the lasso and tap Text style to change its font, '
           'size, bold, italic or underline; Colour changes its colour.'),
