@@ -2,7 +2,7 @@ name: neatink
 description: "NeatInk: handwriting notes for Android tablets. Offline, local, handwriting to typed text."
 publish_to: 'none'
 
-version: 1.11.0+13
+version: 1.12.0+14
 
 environment:
   sdk: ^3.13.0

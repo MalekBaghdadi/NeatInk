@@ -36,6 +36,13 @@ const List<Tip> appTips = [
   Tip(Icons.format_size, 'Restyle typed text',
       'Select typed text with the lasso and tap Text style to change its font, '
           'size, bold, italic or underline; Colour changes its colour.'),
+  Tip(Icons.mic_none, 'Record a lecture',
+      'Tap the microphone at the top of a notebook and write as usual. Later, '
+          'the headphones button plays it back; Play with notes shows your '
+          'notes appearing as you wrote them. Tap a note to hear that moment.'),
+  Tip(Icons.help_outline, 'What does this button do?',
+      'Hold your finger on any button, or hover the pen over it, to see what '
+          'it does. Settings › Show me around again repeats the guided tours.'),
   Tip(Icons.manage_search, 'Search your handwriting',
       'Search finds words in your handwriting too. The app reads a notebook '
           'while it is open and you pause, so open a notebook once to make it '

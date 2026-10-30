@@ -40,6 +40,7 @@ and copy it to the tablet.
 - **My words**: teach it names (like family names); it also learns from the words you correct.
 - Text boxes and pictures on any page. The page grid shows every page, PDF pages included.
 - **Copy and paste** with the lasso: Copy or Cut, then tap an empty spot (on any page, in any notebook) and Paste. Copied typed text can be pasted into other apps too.
+- **Record a lecture** while you write (the microphone button at the top of a notebook). It keeps recording when you switch apps or the screen turns off, with Pause and Stop at hand. Afterwards, the headphones button lists the recordings: **Play** to listen, or **Play with notes** to watch your notes appear as the sound reaches the moment you wrote them; tap any note to hear that moment. Recordings stay on the tablet, in the notebook (backups and copies include them).
 - Import a PDF, write on it, and export a new PDF with your writing on it. Add lined **margins** beside the PDF pages for notes (when importing, or later from the editor menu); typed notes stay in their margin, on its lines; exports keep them, the PDF's text stays selectable, and its bookmarks and form fields are kept.
 - **Covers**: 16 colours, patterns, science pictures (brain, neuron, DNA, cell, atom, periodic table, planets, galaxy and more) or your own photo.
 - Folders, tags, favourites, dark mode and an optional PIN lock.
@@ -47,6 +48,7 @@ and copy it to the tablet.
 - **Trash**: deleted notebooks wait in the Trash (bottom of the side menu) for 30 days, to bring back or delete for good.
 - **Backup & restore** (Settings > Backup): all notebooks, folders, settings and My words in one file you save wherever you like (Downloads, a USB stick, a PC). Restoring only adds: notebooks already on the tablet are left alone, changed ones come back as copies.
 - **Tips** open once after installing or updating, and any time from Settings > About.
+- **Guided tours**: the first time, the library and a notebook each show their buttons one at a time, lit up with a word on what each does (⋮ › Show me around, or Settings › Show me around again). Hold a finger on any button, or hover the pen over it, to see what it does.
 - **Writing samples**: lines typed from your handwriting (Convert or Auto) are kept on the tablet with what you changed afterwards, so recognition can be improved for your writing; ⋮ › Send writing samples (or Settings › Writing) shares them in one file when you choose.
 - **Share diagnostics** (Settings > About): problems the app ran into are kept on the tablet, to send when something goes wrong.
 
@@ -54,7 +56,8 @@ and copy it to the tablet.
 
 It works fully offline. The app has no internet permission, no accounts, no
 tracking and no ads. Your notebooks, writing samples and diagnostics leave the
-tablet only when you export, back up or share them yourself.
+tablet only when you export, back up or share them yourself. Recordings use
+the microphone only while you record.
 
 ## For developers
 
