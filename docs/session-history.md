@@ -33,7 +33,7 @@ The owner: "for the highlighter and pen colors and so on, add a color picker so 
 - The picker (`color_picker_dialog.dart`) starts with 40 ready colours (`pickerPalette`, 4 rows dark to light), then "Or mix your own" (square, hue bar, hex), then Recent. Its before/after preview was empty (childless boxes in a Row got no height): fixed.
 - Tips: "Any colour you like"; the tour's Colours card mentions the highlighter.
 - Released as 1.13.0 with part 2 (the writing bar). Checklist `docs/tablet-test-1.13.md` (9 steps); the page holds them, then 1.12 and 1.11.
-- Verified here: analyze clean, full suite (see CLAUDE.md for the count), `colour_picker_test.dart` 5 (the portrait one fails with the old breakpoint), screenshots. NOT verified on the tablet.
+- Verified here: analyze clean, full suite 1571 pass / 2 skipped, `colour_picker_test.dart` 5 (the portrait one fails with the old breakpoint), screenshots. NOT verified on the tablet.
 
 ## Session 14, part 2 (2026-10-30): adding words in the middle of typed text (released in 1.13.0)
 
