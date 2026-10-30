@@ -25,7 +25,17 @@ The detailed notes of each working session, moved out of `CLAUDE.md` on 2026-10-
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
-## Session 14, part 2 (2026-10-30): adding words in the middle of typed text (after 1.12.0, not released yet)
+## Session 14, part 3 (2026-10-30): any colour; v1.13.0
+
+The owner: "for the highlighter and pen colors and so on, add a color picker so she can choose any color", then build, push, and give Mariam the new steps with the earlier ones.
+- The pen already had the picker (the rainbow circle with a +), but it could be off screen: between 720 and ~950 px wide the tool row was one row and its options scrolled sideways with no sign of it. `EditorToolRow.twoRowBreakpoint` 720 -> 1000: below it the options have their own row (the pen's fit from ~640 px).
+- The highlighter gets the same button (`pickCustomHighlighterColor`, `highlighter-colour-custom`; drawn at the usual highlighter opacity; joins the recent colours); Typed text settings' colour row too (`convert-colour-custom`).
+- The picker (`color_picker_dialog.dart`) starts with 40 ready colours (`pickerPalette`, 4 rows dark to light), then "Or mix your own" (square, hue bar, hex), then Recent. Its before/after preview was empty (childless boxes in a Row got no height): fixed.
+- Tips: "Any colour you like"; the tour's Colours card mentions the highlighter.
+- Released as 1.13.0 with part 2 (the writing bar). Checklist `docs/tablet-test-1.13.md` (9 steps); the page holds them, then 1.12 and 1.11.
+- Verified here: analyze clean, full suite (see CLAUDE.md for the count), `colour_picker_test.dart` 5 (the portrait one fails with the old breakpoint), screenshots. NOT verified on the tablet.
+
+## Session 14, part 2 (2026-10-30): adding words in the middle of typed text (released in 1.13.0)
 
 The owner: Mariam selects a typed sentence with an error and can delete parts of it with the lasso, but cannot write anything into it; the only way was to delete the whole right side of the sentence and write it again. Asked for a button to pop up the keyboard, and a bar to write into with the stylus.
 - **Lasso menu**: "Edit text" became two buttons: the pencil (**Edit text with the pen**) and the keyboard (**Edit text with the keyboard**) (`EditorExtensions.editText(pageId, item, {keyboard})`). Both open the box in the text tool's editor; the pen one keeps the keyboard away (`TextEditSession.keyboard` false: the field is `readOnly` with `showCursor`, so a tap still puts the cursor and a double tap selects a word, but no keyboard opens).
