@@ -51,6 +51,7 @@ class PenOptions extends StatelessWidget {
             onPressed: () => controller.setPenColor(c),
           ),
         CustomColorButton(
+          key: const ValueKey('pen-colour-custom'),
           customColor: isPreset ? null : pen.color,
           onPressed: () => pickCustomPenColor(context, controller),
         ),
@@ -90,7 +91,24 @@ Future<void> pickCustomPenColor(
       custom: !ToolPresets.penColors.contains(picked));
 }
 
-/// The six highlighter colours and three widths.
+/// Opens the colour picker for the highlighter (drawn see-through, like
+/// the presets). Starts from the current colour.
+Future<void> pickCustomHighlighterColor(
+    BuildContext context, EditorController controller) async {
+  final prefs = controller.toolPrefs;
+  final picked = await showColorPickerDialog(
+    context,
+    initialColor: prefs.highlighter.color,
+    recentColors: customRecentColors(prefs),
+    title: 'Highlighter colour',
+  );
+  if (picked == null) return;
+  controller.setHighlighterColor(picked,
+      custom: !ToolPresets.highlighterColors.contains(picked));
+}
+
+/// The six highlighter colours, any colour from the picker, and three
+/// widths.
 class HighlighterOptions extends StatelessWidget {
   const HighlighterOptions({super.key, required this.controller});
 
@@ -99,15 +117,22 @@ class HighlighterOptions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hl = controller.toolPrefs.highlighter;
+    final isPreset = ToolPresets.highlighterColors.contains(hl.color);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final c in ToolPresets.highlighterColors)
+        for (final (i, c) in ToolPresets.highlighterColors.indexed)
           ColorSwatchButton(
+            key: ValueKey('highlighter-colour-$i'),
             color: c,
             selected: c == hl.color,
             onPressed: () => controller.setHighlighterColor(c),
           ),
+        CustomColorButton(
+          key: const ValueKey('highlighter-colour-custom'),
+          customColor: isPreset ? null : hl.color,
+          onPressed: () => pickCustomHighlighterColor(context, controller),
+        ),
         const ToolbarDivider(),
         for (var i = 0; i < ToolPresets.highlighterWidths.length; i++)
           WidthDotButton(

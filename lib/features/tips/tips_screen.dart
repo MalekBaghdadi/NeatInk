@@ -24,6 +24,9 @@ const List<Tip> appTips = [
       'Convert turns your handwriting into typed text. Turn on Auto and it '
           'happens by itself a moment after you stop writing. The button next '
           'to Auto sets the font, size and colour.'),
+  Tip(Icons.palette_outlined, 'Any colour you like',
+      'The rainbow circle after the colours of the pen, the highlighter and '
+          'the typed text opens more colours: tap one, or mix your own.'),
   Tip(Icons.gesture, 'Scribble to delete',
       'Scribble back and forth over handwriting or typed text with the pen to '
           'delete it. Undo brings it back. The eraser removes typed words too.'),

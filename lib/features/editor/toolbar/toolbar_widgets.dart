@@ -179,7 +179,7 @@ class CustomColorButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final custom = customColor;
     return Tooltip(
-      message: 'Custom colour',
+      message: 'Any colour: choose your own',
       child: InkResponse(
         onTap: onPressed,
         radius: toolbarTargetSize / 2,

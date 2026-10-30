@@ -166,7 +166,8 @@ List<TourStep> notebookTour() => const [
         prefix: true,
         icon: Icons.palette_outlined,
         title: 'Colours',
-        text: 'Tap a colour to write in it. The rainbow circle lets you pick any colour.',
+        text: 'Tap a colour to write in it. The rainbow circle opens more colours: tap one, or mix your own. '
+            'The highlighter has one too.',
       ),
       TourStep(
         target: 'pen-width-',

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../document/font_kind.dart';
 import '../../../settings/convert_style_prefs.dart';
+import '../../toolbar/color_picker_dialog.dart';
+import '../../toolbar/toolbar_widgets.dart';
 import '../text_images/text_format_bar.dart';
 import 'convert_config.dart';
 
@@ -173,6 +175,21 @@ class ConvertStyleControls extends StatelessWidget {
                   ),
                 ),
               ),
+            // Any other colour (v1.13.0).
+            CustomColorButton(
+              key: const ValueKey('convert-colour-custom'),
+              customColor: v.colorOverride == null || ConvertConfig.colorChoices.contains(v.colorOverride)
+                  ? null
+                  : v.colorOverride,
+              onPressed: () async {
+                final picked = await showColorPickerDialog(
+                  context,
+                  initialColor: v.colorOverride ?? ConvertConfig.colorChoices.first,
+                  title: 'Typed text colour',
+                );
+                if (picked != null) onChange((p) => p.copyWith(colorOverride: picked));
+              },
+            ),
           ],
         ),
         const SizedBox(height: 4),

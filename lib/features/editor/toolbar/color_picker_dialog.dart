@@ -3,14 +3,32 @@ import 'package:flutter/services.dart';
 
 import 'toolbar_widgets.dart';
 
-/// Shows the custom colour picker: a saturation/value square, a hue bar, a
-/// hex field and the recently used custom colours. Returns the chosen
-/// opaque ARGB colour, or null when cancelled.
+/// Ready colours at the top of the picker (v1.13.0): four rows of ten, dark
+/// to light, so most choices are one tap; mixing your own is below them.
+const List<int> pickerPalette = [
+  // Dark
+  0xFF000000, 0xFF424242, 0xFFB71C1C, 0xFFE65100, 0xFF5D4037,
+  0xFF1B5E20, 0xFF004D40, 0xFF0D47A1, 0xFF1A237E, 0xFF4A148C,
+  // Strong
+  0xFF757575, 0xFFE53935, 0xFFFB8C00, 0xFFFDD835, 0xFF7CB342,
+  0xFF43A047, 0xFF00ACC1, 0xFF1E88E5, 0xFF5E35B1, 0xFFD81B60,
+  // Bright
+  0xFFFFFFFF, 0xFFFF7043, 0xFFFFB300, 0xFFFFEB3B, 0xFFC6FF00,
+  0xFF26A69A, 0xFF4FC3F7, 0xFF3949AB, 0xFF8E24AA, 0xFFC2185B,
+  // Light
+  0xFFBDBDBD, 0xFFEF9A9A, 0xFFFFCC80, 0xFFFFF59D, 0xFFC5E1A5,
+  0xFFA5D6A7, 0xFF80DEEA, 0xFF90CAF9, 0xFFB39DDB, 0xFFF48FB1,
+];
+
+/// Shows the colour picker: ready colours, then a saturation/value square,
+/// a hue bar and a hex field to mix any colour, and the recently used
+/// custom colours. Returns the chosen opaque ARGB colour, or null when
+/// cancelled.
 Future<int?> showColorPickerDialog(
   BuildContext context, {
   required int initialColor,
   List<int> recentColors = const [],
-  String title = 'Custom colour',
+  String title = 'Choose a colour',
 }) =>
     showDialog<int>(
       context: context,
@@ -72,13 +90,29 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     return AlertDialog(
       title: Text(widget.title),
       content: SizedBox(
-        width: 320,
+        width: 360,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SaturationValueBox(value: _hsv, onChanged: _set),
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  for (final c in pickerPalette)
+                    _PaletteDot(
+                      key: ValueKey('palette-${hexOf(c)}'),
+                      color: c,
+                      selected: c == _argb,
+                      onTap: () => _set(HSVColor.fromColor(Color(c))),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text('Or mix your own', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              SaturationValueBox(value: _hsv, onChanged: _set, height: 150),
               const SizedBox(height: 16),
               HueBar(value: _hsv, onChanged: _set),
               const SizedBox(height: 16),
@@ -141,6 +175,41 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           child: const Text('Use colour'),
         ),
       ],
+    );
+  }
+}
+
+/// One ready colour of [pickerPalette].
+class _PaletteDot extends StatelessWidget {
+  const _PaletteDot({super.key, required this.color, required this.selected, required this.onTap});
+
+  final int color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: colorName(color),
+      child: InkResponse(
+        onTap: onTap,
+        radius: 20,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: Color(color),
+            shape: BoxShape.circle,
+            border: Border.all(
+              width: selected ? 3 : 1,
+              color: selected ? scheme.primary : scheme.outline.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -332,6 +401,8 @@ class _ColorComparison extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: Row(
+          // Childless boxes take only the height they are made to.
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(child: ColoredBox(color: Color(before))),
             Expanded(child: ColoredBox(color: Color(after))),

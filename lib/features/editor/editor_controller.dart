@@ -520,8 +520,11 @@ class EditorController extends ChangeNotifier {
   void setPenStyle(PenStyle style) =>
       updateToolPrefs((p) => p.copyWith(pen: p.pen.copyWith(style: style)));
 
-  void setHighlighterColor(int argb) => updateToolPrefs(
-      (p) => p.copyWith(highlighter: p.highlighter.copyWith(color: argb)));
+  /// Sets the highlighter colour; a [custom] one joins the recent colours.
+  void setHighlighterColor(int argb, {bool custom = false}) => updateToolPrefs((p) {
+        final next = p.copyWith(highlighter: p.highlighter.copyWith(color: argb));
+        return custom ? next.withRecentColor(argb) : next;
+      });
 
   void setHighlighterSize(double size) => updateToolPrefs(
       (p) => p.copyWith(highlighter: p.highlighter.copyWith(size: size)));

@@ -17,7 +17,9 @@ class EditorToolRow extends StatelessWidget {
   final EditorController controller;
 
   /// Below this width the options get their own row.
-  static const double twoRowBreakpoint = 720;
+  // Below it the tools and their options take a row each, so the options
+  // (all pen colours, "any colour" and the widths) fit without scrolling.
+  static const double twoRowBreakpoint = 1000;
 
   static const double rowHeight = 56;
 
