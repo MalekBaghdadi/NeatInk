@@ -37,13 +37,15 @@ class PenOptions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         PenStyleMenu(
+          key: const ValueKey('pen-style'),
           style: pen.style,
           color: pen.color,
           onSelected: controller.setPenStyle,
         ),
         const ToolbarDivider(),
-        for (final c in ToolPresets.penColors)
+        for (final (i, c) in ToolPresets.penColors.indexed)
           ColorSwatchButton(
+            key: ValueKey('pen-colour-$i'),
             color: c,
             selected: c == pen.color,
             onPressed: () => controller.setPenColor(c),
@@ -55,6 +57,7 @@ class PenOptions extends StatelessWidget {
         const ToolbarDivider(),
         for (var i = 0; i < ToolPresets.penWidths.length; i++)
           WidthDotButton(
+            key: ValueKey('pen-width-$i'),
             index: i,
             width: ToolPresets.penWidths[i],
             color: pen.color,

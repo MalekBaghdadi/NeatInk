@@ -100,8 +100,14 @@ abstract final class AppTheme {
         behavior: SnackBarBehavior.floating,
         shape: controlShape,
       ),
-      tooltipTheme: const TooltipThemeData(
-        waitDuration: Duration(milliseconds: 500),
+      // Every button explains itself on a long press, or when the pen
+      // hovers over it (v1.12.0: longer and easier to read).
+      tooltipTheme: TooltipThemeData(
+        waitDuration: const Duration(milliseconds: 500),
+        showDuration: const Duration(milliseconds: 3500),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(color: scheme.inverseSurface, borderRadius: BorderRadius.circular(8)),
+        textStyle: TextStyle(fontSize: 14.5, color: scheme.onInverseSurface, height: 1.3),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),

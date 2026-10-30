@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
 import '../settings/convert_style_prefs.dart';
 import '../settings/settings_controller.dart';
+import '../tour/tour.dart';
+import '../tour/tours.dart';
 import 'canvas/document_view.dart';
 import 'editor_controller.dart';
 import 'editor_integrations.dart';
@@ -39,6 +41,8 @@ class EditorScreen extends ConsumerStatefulWidget {
 
 class _EditorScreenState extends ConsumerState<EditorScreen>
     with WidgetsBindingObserver {
+  bool _tourScheduled = false;
+
   late final EditorController _controller;
   StreamSubscription<Object>? _saveErrors;
   bool _closing = false;
@@ -308,6 +312,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
               unawaited(ext.paste?.call(context, c));
             case 'samples':
               unawaited(ext.sendWritingSamples?.call(context, c));
+            case 'tour':
+              unawaited(showTour(context, [
+                ...notebookTour(),
+                if (c.doc.meta.pages.any((p) => p.isPdf)) ...pdfTour(),
+              ]));
           }
         },
         itemBuilder: (context) => [
@@ -340,6 +349,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
                 key: ValueKey('menu-writing-samples'),
                 value: 'samples',
                 child: Text('Send writing samples')),
+          const PopupMenuItem(
+              key: ValueKey('menu-tour'),
+              value: 'tour',
+              child: Text('Show me around')),
         ],
       ),
     ];
@@ -422,6 +435,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen>
           ),
         );
       case EditorStatus.ready:
+        if (!_tourScheduled) {
+          _tourScheduled = true;
+          final pdf = c.doc.meta.pages.any((p) => p.isPdf);
+          startTourWhenOnTop(context, ref, [TourMemory.notebook, if (pdf) TourMemory.pdf], () {
+            final seen = ref.read(tourMemoryProvider);
+            return [
+              if (!seen.seen(TourMemory.notebook)) ...notebookTour(),
+              if (pdf && !seen.seen(TourMemory.pdf)) ...pdfTour(),
+            ];
+          });
+        }
         return Column(
           children: [
             EditorToolRow(controller: c),

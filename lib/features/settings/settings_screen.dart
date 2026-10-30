@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/app_info.dart';
 import '../debug/pointer_debug_screen.dart';
 import '../tips/tips_screen.dart';
+import '../tour/tours.dart';
 import 'app_settings.dart';
 import 'my_words_screen.dart';
 import 'settings_controller.dart';
@@ -255,11 +256,11 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _AboutSection extends StatelessWidget {
+class _AboutSection extends ConsumerWidget {
   const _AboutSection();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     return SettingsSection(
       title: 'About',
@@ -286,6 +287,20 @@ class _AboutSection extends StatelessWidget {
           subtitle: const Text('Pen and fingers, typed text, shapes, PDFs and backups.'),
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => TipsScreen.open(context),
+        ),
+        ListTile(
+          key: const ValueKey('settings-tour'),
+          leading: const Icon(Icons.tour_outlined),
+          title: const Text('Show me around again'),
+          subtitle: const Text('The guided tours show each button and what it does: '
+              'the library when you go back, a notebook when you open one.'),
+          onTap: () async {
+            await ref.read(tourMemoryProvider).resetAll();
+            if (!context.mounted) return;
+            ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+              content: Text('The tours will show again: go back to the library, or open a notebook.'),
+            ));
+          },
         ),
         const DiagnosticsTile(),
         const ListTile(

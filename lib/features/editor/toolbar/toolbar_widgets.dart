@@ -71,7 +71,7 @@ class ToolButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return IconButton(
-      tooltip: tool.label,
+      tooltip: '${tool.label}: ${tool.hint}',
       isSelected: selected,
       onPressed: enabled ? onPressed : null,
       icon: toolIcon(tool),

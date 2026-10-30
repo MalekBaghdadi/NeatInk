@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../recording/recording_banner.dart';
+import '../tour/tours.dart';
 import '../settings/app_settings.dart' show LibrarySort;
 import 'library_actions.dart';
 import 'library_controller.dart';
@@ -44,6 +45,27 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   late final LibraryActions _actions = LibraryActions(context, ref);
+  late final TourMemory _tours = ref.read(tourMemoryProvider);
+  bool _tourScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tours.addListener(_onToursReset);
+  }
+
+  @override
+  void dispose() {
+    _tours.removeListener(_onToursReset);
+    super.dispose();
+  }
+
+  /// "Show me around again" in Settings: the tour shows when the library is
+  /// back on top.
+  void _onToursReset() {
+    _tourScheduled = true;
+    startTourWhenOnTop(context, ref, const [TourMemory.library], libraryTour);
+  }
 
   LibraryController get _controller =>
       ref.read(libraryControllerProvider.notifier);
@@ -53,6 +75,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final async = ref.watch(libraryControllerProvider);
     final s = async.value;
     if (s == null) return _buildNotReady(async);
+    if (!_tourScheduled) {
+      // The first time (after the first-run tips): where everything is.
+      _tourScheduled = true;
+      startTourWhenOnTop(context, ref, const [TourMemory.library], libraryTour);
+    }
 
     final wide =
         MediaQuery.sizeOf(context).width >= librarySidePanelBreakpoint;
@@ -101,13 +128,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           title: LibraryTitle(state: s, onOpenFolder: _controller.openFolder),
           actions: [
             IconButton(
-              tooltip: 'Search',
+              key: const ValueKey('library-search'),
+              tooltip: 'Search your notebooks, typed text, PDFs and handwriting',
               icon: const Icon(Icons.search),
               onPressed: _actions.openSearch,
             ),
-            _SortButton(sort: s.sort, onSelected: _controller.setSort),
+            _SortButton(key: const ValueKey('library-sort'), sort: s.sort, onSelected: _controller.setSort),
             IconButton(
-              tooltip: 'Settings',
+              key: const ValueKey('library-settings'),
+              tooltip: 'Settings and help',
               icon: const Icon(Icons.settings_outlined),
               onPressed: _actions.openSettings,
             ),
@@ -182,14 +211,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 }
 
 class _SortButton extends StatelessWidget {
-  const _SortButton({required this.sort, required this.onSelected});
+  const _SortButton({super.key, required this.sort, required this.onSelected});
 
   final LibrarySort sort;
   final ValueChanged<LibrarySort> onSelected;
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<LibrarySort>(
-        tooltip: 'Sort',
+        tooltip: 'Sort: newest, oldest or by name',
         icon: const Icon(Icons.sort),
         initialValue: sort,
         onSelected: onSelected,
@@ -239,7 +268,8 @@ class _NewButton extends StatelessWidget {
           ),
         ],
         builder: (context, menu, _) => FloatingActionButton.extended(
-          tooltip: 'Create',
+          key: const ValueKey('library-new'),
+          tooltip: 'Make a notebook or a folder, or import a PDF',
           onPressed: () => menu.isOpen ? menu.close() : menu.open(),
           icon: const Icon(Icons.add),
           label: const Text('New'),

@@ -40,14 +40,17 @@ class QuickPageNav extends StatelessWidget {
                     tooltip: 'Previous page',
                     onPressed: i > 0 ? ops.previous : null,
                   ),
-                  InkWell(
-                    key: const ValueKey('quick-jump'),
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => showJumpToPage(context, ops),
-                    child: Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                      child: Text('${i + 1} / $n'),
+                  Tooltip(
+                    message: 'Go to a page: tap to type its number',
+                    child: InkWell(
+                      key: const ValueKey('quick-jump'),
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => showJumpToPage(context, ops),
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                        child: Text('${i + 1} / $n'),
+                      ),
                     ),
                   ),
                   IconButton(

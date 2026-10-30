@@ -5,18 +5,22 @@
 /// `EditorExtensions.toolHandlers`); until then the toolbar shows them
 /// disabled.
 enum EditorTool {
-  pen('Pen'),
-  highlighter('Highlighter'),
-  eraser('Eraser'),
-  lasso('Lasso'),
-  text('Text'),
-  image('Image'),
-  shape('Shapes');
+  pen('Pen', 'write and draw. Scribble over writing to delete it'),
+  highlighter('Highlighter', 'mark important words in colour'),
+  eraser('Eraser', 'rub over ink or typed words to erase them'),
+  lasso('Lasso', 'draw a loop around notes to move, copy, convert or restyle them'),
+  text('Text', 'tap the page to type a text box'),
+  image('Image', 'add a picture from the tablet'),
+  shape('Shapes', 'draw straight lines, arrows, boxes and circles');
 
-  const EditorTool(this.label);
+  const EditorTool(this.label, this.hint);
 
   /// User-facing name (tooltips, menus).
   final String label;
+
+  /// What the tool does, in a few words (the tooltip after the name, shown
+  /// on a long press or when the pen hovers over it).
+  final String hint;
 
   /// Tools that lay down ink strokes through the live layer.
   bool get drawsInk => this == pen || this == highlighter;
