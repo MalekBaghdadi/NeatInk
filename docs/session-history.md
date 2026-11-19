@@ -25,16 +25,17 @@ The detailed notes of each working session, moved out of `CLAUDE.md` on 2026-10-
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
-## Session 15, part 4 (2026-11-19): Mariam's writing samples; arrows (not released yet)
+## Session 15, part 4 (2026-11-19): Mariam's writing samples; arrows; v1.14.0
 
 The owner sent her "Send writing samples" file twice (identical: 1,000 lines, app 1.13.0, 996 from Auto, Nov 3-19). Details and numbers in "v1.14.0" of `docs/htr-model-notes.md`.
 - Her edits after Auto: arrows inside words, words split at a gap, rewritten words. Only 4 lines were converted twice (Auto, then Convert a minute later).
 - **Arrows**: 79 found, 11 real. New `ArrowConfig` rules (head drawn after the shaft in one stroke; the stroke does not run on into letters at its other end, a hook or a curve at the start of a long arrow is fine; head at most 0.75 of the shaft, 0.45 on the left; a head drawn apart does not cross the shaft further back than 1 x-height, 0.4 on the left; one-stroke heads need 1.8 x-heights of shaft): 11 of 11 kept, 2 false. Tuned on her lines with the earlier synthetic arrow tests as the check against over-fitting (all pass); tests added from four of her letter shapes, traced to a dozen points (they fail on 1.13's finder).
 - **Accuracy** on 87 transcribed lines: 1.13 typed 6.0% characters / 16.6% words wrong; the desktop pipeline (new `test/recognition/sample_eval_test.dart`, env-gated) with the new arrow rules 3.6% / 9.5% (1.13's code there: 6.1% / 17.2%).
 - Not changed: the decoder (the remaining misreads are 1-2 edits from common words already in the list; tuning on 87 lines would over-fit), split words (none in the sample).
+- Released as 1.14.0 (build 17) with parts 2 and 3; analyze clean, 1601 pass / 4 skipped. Checklist `docs/tablet-test-1.14.md` (7 steps). NOT verified on the tablet.
 - Her two lecture PDFs (exports from the app, Lecture 1 and 2 of an epidemiology course) were also sent; they hold her typed notes, not ink, so they are not training data. The owner asked her to send writing samples instead.
 
-## Session 15, part 3 (2026-11-19): highlight ends (not released yet)
+## Session 15, part 3 (2026-11-19): highlight ends (released in 1.14.0)
 
 The owner: highlights are rectangles; wanted ends "like half circles, not angles", "and some more options if you want".
 - `HighlightEnds { square, round, slanted }` on `Stroke` (`highlightEnds`, JSON `"ends"`, written only for highlighters that are not square, so old files and square highlights are unchanged); `HighlighterPrefs.ends` remembers the last choice; `EditorController.setHighlighterEnds`. Carried by `StrokeBuilder.build`, `ActiveStroke`, `copyWith`, `transformed` and the pixel eraser's pieces.
@@ -43,7 +44,7 @@ The owner: highlights are rectangles; wanted ends "like half circles, not angles
 - UI: the first button of the highlighter's tool row (`highlighter-ends`) opens a menu with a sample of each (drawn by the real renderer). A tip "Round or slanted highlights".
 - Test: `test/render/highlight_ends_test.dart` (10: measured shapes, both drawing directions, a steep stroke, dots, JSON, prefs, the round inset, the menu). Checked by rendering the three styles over Lato text and the menu to PNG (temporary tests, deleted).
 
-## Session 15, part 2 (2026-11-19): "Get the newest version" (not released yet)
+## Session 15, part 2 (2026-11-19): "Get the newest version" (released in 1.14.0)
 
 The owner: a button in the app that takes Mariam straight to the download link of a new version (she installs the version that has it by hand, once).
 - Settings › About › **Get the newest version** (`widgets/update_tile.dart`, `settings-update`): a dialog says what happens (the browser downloads ~45 MB, tap the file, Install or Update, notebooks stay, compare the version number after) and **Download** (`update-download`) opens `AppInfo.downloadUrl` (`releases/latest/download/MariamsNotes.apk`, arm64) with `url_launcher` (`LaunchMode.externalApplication`, behind `linkOpenerProvider` for tests). No browser answering: the link goes to the clipboard and a snackbar says so.

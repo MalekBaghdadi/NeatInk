@@ -14,6 +14,8 @@ it on the lines in a font you choose.
 1. Open the link on the tablet and download the file (about 43 MB).
 2. Open it. Android asks to allow installs from your browser or Files app; allow it.
 3. Install. Updates install over the old version and keep your notebooks.
+   From version 1.14 on, Settings › About › **Get the newest version** opens
+   this download for you.
 
 The link is the 64-bit build, which suits almost every tablet made in the last
 decade. If Android says the app isn't compatible, take
@@ -31,6 +33,7 @@ and copy it to the tablet.
 - Pen, pencil and fountain styles, highlighter, eraser (whole stroke or partial; it erases typed words too), lasso, shapes that snap straight when you hold the pen still.
 - **Lasso** circles a word or a few letters of handwriting, or a phrase of typed text; selected typed text can be restyled (font, size, bold, italic, underline, colour) and edited: **with the pen**, tap where words go in the text and write them in the bar at the bottom (they go in right there, even in the middle of a sentence), or with the keyboard.
 - **Scribble to delete**, like on an iPad: scribble back and forth over handwriting or typed text with the pen and it disappears (one undo brings it back). Scribbling on empty paper, or shading inside a drawn circle, stays ink. Switch it off in Settings.
+- **Highlight shapes**: the highlighter's first button sets the ends of your highlights: square, round (half circles) or slanted like a marker tip.
 - **Tidy highlighter**: a wobbly highlight over a line of writing, typed text or PDF text becomes a neat straight band over that line (switch it off in Settings; "Restore original" in the lasso menu brings the drawn one back).
 - **Convert to text**: tap Convert and the app reads your handwriting a whole line at a time (on the tablet, nothing is uploaded), shows what it understood so you can fix any word, and retypes it on the lines in a font you choose (18 fonts: school-friendly, handwriting-style, serif, sans and more). Punctuation comes along (full stops, commas, colons, semicolons, question marks), and an arrow drawn between words becomes →. One undo gives your handwriting back.
 - **Autocorrect**, like on an iPad: misspellings (swapped, missing or doubled letters: teh, recieve, finaly, happend), missing apostrophes (isnt → isn't), capitals and small grammar slips (a/an, "could of", "their is", repeated words) are fixed as handwriting becomes text. British and American spellings are both fine. Corrected words get a dotted underline: tap one and tap the bubble to get your word back (it is then learned, so it is not corrected again), or tick to keep it. Switch it off in Settings to only get suggestions in the review sheet. Names you taught it are never changed.
@@ -56,7 +59,8 @@ and copy it to the tablet.
 ## Private by design
 
 It works fully offline. The app has no internet permission, no accounts, no
-tracking and no ads. Your notebooks, writing samples and diagnostics leave the
+tracking and no ads (Get the newest version only hands the download link to
+your browser; the app never checks for updates itself). Your notebooks, writing samples and diagnostics leave the
 tablet only when you export, back up or share them yourself. Recordings use
 the microphone only while you record.
 
