@@ -17,7 +17,61 @@ Files in `assets/htr/`:
 
 The APK is about 5 MB smaller than with the old model (13 MB -> 7.8 MB asset).
 
-## v1.4.0: Mariam's first page (current tuning)
+## v1.14.0: Mariam's 1,000 Auto lines (session 15)
+
+Her "Send writing samples" file of 2026-11-19 (app 1.13.0, 1,000 lines, 996
+converted by Auto between Nov 3 and Nov 19, 8 notebooks; epidemiology and
+public-health lectures). Two copies were sent; they are identical.
+
+- **What she fixed afterwards** (`finalText` vs `boxTextNow`, 127 of 441
+  boxes edited, 177 gone): mostly deleted garbage with arrows in it
+  ("dev ← lop", "a ← -et", "chang → over"), words split at a gap inside them
+  ("phy skal", "popula tion", "represen titive", "pro gnosis") and words she
+  wrote again beside a misread one.
+- **Arrows**: the finder (`recognition/arrows.dart`) found arrows in 79 of
+  her 1,004 lines; looked at one by one, 11 were arrows (all long lines
+  drawn in one stroke with a ">" head, at the start of a line, pointing
+  right) and 68 were letters: her e's long tail, t-bars with the letters
+  before them, "ea"/"es"/"to" written on from a joining stroke. Each also
+  cut those strokes out of the picture the model read ("with" -> "w ←").
+  New `ArrowConfig` rules (`tailSlack`, `tailFlat`, `tailShare`,
+  `headShare`, `crossSlack`, `leftHeadShare`, `leftCrossSlack`,
+  `oneStrokeMinLength`; see their comments): 11 of 11 kept, 2 false.
+  `test/recognition/sample_arrows_test.dart` lists what the finder takes
+  in a samples file.
+- **Accuracy**, 100 lines picked at random (seed 20261119), 87 of them
+  writing (the rest drawings and scribbles), transcribed by hand from her
+  strokes (the truth file stays outside git, personal data):
+
+  | | character error | word error | lines wrong |
+  |---|---|---|---|
+  | 1.13 on the tablet, as typed (autocorrect on) | 6.0% | 16.6% | 16/87 |
+  | 1.13 on the tablet, before autocorrect | 6.5% | 18.3% | 21/87 |
+  | 1.13 code, desktop (no autocorrect) | 6.1% | 17.2% | 19/87 |
+  | arrow rules, desktop (no autocorrect) | 3.6% | 9.5% | 16/87 |
+
+  The desktop run matches the tablet on 75 of 87 lines (it draws with
+  `PolylineWordImageRenderer`, not the device's `UiWordImageRenderer`, and
+  Auto's autocorrect is not in `recognizeLines`).
+- Still wrong after the arrow rules: misread letters 1-2 edits from a
+  common word ("qutome" outcome, "Lohorf" Cohort, "Conting" Counting,
+  "callating" calculating, "perod" period, "Nor" Nov, "til" till) and digits
+  read as letters ("To" for 10, "too'." for 100%). Her course words are
+  already in the word list with large counts, so more vocabulary would not
+  help; a wider edit search would, at the risk of wrong fixes: measure it
+  on a fresh transcribed sample, not on these 87 lines. Words split at a
+  gap inside them did not occur in the sample (about 1 line in 50 overall).
+
+How to run it (all env-gated; personal files outside git):
+
+    NEATINK_SAMPLES=<samples.json> NEATINK_TRUTH=<{index: text}.json> NEATINK_EVAL_DIR=<dir> \
+      NEATINK_EVAL_PASS=dump flutter test test/recognition/sample_eval_test.dart
+    # a few lines of Python: for each <dir>/<key>.pgm, run assets/htr/model.onnx on
+    # ((v / 255 - 0.5) / 0.5) in three channels and write the [T, 438] softmax as
+    # float32 to <key>.f32
+    NEATINK_EVAL_PASS=read NEATINK_EVAL_OUT=<texts.json> ... flutter test test/recognition/sample_eval_test.dart
+
+## v1.4.0: Mariam's first page
 
 Mariam's Share-samples file (2026-10-28, app 1.3.0, 7 lines of neuroscience
 notes, page 2) came back at **27% character error, 74% word error** as the

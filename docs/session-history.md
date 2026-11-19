@@ -25,6 +25,15 @@ The detailed notes of each working session, moved out of `CLAUDE.md` on 2026-10-
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
+## Session 15, part 4 (2026-11-19): Mariam's writing samples; arrows (not released yet)
+
+The owner sent her "Send writing samples" file twice (identical: 1,000 lines, app 1.13.0, 996 from Auto, Nov 3-19). Details and numbers in "v1.14.0" of `docs/htr-model-notes.md`.
+- Her edits after Auto: arrows inside words, words split at a gap, rewritten words. Only 4 lines were converted twice (Auto, then Convert a minute later).
+- **Arrows**: 79 found, 11 real. New `ArrowConfig` rules (head drawn after the shaft in one stroke; the stroke does not run on into letters at its other end, a hook or a curve at the start of a long arrow is fine; head at most 0.75 of the shaft, 0.45 on the left; a head drawn apart does not cross the shaft further back than 1 x-height, 0.4 on the left; one-stroke heads need 1.8 x-heights of shaft): 11 of 11 kept, 2 false. Tuned on her lines with the earlier synthetic arrow tests as the check against over-fitting (all pass); tests added from four of her letter shapes, traced to a dozen points (they fail on 1.13's finder).
+- **Accuracy** on 87 transcribed lines: 1.13 typed 6.0% characters / 16.6% words wrong; the desktop pipeline (new `test/recognition/sample_eval_test.dart`, env-gated) with the new arrow rules 3.6% / 9.5% (1.13's code there: 6.1% / 17.2%).
+- Not changed: the decoder (the remaining misreads are 1-2 edits from common words already in the list; tuning on 87 lines would over-fit), split words (none in the sample).
+- Her two lecture PDFs (exports from the app, Lecture 1 and 2 of an epidemiology course) were also sent; they hold her typed notes, not ink, so they are not training data. The owner asked her to send writing samples instead.
+
 ## Session 15, part 3 (2026-11-19): highlight ends (not released yet)
 
 The owner: highlights are rectangles; wanted ends "like half circles, not angles", "and some more options if you want".
