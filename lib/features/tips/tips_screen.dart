@@ -27,6 +27,10 @@ const List<Tip> appTips = [
   Tip(Icons.palette_outlined, 'Any colour you like',
       'The rainbow circle after the colours of the pen, the highlighter and '
           'the typed text opens more colours: tap one, or mix your own.'),
+  Tip(Icons.border_color_outlined, 'Round or slanted highlights',
+      'With the highlighter chosen, the first button in the row sets the ends '
+          'of your highlights: square, round (half circles) or slanted like a '
+          'marker tip.'),
   Tip(Icons.gesture, 'Scribble to delete',
       'Scribble back and forth over handwriting or typed text with the pen to '
           'delete it. Undo brings it back. The eraser removes typed words too.'),

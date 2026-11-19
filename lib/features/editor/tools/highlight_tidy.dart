@@ -19,6 +19,7 @@ class HighlightTidyConfig {
     this.inkBandBelow = 0.35,
     this.inkWordGap = 0.5,
     this.inkSearchRows = 3,
+    this.roundInset = 0.25,
   });
 
   /// A highlight is a swipe: its fitted line is at most this many degrees
@@ -62,6 +63,11 @@ class HighlightTidyConfig {
   /// Only handwriting within this many band heights above and below the
   /// swipe is grouped into lines (the rest of the page cannot be under it).
   final double inkSearchRows;
+
+  /// Round ends ([HighlightEnds.round]) reach half a band height past a
+  /// band's ends: over text the band is shortened by this many heights at
+  /// each end, so the pill covers the words without running far past them.
+  final double roundInset;
 }
 
 /// A line of text a highlight may be laid over, in page points: handwriting,
@@ -214,6 +220,11 @@ Stroke? tidyHighlight(
     final pad = config.pad * size;
     from = covered.first.left - pad;
     to = covered.last.right + pad;
+    if (stroke.highlightEnds == HighlightEnds.round) {
+      final inset = math.min(config.roundInset * size, 0.45 * (to - from));
+      from += inset;
+      to -= inset;
+    }
     yAt = line.centerAt;
   } else {
     // No text under it: only straighten.

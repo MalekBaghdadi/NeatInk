@@ -16,6 +16,15 @@ import '../ink/stroke.dart';
 /// Fill opacity of highlighter strokes.
 const double highlighterOpacity = 0.35;
 
+/// Slanted highlight ends ([HighlightEnds.slanted]): the cut runs at this
+/// angle from the page's horizontal, rising to the right ("/"), like a
+/// chisel marker held the usual way.
+const double slantedEndAngleDeg = 60;
+
+/// ... and reaches at most this many band widths past the square end (a
+/// stroke drawn almost along the cut would otherwise get a long spike).
+const double slantedEndMaxReach = 1;
+
 /// Fill opacity of pencil strokes (gives them a lighter, graphite look).
 const double pencilOpacity = 0.85;
 
@@ -35,8 +44,10 @@ StrokeOptions strokeOptionsFor(Stroke s, {bool isComplete = true}) {
       smoothing: 0.5,
       streamline: 0.4,
       simulatePressure: false,
-      start: StrokeEndOptions.start(cap: false),
-      end: StrokeEndOptions.end(cap: false),
+      // Round ends are perfect_freehand's caps; square and slanted start
+      // from its flat ones (slanted are reshaped in [strokeOutline]).
+      start: StrokeEndOptions.start(cap: s.highlightEnds == HighlightEnds.round),
+      end: StrokeEndOptions.end(cap: s.highlightEnds == HighlightEnds.round),
       isComplete: isComplete,
     );
   }
@@ -97,7 +108,67 @@ List<Offset> strokeOutline(Stroke s, {bool isComplete = true}) {
       if (p.isFinite) PointVector(p.x, p.y, p.pressure),
   ];
   if (input.isEmpty) return const [];
-  return getStroke(input, options: strokeOptionsFor(s, isComplete: isComplete));
+  final options = strokeOptionsFor(s, isComplete: isComplete);
+  if (s.tool == StrokeTool.highlighter && s.highlightEnds == HighlightEnds.slanted) {
+    return _slantedOutline(input, options);
+  }
+  return getStroke(input, options: options);
+}
+
+/// A highlighter outline with slanted ends: perfect_freehand's flat ends,
+/// each with one corner pushed outward along the stroke so the end runs at
+/// [slantedEndAngleDeg] ("/" at both ends whichever way it was drawn).
+/// Only ever adds a small triangle past each square end, so it never cuts
+/// into the band or the words under it.
+List<Offset> _slantedOutline(List<PointVector> input, StrokeOptions options) {
+  final pts = getStrokePoints(input, options: options);
+  final outline = getStrokeOutlinePoints(pts, options: options);
+  // A dot has no ends; a flat end is four points (see perfect_freehand's
+  // getStrokeOutlinePoints): the end's after the left side, the start's last.
+  if (pts.length < 2 || outline.length < 10) return outline;
+  final last = pts.last.point;
+  final across = (-pts.last.vector).perpendicular();
+  final r = options.size / 2; // no thinning: the radius is constant
+  final e0 = last + across * r, e3 = last - across * r;
+  int? end;
+  for (var i = 0; i + 3 < outline.length - 4; i++) {
+    if ((outline[i] - e0).distanceSquared < 1e-12 && (outline[i + 3] - e3).distanceSquared < 1e-12) {
+      end = i;
+      break;
+    }
+  }
+  if (end == null) return outline; // not the shape expected: keep it square
+  final n = outline.length;
+  final previous = pts[pts.length - 2].point;
+  final endCap = _slantedEnd(outline[end], outline[end + 3], Offset(last.dx - previous.dx, last.dy - previous.dy));
+  final first = pts.first.point, second = pts[1].point;
+  final startCap = _slantedEnd(outline[n - 4], outline[n - 1], Offset(first.dx - second.dx, first.dy - second.dy));
+  return [
+    ...outline.sublist(0, end),
+    ...endCap,
+    ...outline.sublist(end + 4, n - 4),
+    ...startCap,
+  ];
+}
+
+/// The flat end from corner [a] to corner [b], slanted: one corner moves
+/// outward ([out] points away from the stroke) until the end lies along the
+/// cut direction. Returns the two corners in the same order.
+List<Offset> _slantedEnd(Offset a, Offset b, Offset out) {
+  final width = (a - b).distance;
+  if (width <= 0) return [a, b];
+  // Outward unit vector: across the end, on the side [out] points to.
+  var u = Offset(-(a.dy - b.dy) / width, (a.dx - b.dx) / width);
+  if (u.dx * out.dx + u.dy * out.dy < 0) u = -u;
+  final angle = slantedEndAngleDeg * math.pi / 180;
+  final cut = Offset(math.cos(angle), -math.sin(angle)); // page y points down
+  double cross(Offset p, Offset q) => p.dx * q.dy - p.dy * q.dx;
+  // Moving a by u*k puts the end (a + u*k) - b along the cut when
+  // cross(a - b + u*k, cut) = 0; a negative k means b moves instead.
+  final k = -cross(a - b, cut) / cross(u, cut);
+  final reach = slantedEndMaxReach * width;
+  final step = k.isNaN ? 0.0 : k.clamp(-reach, reach).toDouble();
+  return step >= 0 ? [a + u * step, b] : [a, b + u * -step];
 }
 
 final Expando<Path> _pathCache = Expando('strokePath');

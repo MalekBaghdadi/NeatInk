@@ -19,6 +19,18 @@ enum PenStyle {
   pencil,
 }
 
+/// The ends of a highlighter stroke (v1.14.0). Pens ignore this.
+enum HighlightEnds {
+  /// Cut straight across (the look before v1.14.0, and the default).
+  square,
+
+  /// Half circles.
+  round,
+
+  /// Cut on a slant, like the tip of a chisel marker.
+  slanted,
+}
+
 /// Set when a stroke was snapped to a geometric shape. `points` then holds
 /// the generated shape and `raw` the hand-drawn original.
 enum ShapeKind { line, arrow, rectangle, ellipse, triangle }
@@ -42,6 +54,7 @@ class Stroke {
     required String id,
     required StrokeTool tool,
     PenStyle penStyle = PenStyle.ballpoint,
+    HighlightEnds highlightEnds = HighlightEnds.square,
     required int color,
     required double size,
     required List<InkPoint> raw,
@@ -57,10 +70,10 @@ class Stroke {
     } else {
       p = points is _FrozenPoints ? points : _FrozenPoints(points);
     }
-    return Stroke._(id, tool, penStyle, color, size, r, p, shape, rawSize, writtenAt);
+    return Stroke._(id, tool, penStyle, highlightEnds, color, size, r, p, shape, rawSize, writtenAt);
   }
 
-  Stroke._(this.id, this.tool, this.penStyle, this.color, this.size, this.raw,
+  Stroke._(this.id, this.tool, this.penStyle, this.highlightEnds, this.color, this.size, this.raw,
       this.points, this.shape, this.rawSize, this.writtenAt);
 
   factory Stroke.fromJson(Map<String, dynamic> j) {
@@ -72,6 +85,7 @@ class Stroke {
       tool: _enumByName(StrokeTool.values, j['tool'], StrokeTool.pen),
       penStyle:
           _enumByName(PenStyle.values, j['penStyle'], PenStyle.ballpoint),
+      highlightEnds: _enumByName(HighlightEnds.values, j['ends'], HighlightEnds.square),
       color: colorFromHex(j['color'] as String? ?? '#FF1E1E1E'),
       size: (j['size'] as num?)?.toDouble() ?? 2.2,
       raw: raw,
@@ -87,6 +101,9 @@ class Stroke {
   final String id;
   final StrokeTool tool;
   final PenStyle penStyle;
+
+  /// How a highlighter stroke's ends look ([HighlightEnds.square] for pens).
+  final HighlightEnds highlightEnds;
 
   /// ARGB, e.g. `0xFF1E1E1E`.
   final int color;
@@ -124,6 +141,7 @@ class Stroke {
     String? id,
     StrokeTool? tool,
     PenStyle? penStyle,
+    HighlightEnds? highlightEnds,
     int? color,
     double? size,
     List<InkPoint>? raw,
@@ -138,6 +156,7 @@ class Stroke {
         id: id ?? this.id,
         tool: tool ?? this.tool,
         penStyle: penStyle ?? this.penStyle,
+        highlightEnds: highlightEnds ?? this.highlightEnds,
         color: color ?? this.color,
         size: size ?? this.size,
         raw: raw ?? this.raw,
@@ -156,6 +175,7 @@ class Stroke {
       id: id,
       tool: tool,
       penStyle: penStyle,
+      highlightEnds: highlightEnds,
       color: color,
       size: scaleWidth ? size * m.meanScale : size,
       raw: newRaw,
@@ -171,6 +191,8 @@ class Stroke {
         'id': id,
         'tool': tool.name,
         if (tool == StrokeTool.pen) 'penStyle': penStyle.name,
+        if (tool == StrokeTool.highlighter && highlightEnds != HighlightEnds.square)
+          'ends': highlightEnds.name,
         'color': colorToHex(color),
         'size': size,
         'raw': [for (final p in raw) p.toJson()],

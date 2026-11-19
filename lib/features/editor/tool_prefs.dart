@@ -78,22 +78,26 @@ class PenPrefs {
 
 /// Last-used highlighter settings.
 class HighlighterPrefs {
-  const HighlighterPrefs({this.color = 0xFFFFE600, this.size = 14});
+  const HighlighterPrefs({this.color = 0xFFFFE600, this.size = 14, this.ends = HighlightEnds.square});
 
   factory HighlighterPrefs.fromJson(Map<String, dynamic>? j) => j == null
       ? const HighlighterPrefs()
       : HighlighterPrefs(
           color: (j['color'] as num?)?.toInt() ?? 0xFFFFE600,
           size: _positive(j['size'], 14),
+          ends: enumByName(HighlightEnds.values, j['ends'], HighlightEnds.square),
         );
 
   final int color;
   final double size;
 
-  HighlighterPrefs copyWith({int? color, double? size}) =>
-      HighlighterPrefs(color: color ?? this.color, size: size ?? this.size);
+  /// The ends of new highlights (v1.14.0).
+  final HighlightEnds ends;
 
-  Map<String, dynamic> toJson() => {'color': color, 'size': size};
+  HighlighterPrefs copyWith({int? color, double? size, HighlightEnds? ends}) =>
+      HighlighterPrefs(color: color ?? this.color, size: size ?? this.size, ends: ends ?? this.ends);
+
+  Map<String, dynamic> toJson() => {'color': color, 'size': size, 'ends': ends.name};
 }
 
 /// Last-used eraser settings.

@@ -440,6 +440,73 @@ class _PenStylePreviewPainter extends CustomPainter {
       oldDelegate.style != style || oldDelegate.color != color;
 }
 
+/// A short highlight band with [ends], drawn by the real stroke renderer, so
+/// the ends menu shows exactly what the highlighter will draw.
+class HighlightEndsPreview extends StatelessWidget {
+  const HighlightEndsPreview({
+    super.key,
+    required this.ends,
+    required this.color,
+    this.width = 56,
+    this.height = 24,
+  });
+
+  final HighlightEnds ends;
+  final int color;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: width,
+        height: height,
+        child: CustomPaint(painter: _HighlightEndsPreviewPainter(ends, color)),
+      );
+}
+
+class _HighlightEndsPreviewPainter extends CustomPainter {
+  _HighlightEndsPreviewPainter(this.ends, this.color);
+
+  final HighlightEnds ends;
+  final int color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final band = size.height * 0.62;
+    // Room for the round or slanted ends inside the box.
+    final inset = band * 0.75;
+    final y = size.height / 2;
+    const samples = 12;
+    final stroke = Stroke(
+      id: 'preview',
+      tool: StrokeTool.highlighter,
+      highlightEnds: ends,
+      color: color,
+      size: band,
+      raw: [
+        for (var i = 0; i <= samples; i++)
+          InkPoint(inset + (size.width - 2 * inset) * i / samples, y, 0.5, i * 8),
+      ],
+    );
+    // Opaque enough to read on the toolbar.
+    canvas.drawPath(
+      outlinePath(strokeOutline(stroke)),
+      Paint()..color = Color(color).withValues(alpha: 0.75),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HighlightEndsPreviewPainter oldDelegate) =>
+      oldDelegate.ends != ends || oldDelegate.color != color;
+}
+
+/// The name of [ends] in the highlighter's menu.
+String highlightEndsName(HighlightEnds ends) => switch (ends) {
+      HighlightEnds.square => 'Square ends',
+      HighlightEnds.round => 'Round ends',
+      HighlightEnds.slanted => 'Slanted ends',
+    };
+
 /// Whether [argb] is one of [presets].
 bool isPresetColor(int argb, List<int> presets) => presets.contains(argb);
 

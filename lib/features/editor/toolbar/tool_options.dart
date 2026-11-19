@@ -107,8 +107,8 @@ Future<void> pickCustomHighlighterColor(
       custom: !ToolPresets.highlighterColors.contains(picked));
 }
 
-/// The six highlighter colours, any colour from the picker, and three
-/// widths.
+/// The ends of the highlight (square, round, slanted), the six highlighter
+/// colours, any colour from the picker, and three widths.
 class HighlighterOptions extends StatelessWidget {
   const HighlighterOptions({super.key, required this.controller});
 
@@ -121,6 +121,13 @@ class HighlighterOptions extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        HighlightEndsMenu(
+          key: const ValueKey('highlighter-ends'),
+          ends: hl.ends,
+          color: hl.color,
+          onSelected: controller.setHighlighterEnds,
+        ),
+        const ToolbarDivider(),
         for (final (i, c) in ToolPresets.highlighterColors.indexed)
           ColorSwatchButton(
             key: ValueKey('highlighter-colour-$i'),
@@ -189,6 +196,60 @@ class EraserOptions extends StatelessWidget {
                 controller.setEraserSize(ToolPresets.eraserSizes[i]),
           ),
       ],
+    );
+  }
+}
+
+/// A button showing the highlighter's current ends; opens a menu of the
+/// three, each with a sample band (v1.14.0).
+class HighlightEndsMenu extends StatelessWidget {
+  const HighlightEndsMenu({
+    super.key,
+    required this.ends,
+    required this.color,
+    required this.onSelected,
+  });
+
+  final HighlightEnds ends;
+  final int color;
+  final ValueChanged<HighlightEnds> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return PopupMenuButton<HighlightEnds>(
+      tooltip: 'Highlight ends: ${highlightEndsName(ends)}',
+      initialValue: ends,
+      onSelected: onSelected,
+      itemBuilder: (context) => [
+        for (final e in HighlightEnds.values)
+          PopupMenuItem(
+            key: ValueKey('highlighter-ends-${e.name}'),
+            value: e,
+            child: Row(
+              children: [
+                HighlightEndsPreview(ends: e, color: color),
+                const SizedBox(width: 12),
+                Text(highlightEndsName(e)),
+                if (e == ends) ...[
+                  const SizedBox(width: 12),
+                  Icon(Icons.check, size: 18, color: scheme.primary),
+                ],
+              ],
+            ),
+          ),
+      ],
+      child: SizedBox(
+        height: toolbarTargetSize,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 6),
+            HighlightEndsPreview(ends: ends, color: color, width: 44),
+            Icon(Icons.arrow_drop_down, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
     );
   }
 }

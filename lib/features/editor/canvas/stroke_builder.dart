@@ -81,6 +81,7 @@ class StrokeBuilder {
     required String id,
     required StrokeTool tool,
     PenStyle penStyle = PenStyle.ballpoint,
+    HighlightEnds highlightEnds = HighlightEnds.square,
     required int color,
     required double size,
   }) =>
@@ -88,6 +89,7 @@ class StrokeBuilder {
         id: id,
         tool: tool,
         penStyle: penStyle,
+        highlightEnds: highlightEnds,
         color: color,
         size: size,
         raw: _points,

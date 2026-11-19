@@ -49,6 +49,7 @@ class InkToolHandler extends CanvasToolHandler {
       page: page,
       tool: isHighlighter ? StrokeTool.highlighter : StrokeTool.pen,
       penStyle: isHighlighter ? PenStyle.ballpoint : prefs.pen.style,
+      highlightEnds: isHighlighter ? prefs.highlighter.ends : HighlightEnds.square,
       color: isHighlighter ? prefs.highlighter.color : prefs.pen.color,
       size: isHighlighter ? prefs.highlighter.size : prefs.pen.size,
       builder: builder,
@@ -169,6 +170,7 @@ class InkToolHandler extends CanvasToolHandler {
       id: _uuid.v4(),
       tool: active.tool,
       penStyle: active.penStyle,
+      highlightEnds: active.highlightEnds,
       color: active.color,
       size: active.size,
     );

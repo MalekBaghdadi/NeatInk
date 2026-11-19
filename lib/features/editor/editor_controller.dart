@@ -7,7 +7,7 @@ import '../../document/commands.dart';
 import '../../document/notebook_doc.dart';
 import '../../document/notebook_meta.dart';
 import '../../document/page_content.dart';
-import '../../ink/stroke.dart' show PenStyle;
+import '../../ink/stroke.dart' show HighlightEnds, PenStyle;
 import '../../storage/autosave.dart';
 import '../../storage/notebook_repository.dart';
 import '../../storage/storage_errors.dart';
@@ -528,6 +528,9 @@ class EditorController extends ChangeNotifier {
 
   void setHighlighterSize(double size) => updateToolPrefs(
       (p) => p.copyWith(highlighter: p.highlighter.copyWith(size: size)));
+
+  void setHighlighterEnds(HighlightEnds ends) => updateToolPrefs(
+      (p) => p.copyWith(highlighter: p.highlighter.copyWith(ends: ends)));
 
   void setEraserMode(EraserMode mode) => updateToolPrefs(
       (p) => p.copyWith(eraser: p.eraser.copyWith(mode: mode)));

@@ -25,6 +25,15 @@ The detailed notes of each working session, moved out of `CLAUDE.md` on 2026-10-
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
+## Session 15, part 3 (2026-11-19): highlight ends (not released yet)
+
+The owner: highlights are rectangles; wanted ends "like half circles, not angles", "and some more options if you want".
+- `HighlightEnds { square, round, slanted }` on `Stroke` (`highlightEnds`, JSON `"ends"`, written only for highlighters that are not square, so old files and square highlights are unchanged); `HighlighterPrefs.ends` remembers the last choice; `EditorController.setHighlighterEnds`. Carried by `StrokeBuilder.build`, `ActiveStroke`, `copyWith`, `transformed` and the pixel eraser's pieces.
+- Drawing (`render/stroke_outline.dart`, so screen, live ink, thumbnails and PDF export match): round = perfect_freehand's round caps; slanted = its flat caps with one corner pushed outward until the end runs at `slantedEndAngleDeg` 60° ("/" at both ends whichever way it was drawn; at most `slantedEndMaxReach` one band width past the square end). `_slantedOutline` finds the flat end cap in perfect_freehand's outline (four points around the last point after the left side; the start cap is the last four) and keeps the square outline if it is not there. It only adds a triangle past each end, never cuts into the band.
+- Tidy highlighter: over text, round bands are shortened by `HighlightTidyConfig.roundInset` 0.25 band heights at each end so the pill reaches only a quarter height past the square band.
+- UI: the first button of the highlighter's tool row (`highlighter-ends`) opens a menu with a sample of each (drawn by the real renderer). A tip "Round or slanted highlights".
+- Test: `test/render/highlight_ends_test.dart` (10: measured shapes, both drawing directions, a steep stroke, dots, JSON, prefs, the round inset, the menu). Checked by rendering the three styles over Lato text and the menu to PNG (temporary tests, deleted).
+
 ## Session 15, part 2 (2026-11-19): "Get the newest version" (not released yet)
 
 The owner: a button in the app that takes Mariam straight to the download link of a new version (she installs the version that has it by hand, once).

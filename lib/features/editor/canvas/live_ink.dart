@@ -18,6 +18,7 @@ class ActiveStroke {
     required this.page,
     required this.tool,
     required this.penStyle,
+    this.highlightEnds = HighlightEnds.square,
     required this.color,
     required this.size,
     required this.builder,
@@ -31,6 +32,7 @@ class ActiveStroke {
   final PageMeta page;
   final StrokeTool tool;
   final PenStyle penStyle;
+  final HighlightEnds highlightEnds;
 
   /// ARGB.
   final int color;
@@ -61,6 +63,7 @@ class ActiveStroke {
         id: 'live',
         tool: tool,
         penStyle: penStyle,
+        highlightEnds: highlightEnds,
         color: color,
         size: size,
       );
