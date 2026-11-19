@@ -13,6 +13,7 @@ import 'widgets/backup_settings.dart';
 import 'widgets/paper_defaults_editor.dart';
 import 'widgets/security_settings.dart';
 import 'widgets/diagnostics_tile.dart';
+import 'widgets/update_tile.dart';
 import 'widgets/kept_corrections_settings.dart';
 import 'widgets/settings_section.dart';
 
@@ -280,6 +281,7 @@ class _AboutSection extends ConsumerWidget {
           title: const Text(AppInfo.name),
           subtitle: const Text('Version ${AppInfo.displayVersion}'),
         ),
+        const UpdateTile(),
         ListTile(
           key: const ValueKey('settings-tips'),
           leading: const Icon(Icons.lightbulb_outline_rounded),

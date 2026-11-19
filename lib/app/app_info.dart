@@ -12,6 +12,12 @@ abstract final class AppInfo {
 
   static const String tagline = 'Handwritten notes, typed up beautifully.';
 
+  /// The newest release's APK (arm64, the MatePad's). Settings › About ›
+  /// Get the newest version opens it in the browser; the app itself never
+  /// goes online.
+  static const String downloadUrl =
+      'https://github.com/MalekBaghdadi/NeatInk/releases/latest/download/MariamsNotes.apk';
+
   static const String offlineStatement =
       '100% offline: no internet permission, no accounts, no tracking';
 

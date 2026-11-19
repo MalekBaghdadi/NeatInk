@@ -25,6 +25,13 @@ The detailed notes of each working session, moved out of `CLAUDE.md` on 2026-10-
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
+## Session 15, part 2 (2026-11-19): "Get the newest version" (not released yet)
+
+The owner: a button in the app that takes Mariam straight to the download link of a new version (she installs the version that has it by hand, once).
+- Settings › About › **Get the newest version** (`widgets/update_tile.dart`, `settings-update`): a dialog says what happens (the browser downloads ~45 MB, tap the file, Install or Update, notebooks stay, compare the version number after) and **Download** (`update-download`) opens `AppInfo.downloadUrl` (`releases/latest/download/MariamsNotes.apk`, arm64) with `url_launcher` (`LaunchMode.externalApplication`, behind `linkOpenerProvider` for tests). No browser answering: the link goes to the clipboard and a snackbar says so.
+- Still offline: the app has no INTERNET permission and does not check for updates; the browser downloads. `url_launcher` became a direct dependency (BSD-3, 6.3.3, already in the APK through pdfrx and share_plus); its `launchUrl` calls `startActivity` directly, so no `<queries>` entry is needed.
+- Test: `test/settings/update_tile_test.dart` (4).
+
 ## Session 15 (2026-11-19, cloud session): v1.13.1, the keyboard closing at once
 
 The owner: when Mariam taps a text box to type, the keyboard goes up and immediately down again, every time.

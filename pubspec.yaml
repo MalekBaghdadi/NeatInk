@@ -29,6 +29,9 @@ dependencies:
   crypto: ^3.0.7
   # Share exported PDFs (BSD-3).
   share_plus: ^13.3.1
+  # Open the newest release's download link in the browser (BSD-3; already
+  # in the app through pdfrx and share_plus, so no new code ships).
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
