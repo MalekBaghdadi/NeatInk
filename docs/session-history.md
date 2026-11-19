@@ -32,7 +32,7 @@ The owner: when Mariam taps a text box to type, the keyboard goes up and immedia
 - Fix: the `Positioned` carries the page-id key too.
 - Also: on a resize the viewport kept its centre, so a box low on the screen ended up under the keyboard (and its page could even drop out of range, closing the keyboard again). `ViewportController.keepInViewOnResize` (set by the text integration to `TextBoxEditor.docRect`) is scrolled into view inside `applyViewportSize`, before the visible range is worked out for the new size. `ensureVisible` and the new path share `_shiftToShow`; the writing bar's `_reveal` uses `docRect`.
 - Test: `text_keyboard_test.dart` (2): the keyboard (`tester.view.viewInsets`) keeps the same `EditableTextState`, focus and `testTextInput.isVisible`; a box near the bottom ends up inside the shorter view. Both fail without the fix (the first one with the keyboard hidden, exactly the reported symptom).
-- Released as 1.13.1 (build 16). Checklist `docs/tablet-test-1.13.1.md` (5 steps). NOT verified on the tablet (Huawei's keyboard may resize the window in its own way).
+- Verified here: analyze clean, full suite 1573 pass / 2 skipped. Released as 1.13.1 (build 16). Checklist `docs/tablet-test-1.13.1.md` (5 steps). NOT verified on the tablet (Huawei's keyboard may resize the window in its own way).
 
 ## Session 14, part 3 (2026-10-30): any colour; v1.13.0
 
