@@ -61,6 +61,9 @@ void _install(EditorController controller, WidgetRef ref) {
       ..returnTool = from == EditorTool.text ? null : from;
   };
   ext.bottomBars.add((context, c) => TextWriteBar(editor: textEditor, controller: c));
+  // The keyboard (or the writing bar) coming up makes the pages area
+  // shorter: the box being typed in stays in view.
+  controller.viewport.keepInViewOnResize = textEditor.docRect;
   ext.toolHandlers[EditorTool.image] = ImageToolHandler(controller, imageEditor);
   ext.toolOptions[EditorTool.text] =
       (context, c) => TextFormatBar(editor: textEditor, controller: c);
@@ -71,6 +74,7 @@ void _install(EditorController controller, WidgetRef ref) {
     ..add(textPageOverlay(textEditor));
 
   controller.addDisposeCallback(() {
+    controller.viewport.keepInViewOnResize = null;
     textEditor.dispose();
     imageEditor.dispose();
     imageLayer.dispose();

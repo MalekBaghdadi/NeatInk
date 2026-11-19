@@ -266,14 +266,9 @@ class _TextWriteBarState extends State<TextWriteBar> {
 
   /// Scrolls the page so the box being edited is in view above the bar.
   void _reveal(TextEditSession s) {
-    final c = widget.controller;
-    if (!mounted || !identical(_editor.session, s) || !c.isReady) return;
-    final index = c.doc.meta.pages.indexWhere((p) => p.id == s.pageId);
-    final viewport = c.viewport;
-    if (index < 0 || !viewport.hasSize || index >= viewport.layout.rects.length) return;
-    final page = viewport.layout.rects[index];
-    final d = s.draft;
-    viewport.ensureVisible(Rect.fromLTWH(page.left + d.x, page.top + d.y, d.width, d.height));
+    if (!mounted || !identical(_editor.session, s)) return;
+    final rect = _editor.docRect();
+    if (rect != null) widget.controller.viewport.ensureVisible(rect);
   }
 
   @override

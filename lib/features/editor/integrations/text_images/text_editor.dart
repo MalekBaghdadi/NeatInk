@@ -86,6 +86,19 @@ class TextBoxEditor extends ChangeNotifier {
     return s != null && s.pageId == pageId ? s.draft.id : null;
   }
 
+  /// Where the box being edited is, in the viewport's document space; null
+  /// when no box is edited.
+  Rect? docRect() {
+    final s = _session;
+    if (s == null || !controller.isReady) return null;
+    final rects = controller.viewport.layout.rects;
+    final index = controller.doc.meta.pages.indexWhere((p) => p.id == s.pageId);
+    if (index < 0 || index >= rects.length) return null;
+    final page = rects[index];
+    final d = s.draft;
+    return Rect.fromLTWH(page.left + d.x, page.top + d.y, d.width, d.height);
+  }
+
   /// Height of [item]'s text laid out like on the page; one line at least.
   static double measureHeight(TextItem item) {
     final painter = layoutTextItem(

@@ -25,6 +25,15 @@ The detailed notes of each working session, moved out of `CLAUDE.md` on 2026-10-
 - Build: release arm64 APK is ~45 MB (native libs compressed via `useLegacyPackaging`; ORT adds ~34 MB per ABI uncompressed). Manifest strips INTERNET and ACCESS_NETWORK_STATE. ORT 1.31.1 (fallback 1.24.3 if it misbehaves on the Huawei device).
 - NOT verified on a device: ORT session, real handwriting accuracy, UiWordImageRenderer crops, font metrics on screen, PDF font embedding. Mirror suite: 782 tests green (`--timeout 30s`).
 - Removed from the code: Stroke.wordId/tidy, tidy settings, tidy integration, most of lib/beautify (kept features/stats/resample/config for grouping).
+## Session 15 (2026-11-19, cloud session): v1.13.1, the keyboard closing at once
+
+The owner: when Mariam taps a text box to type, the keyboard goes up and immediately down again, every time.
+- Cause: `DocumentView._buildPages` builds a `Stack` of `Positioned.fromRect` (no key), each holding an `EditorPageView` keyed by page id. The Stack matched its children by position, so whenever the first page in range changed, every page was matched to the wrong slot and built from scratch (the key below the `Positioned` does not help). The keyboard makes the pages area shorter, so fewer pages are in range (cache extent 0.5 of the height): the page with the box was built again, its `EditableText` disposed, the input connection closed, the keyboard went down. The next tap opened it, the area grew back, pages shifted again: up and down each time. Scrolling past a page boundary while typing did the same, and it also rebuilt all pages on every such scroll (slow on big notebooks).
+- Fix: the `Positioned` carries the page-id key too.
+- Also: on a resize the viewport kept its centre, so a box low on the screen ended up under the keyboard (and its page could even drop out of range, closing the keyboard again). `ViewportController.keepInViewOnResize` (set by the text integration to `TextBoxEditor.docRect`) is scrolled into view inside `applyViewportSize`, before the visible range is worked out for the new size. `ensureVisible` and the new path share `_shiftToShow`; the writing bar's `_reveal` uses `docRect`.
+- Test: `text_keyboard_test.dart` (2): the keyboard (`tester.view.viewInsets`) keeps the same `EditableTextState`, focus and `testTextInput.isVisible`; a box near the bottom ends up inside the shorter view. Both fail without the fix (the first one with the keyboard hidden, exactly the reported symptom).
+- Released as 1.13.1 (build 16). Checklist `docs/tablet-test-1.13.1.md` (5 steps). NOT verified on the tablet (Huawei's keyboard may resize the window in its own way).
+
 ## Session 14, part 3 (2026-10-30): any colour; v1.13.0
 
 The owner: "for the highlighter and pen colors and so on, add a color picker so she can choose any color", then build, push, and give Mariam the new steps with the earlier ones.

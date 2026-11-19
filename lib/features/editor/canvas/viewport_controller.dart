@@ -155,7 +155,8 @@ class ViewportController extends ChangeNotifier {
   ///
   /// On a resize (e.g. rotation) the document point under the viewport
   /// centre stays under the centre, and the zoom (relative to fit-width)
-  /// is kept.
+  /// is kept; then [keepInViewOnResize]'s rect, if any, is scrolled into
+  /// view.
   bool applyViewportSize(Size size) {
     if (size == _viewportSize || size.isEmpty) return false;
     if (!hasSize) {
@@ -167,8 +168,17 @@ class ViewportController extends ChangeNotifier {
     final anchor = localToDoc(_viewportSize.center(Offset.zero));
     _viewportSize = size;
     _offset = _clamp(size.center(Offset.zero) - anchor * scale);
+    final keep = keepInViewOnResize?.call();
+    // Done here, before the visible pages are worked out for this size, so
+    // the page holding it is never dropped, not even for one frame.
+    if (keep != null) _offset = _clamp(_offset + _shiftToShow(keep));
     return true;
   }
+
+  /// The document rect to keep in view when the viewport changes size: the
+  /// text box being typed in, so the keyboard coming up (which makes the
+  /// viewport shorter) does not hide it (v1.13.1). Null keeps nothing.
+  Rect? Function()? keepInViewOnResize;
 
   /// Notifies listeners and refreshes [visibleRange] / [currentPage] after a
   /// silent update such as [applyViewportSize].
@@ -244,6 +254,12 @@ class ViewportController extends ChangeNotifier {
   /// visible, e.g. to reveal a search hit or a selection.
   void ensureVisible(Rect docRect) {
     if (!hasSize) return;
+    panBy(_shiftToShow(docRect));
+  }
+
+  /// The smallest move of [offset] that brings [docRect] (document space)
+  /// into the viewport, with a margin.
+  Offset _shiftToShow(Rect docRect) {
     final s = scale;
     final local = Rect.fromLTRB(docRect.left * s + _offset.dx,
         docRect.top * s + _offset.dy, docRect.right * s + _offset.dx,
@@ -259,7 +275,7 @@ class ViewportController extends ChangeNotifier {
     } else if (local.right > _viewportSize.width) {
       dx = _viewportSize.width - local.right - sideMargin;
     }
-    panBy(Offset(dx, dy));
+    return Offset(dx, dy);
   }
 
   /// The current zoom and translation (see [restore]).

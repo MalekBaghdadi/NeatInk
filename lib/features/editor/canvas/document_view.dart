@@ -171,7 +171,13 @@ class _DocumentViewState extends State<DocumentView>
         children: [
           if (range != null)
             for (var i = range.first; i <= range.last && i < pages.length; i++)
+              // Keyed here, on the Stack's own children: keyed only below,
+              // the pages were matched by position, so a change of the
+              // first page in range (scrolling, the keyboard opening) built
+              // every page again, and a text box being typed in lost its
+              // field and closed the keyboard (v1.13.1).
               Positioned.fromRect(
+                key: ValueKey(pages[i].id),
                 rect: layout.rects[i],
                 child: EditorPageView(
                   key: ValueKey(pages[i].id),
