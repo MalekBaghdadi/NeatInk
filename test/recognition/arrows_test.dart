@@ -273,4 +273,91 @@ void main() {
     });
     expect(found, isEmpty);
   });
+
+  // v1.14.0: in Mariam's 1,000 lines, 68 of the 79 arrows found were
+  // letters (an e's long tail, a t-bar with the letters before it, "ea"
+  // written in one stroke); her real arrows were long lines with a head
+  // drawn last, some starting with a hook or a curve.
+  group('her letters are no arrows, her arrows still are', () {
+    Vec2 v(double x, double y) => Vec2(x, y);
+    List<Vec2> arc(double cx, double cy, double r, double from, double to) => [
+          for (var k = 0; k <= 24; k++)
+            Vec2(cx + r * math.cos(from + (to - from) * k / 24), cy + r * math.sin(from + (to - from) * k / 24)),
+        ];
+    bool anyArrow(List<List<Vec2>> ink) => groupStrokes(toStrokes([...textAt('hen', 0), ...ink, ...textAt('ne', 110)]))
+        .any((line) => findArrows(line).isNotEmpty);
+
+    for (final tail in [18.0, 25.0, 32.0]) {
+      test('an e with a long tail ($tail)', () {
+        // The e's bar, its loop round to the bottom, then the tail along the
+        // baseline: the loop, drawn first, is not a head.
+        final e = densify([v(41, -5), v(49, -5), ...arc(45, -5, 4, 0, -math.pi * 1.5), v(45 + tail, 0)]);
+        expect(anyArrow([e]), isFalse);
+        expect(anyArrow([...textAt('n', 30), e]), isFalse, reason: 'with the letter before it');
+      });
+
+      test('a t-bar ($tail) with the i before it and its stem near the start', () {
+        expect(
+          anyArrow([
+            densify([v(38, -10), v(38, 0)]),
+            densify([v(38, -14), v(38.5, -13)]),
+            densify([v(45, -17), v(45, 0)]),
+            densify([v(41, -10), v(41 + tail, -10)]),
+          ]),
+          isFalse,
+        );
+      });
+    }
+
+    // Outlines of four of her strokes (a dozen points each, scaled to this
+    // font's x-height of 10, baseline 0) that 1.13 typed as arrows.
+    final traced = <String, List<List<Vec2>>>{
+      'the e of "increase"': [
+        [v(0, -6.5), v(8.4, -8.4), v(9, -9.8), v(7.9, -10.5), v(4.9, -9.8), v(1.8, -7.4), v(1.1, -4.8), v(1.9, -3.4), v(7.4, -1.7), v(20.9, -1.5)],
+      ],
+      'the e of "Compare"': [
+        [v(0, -5.1), v(2.8, -4.7), v(4.9, -5.8), v(8.1, -8.6), v(7.6, -9.9), v(4.6, -8.7), v(3.5, -6), v(3.9, -3.3), v(6.5, -0.8), v(13.5, 0.6), v(29.6, 0.7)],
+      ],
+      'the "it" of "with"': [
+        [v(9.5, -8.7), v(10.4, -9.5), v(25.6, -8.5), v(33.9, -9.6)],
+        [v(0, -10.8), v(2.2, -0.5)],
+        [v(17, -21.8), v(17, -10.7), v(19.9, 0.3)],
+      ],
+      'the "ea" of "increase"': [
+        [v(0.1, -5.9), v(4.2, -7.4), v(5.3, -9.4), v(4.7, -10.4), v(0.4, -7.5), v(0.5, -3.7), v(7.5, -0.8), v(15.8, -0.3), v(18, -2.4),
+         v(19.9, -7.1), v(18.9, -9.6), v(16.8, -10.9), v(12.5, -9.8), v(11.7, -8.4), v(12.1, -6.8), v(16.9, -4.4), v(21, -5.5), v(21.7, -3.6), v(24.5, -1.3)],
+      ],
+    };
+    traced.forEach((name, strokes) {
+      test('her $name', () {
+        expect(anyArrow([for (final s in strokes) densify([for (final p in s) v(p.x + 40, p.y)])]), isFalse);
+      });
+    });
+
+    test('a short joining stroke written on into a letter ("ea", "to")', () {
+      for (final len in [12.0, 16.0]) {
+        final e = 40 + len;
+        expect(anyArrow([densify([v(40, -4), v(e, -4), ...arc(e + 4, -5, 4, -math.pi, -math.pi * 3), v(e + 8, 0)])]), isFalse,
+            reason: 'into a ($len)');
+      }
+    });
+
+    for (final length in [35.0, 50.0, 70.0]) {
+      test('a long arrow ($length) starting with a hook, or with a curve', () {
+        final end = 40 + length;
+        final head = [v(end, -5), v(end - 7, -10), v(end, -5), v(end - 7, 0)];
+        final hooked = densify([v(42, -8), v(39, -6), v(41, -5), v(end, -5), ...head.skip(1)]);
+        final curved = densify([
+          for (var k = 0; k <= 10; k++) v(40 + 0.4 * length * k / 10, -1 - 4 * math.sin(k / 10 * math.pi / 2)),
+          v(end, -5),
+          ...head.skip(1),
+        ]);
+        for (final (name, arrow) in [('hooked', hooked), ('curved', curved)]) {
+          final lines = groupStrokes(toStrokes([...textAt('hen', 0), arrow, ...textAt('ne', end + 10)]));
+          final found = lines.length == 1 ? findArrows(lines.single) : const <LineArrow>[];
+          expect(found.map((a) => a.text), ['→'], reason: name);
+        }
+      });
+    }
+  });
 }

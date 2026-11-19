@@ -26,6 +26,14 @@ class ArrowConfig {
     this.tipNarrow = 0.75,
     this.lineReachAbove = 2.2,
     this.lineReachBelow = 0.8,
+    this.tailSlack = 0.6,
+    this.tailFlat = 0.9,
+    this.tailShare = 0.25,
+    this.crossSlack = 1.0,
+    this.leftHeadShare = 0.45,
+    this.leftCrossSlack = 0.4,
+    this.oneStrokeMinLength = 1.8,
+    this.headShare = 0.75,
   });
 
   /// A shaft is a straight run of a stroke at least this long...
@@ -83,6 +91,43 @@ class ArrowConfig {
   /// it: arrows written in the text, not a diagram's arrow under it.
   final double lineReachAbove;
   final double lineReachBelow;
+
+  /// v1.14.0 (Mariam's 1,000 lines: 68 of 79 arrows found were letters).
+  /// The shaft's own stroke goes on at most this far (path length) past
+  /// the end without a head: a stroke that runs on into letters there is
+  /// writing (a t-bar joined to its h, "conducted" in one stroke). The
+  /// same bound is how much of a head drawn in the shaft's stroke may come
+  /// before the shaft: the pen draws the shaft, then the head; ink drawn
+  /// first and then trailing off into a long level line is a letter with a
+  /// long tail (her e: "increase", "Compare").
+  final double tailSlack;
+
+  /// ... but a stroke that only carries the line on (level, within this of
+  /// its line, and on away from the head) is a long or hooked shaft.
+  final double tailFlat;
+
+  /// A long shaft may start with a hook up to this share of its length.
+  final double tailShare;
+
+  /// A head drawn apart may cross the shaft only this far behind its end
+  /// (its tip may stop short of a shaft that runs on, see [overshoot]).
+  final double crossSlack;
+
+  /// Writing runs left to right, so the letters before a level stroke (a
+  /// t-bar, an e's tail) sit where a left-pointing head would be: a head on
+  /// the left end gets these stricter [headShare] and [crossSlack]. (None
+  /// of the 79 arrows found in Mariam's 1,000 lines that pointed left was
+  /// an arrow.)
+  final double leftHeadShare;
+  final double leftCrossSlack;
+
+  /// A head drawn on in the shaft's own stroke needs a shaft this long.
+  final double oneStrokeMinLength;
+
+  /// The head reaches back at most this share of the shaft's length (her
+  /// arrows: a long line with a small head; a letter's loop is as big as
+  /// the tail it hangs on).
+  final double headShare;
 }
 
 /// An arrow written between words (`brain → spinal cord`): its strokes (the
@@ -141,10 +186,33 @@ List<LineArrow> findArrows(RecognizedLine line, {ArrowConfig config = const Arro
           for (final o in line.inkStrokes)
             if (!identical(o, shaft.stroke) && !used.contains(o) && _near(o, shaft, end, xh, config)) o,
         ], xh, config);
-    final right = headAt(shaft.right);
-    final left = headAt(shaft.left);
+    var right = headAt(shaft.right);
+    var left = headAt(shaft.left);
+    // A head drawn on in the shaft's stroke after a short level run is a
+    // letter written on from a connecting stroke ("ea", "to").
+    if (shaft.length < config.oneStrokeMinLength * xh) {
+      if (right != null && right.isEmpty) right = null;
+      if (left != null && left.isEmpty) left = null;
+    }
+    // A head drawn in the shaft's stroke comes after the shaft, and a
+    // one-way arrow's stroke does not run on past its other end.
+    if (right != null && _drawnFirst(shaft.right, xh, config)) right = null;
+    if (left != null && _drawnFirst(shaft.left, xh, config)) left = null;
+    if (right != null && left == null && _runsOn(shaft, shaft.left, xh, config)) right = null;
+    if (left != null && right == null && _runsOn(shaft, shaft.right, xh, config)) left = null;
+    // A head drawn apart meets the shaft at its tip: a stroke crossing the
+    // shaft further back is a letter's stem (the t of "with", "it").
+    if (right != null && _crossedBehind(shaft, shaft.right, right, xh, config)) right = null;
+    if (left != null && _crossedBehind(shaft, shaft.left, left, xh, config)) left = null;
     if (right == null && left == null) continue;
     final strokes = [shaft.stroke, ...?right, ...?left];
+    // Nothing else crosses the shaft: a t-bar is crossed by its stem.
+    if (_crossed(shaft, [
+      for (final o in line.inkStrokes)
+        if (!strokes.contains(o)) o,
+    ])) {
+      continue;
+    }
     used.addAll(strokes);
     out.add(LineArrow(
         strokes, right != null && left != null ? 0 : (right != null ? 1 : -1), (shaft.left.x + shaft.right.x) / 2));
@@ -156,13 +224,19 @@ List<LineArrow> findArrows(RecognizedLine line, {ArrowConfig config = const Arro
 /// shaft there, and the stroke's ink beyond it (the part of the shaft's
 /// stroke attached at this end).
 class _End {
-  const _End(this.x, this.y, this.dx, this.dy, this.attached);
+  const _End(this.x, this.y, this.dx, this.dy, this.attached, {required this.drawnAfter, required this.trail});
 
   final double x;
   final double y;
   final double dx;
   final double dy;
   final List<InkPoint> attached;
+
+  /// Whether [attached] was drawn after the shaft (the stroke ends there).
+  final bool drawnAfter;
+
+  /// Length of the pen's path through [attached] from the end.
+  final double trail;
 
   /// How far [x], [y] lies out beyond this end along the shaft (negative:
   /// behind it), and its signed distance from the shaft's line.
@@ -216,8 +290,9 @@ _Shaft? _shaftOf(Stroke s, RecognizedLine line, double xh, ArrowConfig config) {
   if (midY < baseline - config.lineReachAbove * xh || midY > baseline + config.lineReachBelow * xh) return null;
   final ux = (q.x - p.x) / best, uy = (q.y - p.y) / best;
   // [p] is the end the stroke's earlier ink hangs on, [q] the later ink's.
-  final atP = _End(p.x, p.y, -ux, -uy, pts.sublist(0, from));
-  final atQ = _End(q.x, q.y, ux, uy, pts.sublist(to + 1));
+  final atP = _End(p.x, p.y, -ux, -uy, pts.sublist(0, from),
+      drawnAfter: false, trail: _pathLength(pts.sublist(0, from + 1)));
+  final atQ = _End(q.x, q.y, ux, uy, pts.sublist(to + 1), drawnAfter: true, trail: _pathLength(pts.sublist(to)));
   return p.x <= q.x ? _Shaft(s, atP, atQ, best) : _Shaft(s, atQ, atP, best);
 }
 
@@ -280,8 +355,84 @@ double _toSegment(InkPoint p, InkPoint a, InkPoint b) {
 }
 
 /// How far back from [end] a head may reach on [shaft].
-double _reach(_Shaft shaft, double xh, ArrowConfig config) =>
-    math.min(config.headReach * xh, config.headReachOfShaft * shaft.length);
+double _reach(_Shaft shaft, _End end, double xh, ArrowConfig config) => math.min(
+    config.headReach * xh,
+    math.min(config.headReachOfShaft, identical(end, shaft.left) ? config.leftHeadShare : config.headShare) *
+        shaft.length);
+
+/// Whether the shaft's stroke runs on past [end] (the end without a head)
+/// into something else: more than a flick, unless it only carries the line
+/// on, level and away from the shaft (a curved or hooked start of a long
+/// arrow, Mariam's "⟶").
+bool _runsOn(_Shaft shaft, _End end, double xh, ArrowConfig config) {
+  if (end.trail <= math.max(config.tailSlack * xh, config.tailShare * shaft.length)) return false;
+  // A hook or a gentle curve, not a letter's loops.
+  final trail = [
+    for (final p in end.attached)
+      if (p.x.isFinite && p.y.isFinite) p,
+  ];
+  if (trail.length > 2 && _simplify(trail, config.tailFlat * 0.5 * xh).length > 3) return true;
+  var furthest = 0.0;
+  for (final p in end.attached.reversed) {
+    if (!p.x.isFinite || !p.y.isFinite) continue;
+    final (out, side) = end.frame(p.x, p.y);
+    // Letters go up and down, or turn back over the shaft.
+    if (side.abs() > config.tailFlat * xh || out < furthest - config.tailSlack * xh) return true;
+    furthest = math.max(furthest, out);
+  }
+  return false;
+}
+
+/// Whether a stroke of [head] (drawn apart from the shaft) crosses the
+/// shaft further than [ArrowConfig.crossSlack] behind [end].
+bool _crossedBehind(_Shaft shaft, _End end, List<Stroke> head, double xh, ArrowConfig config) {
+  final back = (identical(end, shaft.left) ? config.leftCrossSlack : config.crossSlack) * xh;
+  // The shaft from the far end to [back] short of this one.
+  final far = identical(end, shaft.right) ? shaft.left : shaft.right;
+  final stopX = end.x - end.dx * back, stopY = end.y - end.dy * back;
+  for (final o in head) {
+    final pts = o.points;
+    for (var i = 1; i < pts.length; i++) {
+      if (_segmentsCross(far.x, far.y, stopX, stopY, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y)) return true;
+    }
+  }
+  return false;
+}
+
+/// Whether a stroke of [others] crosses [shaft]'s straight run.
+bool _crossed(_Shaft shaft, List<Stroke> others) {
+  final a = shaft.left, b = shaft.right;
+  for (final o in others) {
+    final pts = o.points;
+    for (var i = 1; i < pts.length; i++) {
+      if (_segmentsCross(a.x, a.y, b.x, b.y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y)) return true;
+    }
+  }
+  return false;
+}
+
+bool _segmentsCross(double ax, double ay, double bx, double by, double cx, double cy, double dx, double dy) {
+  double side(double px, double py, double qx, double qy, double rx, double ry) =>
+      (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  final d1 = side(ax, ay, bx, by, cx, cy), d2 = side(ax, ay, bx, by, dx, dy);
+  final d3 = side(cx, cy, dx, dy, ax, ay), d4 = side(cx, cy, dx, dy, bx, by);
+  return (d1 > 0) != (d2 > 0) && (d3 > 0) != (d4 > 0) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0;
+}
+
+/// Whether the ink attached at [end] was drawn before the shaft and is more
+/// than a flick (see [ArrowConfig.tailSlack]).
+bool _drawnFirst(_End end, double xh, ArrowConfig config) =>
+    !end.drawnAfter && end.trail > config.tailSlack * xh;
+
+/// The length of the pen's path through [pts].
+double _pathLength(List<InkPoint> pts) {
+  var sum = 0.0;
+  for (var i = 1; i < pts.length; i++) {
+    final dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y;
+    if (dx.isFinite && dy.isFinite) sum += math.sqrt(dx * dx + dy * dy);
+  }
+  return sum;
+}
 
 /// Whether [o] is a small stroke at [end] of [shaft]: all of it within the
 /// head's reach behind the end and [ArrowConfig.pastTip] beyond it.
@@ -289,7 +440,7 @@ bool _near(Stroke o, _Shaft shaft, _End end, double xh, ArrowConfig config) {
   final b = finiteBounds(o.points);
   if (b == null) return false;
   if (b.right - b.left > config.headStrokeMax * xh || b.bottom - b.top > config.headStrokeMax * xh) return false;
-  final reach = _reach(shaft, xh, config);
+  final reach = _reach(shaft, end, xh, config);
   for (final p in o.points) {
     if (!p.x.isFinite || !p.y.isFinite) continue;
     final (out, side) = end.frame(p.x, p.y);
@@ -302,7 +453,7 @@ bool _near(Stroke o, _Shaft shaft, _End end, double xh, ArrowConfig config) {
 /// beyond the end, with none, one or two of the [nearby] strokes; null when
 /// no such set draws a head (see [_isHead]).
 List<Stroke>? _headAt(_Shaft shaft, _End end, List<Stroke> nearby, double xh, ArrowConfig config) {
-  final reach = _reach(shaft, xh, config);
+  final reach = _reach(shaft, end, xh, config);
   // The shaft's own ink beyond this end counts while it stays near it.
   final attached = [
     for (final p in end.attached)
