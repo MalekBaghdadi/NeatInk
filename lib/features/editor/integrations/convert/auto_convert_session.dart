@@ -253,7 +253,11 @@ class AutoConvertSession with WidgetsBindingObserver {
   void _onFinished(FinishedStroke e) {
     if (_disposed || !_enabled || _away) return;
     final s = e.stroke;
-    if (s.tool != StrokeTool.pen || (s.shape != null && s.shape != ShapeKind.arrow)) return;
+    if (s.tool != StrokeTool.pen ||
+        !s.line.isSolid ||
+        (s.shape != null && s.shape != ShapeKind.arrow)) {
+      return;
+    }
     _generation++;
     _failurePaused = false;
     if (!controller.isPageEditable(e.pageId)) return;
@@ -363,7 +367,9 @@ class AutoConvertSession with WidgetsBindingObserver {
         final s = byId[id];
         if (s == null || _ignored.contains(id)) return false; // gone, or not ours
         // Snapped arrows too: one written between words becomes "→".
-        return s.tool == StrokeTool.pen && (s.shape == null || s.shape == ShapeKind.arrow);
+        return s.tool == StrokeTool.pen &&
+            s.line.isSolid &&
+            (s.shape == null || s.shape == ShapeKind.arrow);
       }
 
       final fresh = {for (final id in entry.value) if (usable(id)) id};

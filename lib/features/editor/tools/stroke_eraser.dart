@@ -14,12 +14,14 @@ import 'spatial_index.dart';
 /// it crossed.
 
 /// True when the eraser circle of [radius] swept from [from] to [to] touches
-/// the painted area of [stroke]: its polyline inflated by half its width.
-/// Works for single-point strokes (dots) and wide highlighters alike.
+/// the painted area of [stroke]: its polyline inflated by half its width (and
+/// by the wave crests or the second line of a line style, see
+/// [Stroke.paintHalfWidth]). Works for single-point strokes (dots) and wide
+/// highlighters alike.
 bool strokeTouchedBySweep(Stroke stroke, Vec2 from, Vec2 to, double radius) {
   final pts = stroke.points;
   if (pts.isEmpty) return false;
-  final reach = radius + stroke.size / 2;
+  final reach = radius + stroke.paintHalfWidth;
   final reach2 = reach * reach;
   if (!stroke.paintBounds.overlaps(sweepBounds(from, to, radius))) {
     return false;

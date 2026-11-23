@@ -190,11 +190,12 @@ T? _topItem<T>(
 }
 
 /// True when [p] is within [radius] of the painted outline of [s] (its
-/// polyline inflated by half its width).
+/// polyline inflated by half its width, plus the wave crests or second line
+/// of a line style, see [Stroke.paintHalfWidth]).
 bool strokeHitAt(Stroke s, Vec2 p, double radius) {
   final pts = s.points;
   if (pts.isEmpty) return false;
-  final reach = radius + s.size / 2;
+  final reach = radius + s.paintHalfWidth;
   final reach2 = reach * reach;
   if (pts.length == 1) return pts.first.pos.distanceSquaredTo(p) <= reach2;
   for (var i = 1; i < pts.length; i++) {

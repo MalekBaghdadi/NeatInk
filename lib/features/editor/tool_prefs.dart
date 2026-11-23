@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../ink/line_style.dart';
 import '../../ink/stroke.dart';
 import 'editor_tool.dart';
 
@@ -41,14 +42,29 @@ abstract final class ToolPresets {
 
   /// How many recently used custom colours are remembered.
   static const int maxRecentColors = 8;
+
+  /// The range of the pen settings' Thickness slider, in points.
+  static const double penSizeMin = 0.5;
+  static const double penSizeMax = 12.0;
+
+  /// The same for the highlighter.
+  static const double highlighterSizeMin = 4.0;
+  static const double highlighterSizeMax = 40.0;
 }
 
 /// Last-used pen settings.
+///
+/// [line], [concentration] and [horizontal] are the pen settings panel's
+/// "Line Style" (with its two wave sliders), "Concentration" and "Horizontal
+/// drawing"; stored files from before the panel just don't have them.
 class PenPrefs {
   const PenPrefs({
     this.color = 0xFF1E1E1E,
     this.size = 2.2,
     this.style = PenStyle.ballpoint,
+    this.line = LineSettings.solid,
+    this.concentration = 1.0,
+    this.horizontal = false,
   });
 
   factory PenPrefs.fromJson(Map<String, dynamic>? j) => j == null
@@ -57,6 +73,9 @@ class PenPrefs {
           color: (j['color'] as num?)?.toInt() ?? 0xFF1E1E1E,
           size: _positive(j['size'], 2.2),
           style: enumByName(PenStyle.values, j['style'], PenStyle.ballpoint),
+          line: LineSettings.fromJson(j['line']),
+          concentration: concentrationFrom(j['concentration']),
+          horizontal: j['horizontal'] == true,
         );
 
   /// ARGB.
@@ -66,19 +85,52 @@ class PenPrefs {
   final double size;
   final PenStyle style;
 
-  PenPrefs copyWith({int? color, double? size, PenStyle? style}) => PenPrefs(
+  /// Solid, dashed, dotted, wavy, zigzag or double, plus the wave sliders.
+  final LineSettings line;
+
+  /// Ink density, [minConcentration]..1.
+  final double concentration;
+
+  /// Draw only straight horizontal lines, from where the pen lands.
+  final bool horizontal;
+
+  PenPrefs copyWith({
+    int? color,
+    double? size,
+    PenStyle? style,
+    LineSettings? line,
+    double? concentration,
+    bool? horizontal,
+  }) =>
+      PenPrefs(
         color: color ?? this.color,
         size: size ?? this.size,
         style: style ?? this.style,
+        line: line ?? this.line,
+        concentration: concentration ?? this.concentration,
+        horizontal: horizontal ?? this.horizontal,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'color': color, 'size': size, 'style': style.name};
+  Map<String, dynamic> toJson() => {
+        'color': color,
+        'size': size,
+        'style': style.name,
+        'line': line.toJson(),
+        'concentration': concentration,
+        'horizontal': horizontal,
+      };
 }
 
-/// Last-used highlighter settings.
+/// Last-used highlighter settings (the same line settings as the pen).
 class HighlighterPrefs {
-  const HighlighterPrefs({this.color = 0xFFFFE600, this.size = 14, this.ends = HighlightEnds.square});
+  const HighlighterPrefs({
+    this.color = 0xFFFFE600,
+    this.size = 14,
+    this.ends = HighlightEnds.square,
+    this.line = LineSettings.solid,
+    this.concentration = 1.0,
+    this.horizontal = false,
+  });
 
   factory HighlighterPrefs.fromJson(Map<String, dynamic>? j) => j == null
       ? const HighlighterPrefs()
@@ -86,18 +138,47 @@ class HighlighterPrefs {
           color: (j['color'] as num?)?.toInt() ?? 0xFFFFE600,
           size: _positive(j['size'], 14),
           ends: enumByName(HighlightEnds.values, j['ends'], HighlightEnds.square),
+          line: LineSettings.fromJson(j['line']),
+          concentration: concentrationFrom(j['concentration']),
+          horizontal: j['horizontal'] == true,
         );
 
   final int color;
   final double size;
+  final LineSettings line;
 
   /// The ends of new highlights (v1.14.0).
   final HighlightEnds ends;
 
-  HighlighterPrefs copyWith({int? color, double? size, HighlightEnds? ends}) =>
-      HighlighterPrefs(color: color ?? this.color, size: size ?? this.size, ends: ends ?? this.ends);
+  /// Multiplies the highlighter's own 35% opacity.
+  final double concentration;
+  final bool horizontal;
 
-  Map<String, dynamic> toJson() => {'color': color, 'size': size, 'ends': ends.name};
+  HighlighterPrefs copyWith({
+    int? color,
+    double? size,
+    HighlightEnds? ends,
+    LineSettings? line,
+    double? concentration,
+    bool? horizontal,
+  }) =>
+      HighlighterPrefs(
+        color: color ?? this.color,
+        size: size ?? this.size,
+        ends: ends ?? this.ends,
+        line: line ?? this.line,
+        concentration: concentration ?? this.concentration,
+        horizontal: horizontal ?? this.horizontal,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'color': color,
+        'size': size,
+        'ends': ends.name,
+        'line': line.toJson(),
+        'concentration': concentration,
+        'horizontal': horizontal,
+      };
 }
 
 /// Last-used eraser settings.

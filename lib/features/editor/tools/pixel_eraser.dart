@@ -24,7 +24,7 @@ import 'tool_config.dart';
 /// Returns original stroke id → remaining pieces (possibly empty), ready for
 /// `SpliceStrokesCommand`. Strokes the sweep doesn't touch are absent.
 /// Pieces get fresh ids from [newId] and keep the original's tool, pen
-/// style, colour and size.
+/// style, colour, size, line style and concentration.
 Map<String, List<Stroke>> pixelErase({
   required Iterable<Stroke> candidates,
   required Vec2 from,
@@ -65,7 +65,11 @@ List<Stroke>? cutStroke(
   final widthFactor = stroke.isHighlighter
       ? config.pixelEraserHighlighterWidthFactor
       : config.pixelEraserPenWidthFactor;
-  final reach = radius + widthFactor * stroke.size / 2;
+  // A line style paints beyond the centre line (wave crests, the second
+  // line of a double line), and the cut must clear that too.
+  final reach = radius +
+      widthFactor * stroke.size / 2 +
+      stroke.line.extraHalfWidth(stroke.size);
 
   if (pts.length == 1) {
     final p = pts.first;
@@ -107,6 +111,8 @@ List<Stroke>? cutStroke(
         points: stroke.pointsAreRaw ? null : piecePoints,
         rawSize: stroke.rawSize,
         writtenAt: stroke.writtenAt,
+        line: stroke.line,
+        concentration: stroke.concentration,
       ));
     } else {
       pieces.add(Stroke(
@@ -118,6 +124,8 @@ List<Stroke>? cutStroke(
         size: stroke.size,
         raw: piecePoints,
         writtenAt: stroke.writtenAt,
+        line: stroke.line,
+        concentration: stroke.concentration,
       ));
     }
   }

@@ -280,3 +280,11 @@ Commits: `c72d25b` project brief; `6a7126b` M0 scaffold and shared contracts; th
 ## Original build plan (session 1)
 
 Done: NDK, tests in the real project, waves 1 and 2, the review pass and the v1.0.0 release (sessions 2-3). The current next steps are in "Start here" at the top of this section.
+
+## Session 16 (2026-11-23): v1.15.0 ruler, line styles and pen settings panel
+
+- Built from a TikTok the owner sent (Notability on iPad): a ruler to draw straight lines, then pens and a pen settings menu with line kinds. The design doc `docs/superpowers/specs/2026-11-23-ruler-and-line-styles-design.md` holds what the video shows (with measurements), the calls made and the work packages.
+- The local clone was still at v1.3.0 while GitHub was at v1.14.0 (tags v1.4.0 to v1.14.0 existed), so the work was merged onto the real `main`. 16 files conflicted, all of the "both sides added fields" kind (`Stroke`, `HighlighterPrefs`, `InkToolHandler`, `DocumentView`, the controller); the one real overlap was the colour-picker helpers, which upstream had added too (upstream's are kept).
+- Three parallel workers wrote it in about 40 minutes (about 12,000 lines, roughly 5,000 of them tests). Slow and token-heavy; a leaner approach next time.
+- Gate on the merged tree: `flutter analyze` clean; 2188 tests passed, 4 skipped; the only failure is `zip_archive_test` ("interoperates with Python's zipfile"), which needs Python on the PATH. Five test files (tour, tips, trash, cover picker, PDF import margins) need pdfrx to load, so they ran in a copy of the mirror with a stub `PdfrxEngine`.
+- The panel, chips, line styles and ruler were rendered to PNG and compared with video frames. Not tried on a tablet.

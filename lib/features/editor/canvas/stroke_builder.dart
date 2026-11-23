@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import '../../../ink/ink_point.dart';
+import '../../../ink/line_style.dart';
 import '../../../ink/stroke.dart';
 
 /// Accumulates the points of a stroke while it is being drawn.
@@ -84,6 +85,8 @@ class StrokeBuilder {
     HighlightEnds highlightEnds = HighlightEnds.square,
     required int color,
     required double size,
+    LineSettings line = LineSettings.solid,
+    double concentration = 1.0,
   }) =>
       Stroke(
         id: id,
@@ -94,5 +97,7 @@ class StrokeBuilder {
         size: size,
         raw: _points,
         writtenAt: writtenAt,
+        line: line,
+        concentration: concentration,
       );
 }

@@ -87,7 +87,9 @@ class ExportBuilder {
 /// The export instructions for one page.
 ///
 /// Layers follow the screen's paint order: background, paper ruling,
-/// images, highlighter, text boxes, pen ink (each group in list order).
+/// images, highlighter, text boxes, pen ink (each group in list order). A
+/// stroke with a line style (dashed, dotted, wavy, zigzag, double) is several
+/// polygons, as many as the screen fills for it.
 ExportPage buildExportPage(
   PageMeta page,
   PageContent content, {
@@ -97,10 +99,13 @@ ExportPage buildExportPage(
   final highlighter = <ExportPolygon>[];
   final ink = <ExportPolygon>[];
   for (final stroke in content.strokes) {
-    final outline = cachedStrokeOutline(stroke);
-    if (outline.length < 3) continue;
-    final polygon = ExportPolygon(_flatten(outline), strokeFillArgb(stroke));
-    (stroke.isHighlighter ? highlighter : ink).add(polygon);
+    // A line style makes several polygons (one per dash, dot or line), all
+    // filled with the stroke's colour.
+    final argb = strokeFillArgb(stroke);
+    final target = stroke.isHighlighter ? highlighter : ink;
+    for (final outline in cachedStrokeOutlines(stroke)) {
+      if (outline.length >= 3) target.add(ExportPolygon(_flatten(outline), argb));
+    }
   }
 
   final images = [

@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'dart:ui' show Offset;
+
 import 'package:uuid/uuid.dart';
 
 import '../../../document/commands.dart';
@@ -7,8 +10,10 @@ import '../editor_controller.dart';
 import '../editor_extensions.dart';
 import '../editor_tool.dart';
 import '../stroke_events.dart';
+import '../tools/shape_geometry.dart';
 import 'live_ink.dart';
 import 'stroke_builder.dart';
+import 'stroke_constraint.dart';
 
 /// Pen and highlighter: records the stroke on the live layer while drawing
 /// and commits it with one [AddStrokesCommand] when the pointer lifts.
@@ -16,6 +21,11 @@ import 'stroke_builder.dart';
 /// One stroke at a time: while a stroke is active, other pointers routed to
 /// this tool are not claimed. A stroke stays on the page it started on (its
 /// points are clamped to that page).
+///
+/// A stroke can be pulled onto a straight line by a [StrokeConstraint] (a
+/// ruler edge, or "Horizontal drawing"): it is then shown and committed like
+/// the shape tool's line, from where the pen landed to where it is now, with
+/// the real pen path kept as `raw`.
 class InkToolHandler extends CanvasToolHandler {
   InkToolHandler(this.controller, {Uuid? uuid}) : _uuid = uuid ?? const Uuid();
 
@@ -24,6 +34,11 @@ class InkToolHandler extends CanvasToolHandler {
 
   ActiveStroke? _active;
   LiveInk? _live;
+
+  /// Where the pen landed and where it is now, in viewport-local pixels (the
+  /// space a [StrokeConstraint] works in). Only read for a constrained stroke.
+  Offset _startLocal = Offset.zero;
+  Offset _lastLocal = Offset.zero;
 
   /// The stroke being drawn, if any.
   ActiveStroke? get active => _active;
@@ -37,6 +52,11 @@ class InkToolHandler extends CanvasToolHandler {
     if (page == null) return false;
     final isHighlighter = controller.tool == EditorTool.highlighter;
     final prefs = controller.toolPrefs;
+    // A ruler edge near the pen wins; otherwise "Horizontal drawing".
+    final horizontal =
+        isHighlighter ? prefs.highlighter.horizontal : prefs.pen.horizontal;
+    final constraint = controller.extensions.strokeConstraint?.call(e) ??
+        (horizontal ? HorizontalConstraint(e.localPosition.dy) : null);
     final builder = StrokeBuilder(
       pageWidth: page.width,
       pageHeight: page.height,
@@ -52,12 +72,18 @@ class InkToolHandler extends CanvasToolHandler {
       highlightEnds: isHighlighter ? prefs.highlighter.ends : HighlightEnds.square,
       color: isHighlighter ? prefs.highlighter.color : prefs.pen.color,
       size: isHighlighter ? prefs.highlighter.size : prefs.pen.size,
+      line: isHighlighter ? prefs.highlighter.line : prefs.pen.line,
+      concentration: isHighlighter
+          ? prefs.highlighter.concentration
+          : prefs.pen.concentration,
       builder: builder,
       pointer: e.pointer,
       live: live,
+      constraint: constraint,
     );
     _active = stroke;
     _live = live;
+    _startLocal = _lastLocal = e.localPosition;
     live.begin(stroke);
     controller.strokeEvents.emitStarted(StrokeStartedEvent(
       pageId: stroke.pageId,
@@ -92,6 +118,7 @@ class InkToolHandler extends CanvasToolHandler {
     final p = controller.viewport.localToPage(e.localPosition, index);
     stroke.builder.add(p.x, p.y, stroke.builder.last?.pressure ?? e.pressure,
         e.timeStamp);
+    _lastLocal = e.localPosition;
     _finish(stroke);
   }
 
@@ -128,7 +155,15 @@ class InkToolHandler extends CanvasToolHandler {
       return false;
     }
     final p = controller.viewport.localToPage(e.localPosition, index);
-    if (stroke.builder.add(p.x, p.y, e.pressure, e.timeStamp)) {
+    final added = stroke.builder.add(p.x, p.y, e.pressure, e.timeStamp);
+    _lastLocal = e.localPosition;
+    if (stroke.constraint != null) {
+      // The line can change even when the pen's own point didn't (the pen
+      // left the page, or moved off the line's direction). A new preview
+      // repaints by itself; with no line the hand-drawn ink shows instead.
+      stroke.preview = _constrainedLine(stroke)?.applyTo(stroke.current);
+      if (added && stroke.preview == null) _live?.markChanged();
+    } else if (added) {
       _live?.markChanged();
     }
     return true;
@@ -153,6 +188,34 @@ class InkToolHandler extends CanvasToolHandler {
         (p) => (p.x - first.x).abs() <= reach && (p.y - first.y).abs() <= reach);
   }
 
+  /// The line a constrained stroke is drawing: from where the pen landed to
+  /// where it is now, both pulled onto the constraint (so it stays straight
+  /// whatever the pen does) and cut to the page. Cut, not clamped per axis,
+  /// so a ruler that runs over the page edge still gives a straight line.
+  ///
+  /// Null for a stroke that isn't constrained, and when there is no line to
+  /// draw: a tap, or a line that lies outside the page. The stroke is then
+  /// kept as the pen drew it (a tap stays a dot).
+  ShapeResult? _constrainedLine(ActiveStroke stroke) {
+    final constraint = stroke.constraint;
+    final points = stroke.points;
+    final viewport = controller.viewport;
+    final index = viewport.layout.indexOfPage(stroke.pageId);
+    if (constraint == null || points.isEmpty || index < 0) return null;
+    final from = viewport.localToPage(constraint.project(_startLocal), index);
+    final to = viewport.localToPage(constraint.project(_lastLocal), index);
+    final visible =
+        clipSegmentToRect(from, to, stroke.page.width, stroke.page.height);
+    if (visible == null) return null;
+    return buildShape(
+      ShapeKind.line,
+      visible.$1,
+      visible.$2,
+      t0: points.first.t,
+      t1: points.last.t,
+    );
+  }
+
   void _finish(ActiveStroke active) {
     _active = null;
     final live = _live;
@@ -166,29 +229,34 @@ class InkToolHandler extends CanvasToolHandler {
         return;
       }
     }
-    final raw = active.builder.build(
+    final penStroke = active.builder.build(
       id: _uuid.v4(),
       tool: active.tool,
       penStyle: active.penStyle,
       highlightEnds: active.highlightEnds,
       color: active.color,
       size: active.size,
+      line: active.line,
+      concentration: active.concentration,
     );
+    // A constrained stroke commits as its straight line. `raw` stays the
+    // real pen path; only `points` and `shape` change.
+    final drawn = _constrainedLine(active)?.applyTo(penStroke) ?? penStroke;
     final hook = controller.extensions.liveStrokeHook;
     if (active.tool == StrokeTool.pen && controller.isPageEditable(active.pageId)) {
       for (final gesture in controller.extensions.strokeGestures) {
-        if (gesture(active.pageId, raw)) {
+        if (gesture(active.pageId, drawn)) {
           hook?.onCancel(active);
           live?.clear();
           return;
         }
       }
     }
-    var stroke = hook == null ? raw : hook.onFinish(active, raw);
+    var stroke = hook == null ? drawn : hook.onFinish(active, drawn);
     for (final finish in controller.extensions.strokeFinishers) {
       stroke = finish(active.pageId, stroke);
     }
-    if (stroke.id != raw.id) stroke = stroke.copyWith(id: raw.id);
+    if (stroke.id != drawn.id) stroke = stroke.copyWith(id: drawn.id);
     // Commit before clearing the live layer: both repaint in the same
     // frame, so the stroke never blinks.
     if (controller.isPageEditable(active.pageId)) {
@@ -219,4 +287,45 @@ class InkToolHandler extends CanvasToolHandler {
 
   @override
   void dispose() => cancelActive();
+}
+
+/// The part of the segment [a]–[b] that lies inside the rectangle
+/// `[0, width] × [0, height]` (Liang–Barsky), or null when none of it does or
+/// an end isn't a number. The ends of the result are on the segment, so its
+/// direction is kept.
+///
+/// A segment lying along a side of the rectangle counts as inside.
+(Vec2, Vec2)? clipSegmentToRect(Vec2 a, Vec2 b, double width, double height) {
+  if (!a.isFinite || !b.isFinite || !(width >= 0) || !(height >= 0)) {
+    return null;
+  }
+  final dx = b.x - a.x, dy = b.y - a.y;
+  var t0 = 0.0, t1 = 1.0;
+
+  // Narrows [t0, t1] to where `p * t <= q`; false once nothing is left.
+  bool clip(double p, double q) {
+    if (p == 0) return q >= 0; // parallel to this side: in or out for good
+    final r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      t0 = math.max(t0, r);
+    } else {
+      if (r < t0) return false;
+      t1 = math.min(t1, r);
+    }
+    return true;
+  }
+
+  if (!clip(-dx, a.x) ||
+      !clip(dx, width - a.x) ||
+      !clip(-dy, a.y) ||
+      !clip(dy, height - a.y)) {
+    return null;
+  }
+  // Rounding can leave an end a hair outside the rectangle.
+  Vec2 at(double t) => Vec2(
+        math.min(math.max(a.x + dx * t, 0.0), width),
+        math.min(math.max(a.y + dy * t, 0.0), height),
+      );
+  return (at(t0), at(t1));
 }

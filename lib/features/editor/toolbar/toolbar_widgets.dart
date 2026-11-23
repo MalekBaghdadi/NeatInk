@@ -38,7 +38,19 @@ String penStyleName(PenStyle style) => switch (style) {
       PenStyle.ballpoint => 'Ballpoint',
       PenStyle.fountain => 'Fountain pen',
       PenStyle.pencil => 'Pencil',
+      PenStyle.technical => 'Technical pen',
     };
+
+/// [argb] as the colour of a sample stroke on the toolbar: the pen colour
+/// itself, or the theme's text colour when it would be invisible (a white pen
+/// on a light toolbar, a black one on a dark toolbar).
+int inkSampleColor(ColorScheme scheme, int argb) {
+  final luminance = Color(argb).computeLuminance();
+  final visible = scheme.brightness == Brightness.light
+      ? luminance < 0.8
+      : luminance > 0.08;
+  return visible ? argb : scheme.onSurface.toARGB32();
+}
 
 /// Icon of a tool in the tool row.
 Widget toolIcon(EditorTool tool, {double size = 24}) => switch (tool) {

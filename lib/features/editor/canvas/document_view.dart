@@ -28,6 +28,8 @@ import 'viewport_controller.dart';
 ///   (one-finger pan with fling, two-finger pinch), the mouse draws with the
 ///   primary button. Touches are ignored while the pen is near the screen
 ///   (palm rejection).
+/// * A finger can be claimed first by the editor's touch interceptor (the
+///   ruler): it then neither navigates nor draws.
 class DocumentView extends StatefulWidget {
   const DocumentView({super.key, required this.controller});
 
@@ -72,6 +74,8 @@ class _DocumentViewState extends State<DocumentView>
   ({int pointer, Offset at, Duration time})? _tap;
   static const Duration _tapMaxDuration = Duration(milliseconds: 300);
   static const double _tapMaxTravelPx = 10;
+  /// Fingers claimed by the touch interceptor, with the latest event of each.
+  final Map<int, PointerEvent> _intercepted = {};
 
   ClampingScrollSimulation? _flingX;
   ClampingScrollSimulation? _flingY;
@@ -95,6 +99,7 @@ class _DocumentViewState extends State<DocumentView>
 
   @override
   void dispose() {
+    _cancelIntercepted();
     _viewport.attachViewportBox(null);
     _flingTicker.dispose();
     super.dispose();
@@ -222,6 +227,7 @@ class _DocumentViewState extends State<DocumentView>
 
     final touchBusy = _nav.isActive ||
         _toolPointers.values.any((t) => _isTouch(t.kind));
+    if (_interceptTouch(e, touchBusy: touchBusy)) return;
     final intent = router.classifyDown(
       kind: e.kind,
       buttons: e.buttons,
@@ -266,6 +272,51 @@ class _DocumentViewState extends State<DocumentView>
     return true;
   }
 
+  /// Offers a finger to the touch interceptor (the ruler) before it can
+  /// navigate or draw. True when it claimed the finger: the interceptor then
+  /// gets its moves, up and cancel, and nothing else sees them.
+  ///
+  /// Fingers the palm rejection ignores are never offered. A finger that
+  /// lands while others pan, pinch or draw is not offered either (a pinch
+  /// that happens to touch the ruler stays a pinch), unless the interceptor
+  /// is already running a gesture that the finger can join.
+  bool _interceptTouch(PointerDownEvent e, {required bool touchBusy}) {
+    final interceptor = _controller.extensions.touchInterceptor;
+    final router = _controller.inputRouter;
+    if (interceptor == null ||
+        !_isTouch(e.kind) ||
+        router.rejectsTouchAt(e.timeStamp) ||
+        (touchBusy && _intercepted.isEmpty)) {
+      return false;
+    }
+    if (!interceptor.onPointerDown(e, fingerDraws: router.drawWithFinger)) {
+      return false;
+    }
+    _intercepted[e.pointer] = e;
+    return true;
+  }
+
+  /// Takes every finger back from the touch interceptor with a cancel, and
+  /// ignores it until it lifts: the pen landed (the fingers are a resting
+  /// palm) or the view is going away.
+  void _cancelIntercepted([Duration? time]) {
+    if (_intercepted.isEmpty) return;
+    final interceptor = _controller.extensions.touchInterceptor;
+    final fingers = _intercepted.values.toList();
+    _intercepted.clear();
+    for (final last in fingers) {
+      _ignored.add(last.pointer);
+      interceptor?.onPointerCancel(PointerCancelEvent(
+        viewId: last.viewId,
+        timeStamp: time ?? last.timeStamp,
+        pointer: last.pointer,
+        kind: last.kind,
+        device: last.device,
+        position: last.position,
+      ).transformed(last.transform));
+    }
+  }
+
   void _startNavigation(PointerDownEvent e) {
     _tap = _isTouch(e.kind) && !_nav.isActive && _toolPointers.isEmpty
         ? (pointer: e.pointer, at: e.localPosition, time: e.timeStamp)
@@ -305,6 +356,7 @@ class _DocumentViewState extends State<DocumentView>
   /// Stop their navigation (undoing a pan that only just started), discard
   /// their finger strokes, and ignore them until they lift.
   void _rejectPalms(Duration penDownTime) {
+    _cancelIntercepted(penDownTime);
     if (_nav.isActive) {
       final start = _navStartTime, view = _navStartView;
       if (start != null &&
@@ -330,6 +382,11 @@ class _DocumentViewState extends State<DocumentView>
 
   void _onPointerMove(PointerMoveEvent e) {
     _controller.inputRouter.observe(e);
+    if (_intercepted.containsKey(e.pointer)) {
+      _intercepted[e.pointer] = e;
+      _controller.extensions.touchInterceptor?.onPointerMove(e);
+      return;
+    }
     final tp = _toolPointers[e.pointer];
     if (tp != null) {
       final ce = _canvasEvent(e, eraserButton: tp.last.isEraserButton);
@@ -346,6 +403,10 @@ class _DocumentViewState extends State<DocumentView>
     _controller.inputRouter.observe(e);
     _ignored.remove(e.pointer);
     _palms.remove(e.pointer);
+    if (_intercepted.remove(e.pointer) != null) {
+      _controller.extensions.touchInterceptor?.onPointerUp(e);
+      return;
+    }
     final tp = _toolPointers.remove(e.pointer);
     if (tp != null) {
       tp.handler.onPointerUp(_canvasEvent(e, eraserButton: tp.last.isEraserButton));
@@ -372,6 +433,10 @@ class _DocumentViewState extends State<DocumentView>
     if (_tap?.pointer == e.pointer) _tap = null;
     _ignored.remove(e.pointer);
     _palms.remove(e.pointer);
+    if (_intercepted.remove(e.pointer) != null) {
+      _controller.extensions.touchInterceptor?.onPointerCancel(e);
+      return;
+    }
     final tp = _toolPointers.remove(e.pointer);
     if (tp != null) {
       tp.handler.onPointerCancel(_canvasEvent(e, eraserButton: tp.last.isEraserButton));

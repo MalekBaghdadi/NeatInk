@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'affine2.dart';
 import 'ink_point.dart';
 import 'ink_rect.dart';
+import 'line_style.dart';
 import 'vec2.dart';
 
 enum StrokeTool { pen, highlighter }
@@ -17,6 +18,10 @@ enum PenStyle {
 
   /// Thin, slightly translucent, grainy look.
   pencil,
+
+  /// A fine-liner: one constant width whatever the pressure. The natural pen
+  /// for ruler lines and line styles.
+  technical,
 }
 
 /// The ends of a highlighter stroke (v1.14.0). Pens ignore this.
@@ -45,6 +50,9 @@ enum ShapeKind { line, arrow, rectangle, ellipse, triangle }
 /// Old files may still carry `wordId` / `tidy` keys (auto-tidy was removed);
 /// they are ignored on load and no longer written.
 ///
+/// [line] and [concentration] are optional in the file (`line`, `conc`): a
+/// stroke without them is a solid, fully opaque line, exactly as before.
+///
 /// Strokes are immutable so commands can keep old/new versions for undo and
 /// renderers can cache outlines per instance (e.g. with an `Expando`).
 class Stroke {
@@ -62,6 +70,8 @@ class Stroke {
     ShapeKind? shape,
     double? rawSize,
     int? writtenAt,
+    LineSettings line = LineSettings.solid,
+    double concentration = 1.0,
   }) {
     final r = raw is _FrozenPoints ? raw : _FrozenPoints(raw);
     final List<InkPoint> p;
@@ -70,11 +80,13 @@ class Stroke {
     } else {
       p = points is _FrozenPoints ? points : _FrozenPoints(points);
     }
-    return Stroke._(id, tool, penStyle, highlightEnds, color, size, r, p, shape, rawSize, writtenAt);
+    return Stroke._(id, tool, penStyle, highlightEnds, color, size, r, p, shape,
+        rawSize, writtenAt, line, concentrationFrom(concentration));
   }
 
-  Stroke._(this.id, this.tool, this.penStyle, this.highlightEnds, this.color, this.size, this.raw,
-      this.points, this.shape, this.rawSize, this.writtenAt);
+  Stroke._(this.id, this.tool, this.penStyle, this.highlightEnds, this.color, this.size,
+      this.raw, this.points, this.shape, this.rawSize, this.writtenAt, this.line,
+      this.concentration);
 
   factory Stroke.fromJson(Map<String, dynamic> j) {
     final raw = _pointsFromJson(j['raw']);
@@ -95,6 +107,8 @@ class Stroke {
           : _enumByName(ShapeKind.values, j['shape'], ShapeKind.line),
       rawSize: (j['rawSize'] as num?)?.toDouble(),
       writtenAt: (j['at'] as num?)?.toInt(),
+      line: LineSettings.fromJson(j['line']),
+      concentration: concentrationFrom(j['conc']),
     );
   }
 
@@ -123,6 +137,12 @@ class Stroke {
   /// wall clock; v1.12.0, null for older strokes). A lecture recording plays
   /// the notes back in step with the sound by it.
   final int? writtenAt;
+  /// Solid, dashed, dotted, wavy, zigzag or double (see [LineStyle]).
+  final LineSettings line;
+
+  /// Ink density in [minConcentration]..1 ("Concentration" in the pen
+  /// settings): multiplies the tool's own opacity.
+  final double concentration;
 
   bool get isHighlighter => tool == StrokeTool.highlighter;
 
@@ -132,8 +152,13 @@ class Stroke {
 
   late final InkRect bounds = InkRect.fromPoints(points.map((p) => p.pos));
 
-  /// [bounds] grown by half the stroke width, i.e. the painted area.
-  InkRect get paintBounds => bounds.inflate(size / 2 + 0.5);
+  /// How far the painted ink reaches to each side of the centre line: half
+  /// the pen width plus what the line style adds (wave crests, the second
+  /// line of a double line).
+  double get paintHalfWidth => size / 2 + line.extraHalfWidth(size);
+
+  /// [bounds] grown by [paintHalfWidth], i.e. the painted area.
+  InkRect get paintBounds => bounds.inflate(paintHalfWidth + 0.5);
 
   Iterable<Vec2> get positions => points.map((p) => p.pos);
 
@@ -151,6 +176,8 @@ class Stroke {
     double? rawSize,
     bool clearRawSize = false,
     int? writtenAt,
+    LineSettings? line,
+    double? concentration,
   }) =>
       Stroke(
         id: id ?? this.id,
@@ -164,6 +191,8 @@ class Stroke {
         shape: clearShape ? null : (shape ?? this.shape),
         rawSize: clearRawSize ? null : (rawSize ?? this.rawSize),
         writtenAt: writtenAt ?? this.writtenAt,
+        line: line ?? this.line,
+        concentration: concentration ?? this.concentration,
       );
 
   /// Applies [m] to both [raw] and [points] (lasso move/resize). The width
@@ -184,6 +213,8 @@ class Stroke {
       shape: shape,
       rawSize: rs == null || !scaleWidth ? rs : rs * m.meanScale,
       writtenAt: writtenAt,
+      line: line,
+      concentration: concentration,
     );
   }
 
@@ -201,6 +232,8 @@ class Stroke {
         if (shape != null) 'shape': shape!.name,
         if (rawSize != null) 'rawSize': rawSize,
         if (writtenAt != null) 'at': writtenAt,
+        if (!line.isSolid) 'line': line.toJson(),
+        if (concentration < 1.0) 'conc': (concentration * 1000).roundToDouble() / 1000,
       };
 
   static List<InkPoint> _pointsFromJson(dynamic j) => [

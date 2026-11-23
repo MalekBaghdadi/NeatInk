@@ -10,6 +10,7 @@ import '../../ink/stroke.dart';
 import '../../ink/vec2.dart';
 import 'canvas/ink_reveal.dart';
 import 'canvas/live_ink.dart';
+import 'canvas/stroke_constraint.dart';
 import 'canvas/viewport_controller.dart';
 import 'editor_controller.dart';
 import 'editor_tool.dart';
@@ -111,6 +112,31 @@ abstract class LiveStrokeHook {
   /// The stroke was discarded.
   void onCancel(ActiveStroke stroke) {}
 }
+
+/// Claims touch pointers before they scroll the page or draw: the ruler uses
+/// it so a finger on the ruler moves and rotates it instead of scrolling.
+///
+/// Only touches (fingers) are offered. The pen is never intercepted, and
+/// touches the palm rejection already ignores are never offered.
+abstract class TouchInterceptor {
+  /// A finger landed. Return true to claim it: it then gets
+  /// [onPointerMove] and exactly one of [onPointerUp] / [onPointerCancel]
+  /// instead of navigating or drawing. [fingerDraws] is true when the app is
+  /// set to draw with a finger, so the interceptor can leave the spots that
+  /// should draw to the tool.
+  bool onPointerDown(PointerDownEvent e, {required bool fingerDraws});
+
+  void onPointerMove(PointerMoveEvent e);
+
+  void onPointerUp(PointerUpEvent e);
+
+  void onPointerCancel(PointerCancelEvent e);
+}
+
+/// Called when a pen / highlighter stroke starts: return a constraint to pull
+/// the stroke onto a straight line (a ruler edge), or null to draw freely.
+typedef StrokeConstraintProvider = StrokeConstraint? Function(
+    CanvasPointerEvent e);
 
 /// Everything a page painter needs about the page being painted.
 class PagePaintContext {
@@ -290,6 +316,18 @@ class EditorExtensions {
   /// The printed text of PDF pages (for tidying highlights). Null without
   /// the PDF feature.
   PageTextWords? pageTextWords;
+  /// Claims finger touches before they navigate (the ruler).
+  TouchInterceptor? touchInterceptor;
+
+  /// Pulls a pen / highlighter stroke onto a straight line when it starts
+  /// (the ruler's edges). "Horizontal drawing" is handled by the ink tool
+  /// itself and applies when this returns null.
+  StrokeConstraintProvider? strokeConstraint;
+
+  /// Extra buttons shown after the tool buttons in the tool row (the ruler
+  /// toggle), in order.
+  final List<Widget Function(BuildContext context, EditorController controller)>
+      toolRowActions = [];
 
   /// Background for pages with a `pdfPageIndex`.
   PageBackgroundBuilder? pageBackgroundBuilder;

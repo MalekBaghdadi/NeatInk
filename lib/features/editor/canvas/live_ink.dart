@@ -3,9 +3,11 @@ import 'package:flutter/rendering.dart';
 
 import '../../../document/notebook_meta.dart';
 import '../../../ink/ink_point.dart';
+import '../../../ink/line_style.dart';
 import '../../../ink/stroke.dart';
 import '../../../render/stroke_outline.dart';
 import 'stroke_builder.dart';
+import 'stroke_constraint.dart';
 
 /// The stroke currently being drawn with the pen or highlighter.
 ///
@@ -24,6 +26,9 @@ class ActiveStroke {
     required this.builder,
     required this.pointer,
     required this._live,
+    this.line = LineSettings.solid,
+    this.concentration = 1.0,
+    this.constraint,
   });
 
   final String pageId;
@@ -39,6 +44,18 @@ class ActiveStroke {
 
   /// Width in points.
   final double size;
+
+  /// Solid, dashed, dotted, wavy, zigzag or double (see [LineSettings]).
+  final LineSettings line;
+
+  /// Ink density, see `Stroke.concentration`.
+  final double concentration;
+
+  /// Set while the stroke is pulled onto a straight line (a ruler edge or
+  /// "Horizontal drawing"): the ink tool then shows and commits a straight
+  /// line from where the pen landed instead of the hand-drawn path, and the
+  /// hold-to-snap hook stays out of it.
+  final StrokeConstraint? constraint;
   final StrokeBuilder builder;
 
   /// The Flutter pointer id drawing this stroke.
@@ -66,6 +83,8 @@ class ActiveStroke {
         highlightEnds: highlightEnds,
         color: color,
         size: size,
+        line: line,
+        concentration: concentration,
       );
       _snapshotLength = builder.length;
     }
@@ -144,6 +163,11 @@ class LiveInk {
 /// stroke isn't capped while the pen is still moving; the committed stroke
 /// then uses the cached complete outline. A shape preview is already
 /// complete, so it is drawn with `isComplete: true`.
+///
+/// A line style's pattern (dashes, dots, waves, a double line) is drawn at its
+/// nominal pitch while the stroke is still growing, so the marks already
+/// drawn stay put under the pen; the committed stroke fits the pattern to its
+/// final length. A snapped shape (hold-to-snap) is final and drawn fitted.
 class LiveInkPainter extends CustomPainter {
   LiveInkPainter(this.live, this.tool) : super(repaint: live.layer(tool));
 
@@ -161,12 +185,14 @@ class LiveInkPainter extends CustomPainter {
       return;
     }
     final s = active.displayed;
-    final outline = strokeOutline(s, isComplete: identical(s, active.preview));
-    if (outline.length < 3) return;
+    final growing = active.preview == null || active.constraint != null;
+    final outlines = strokeOutlines(s,
+        isComplete: identical(s, active.preview), fitPattern: !growing);
+    if (outlines.isEmpty) return;
     _paint.color = strokeFillColor(s);
     canvas.save();
     canvas.clipRect(Offset.zero & size);
-    canvas.drawPath(outlinePath(outline), _paint);
+    canvas.drawPath(outlinesPath(outlines), _paint);
     canvas.restore();
   }
 

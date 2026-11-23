@@ -8,6 +8,7 @@ import 'integrations/pdf/pdf_integration.dart';
 import 'integrations/recordings/recordings_integration.dart';
 import 'integrations/scribble/scribble_integration.dart';
 import 'integrations/search_index/search_index_integration.dart';
+import 'integrations/ruler/ruler_integration.dart';
 import 'integrations/shapes/shapes_integration.dart';
 import 'integrations/text_images/text_images_integration.dart';
 
@@ -20,6 +21,7 @@ final List<EditorIntegration> defaultEditorIntegrations = [
   textImagesIntegration,
   shapesIntegration,
   highlightIntegration,
+  rulerIntegration,
   pagesIntegration,
   pdfIntegration,
   convertIntegration,

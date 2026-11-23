@@ -5,6 +5,9 @@ import '../editor_controller.dart';
 import '../editor_tool.dart';
 import '../tool_prefs.dart';
 import 'color_picker_dialog.dart';
+import 'ink_settings_model.dart';
+import 'ink_settings_panel.dart';
+import 'line_style_widgets.dart';
 import 'toolbar_widgets.dart';
 
 /// The options shown in the tool row for the selected [tool]: colours,
@@ -22,8 +25,8 @@ Widget toolOptionsFor(
   };
 }
 
-/// Pen style, the eight preset colours, the custom colour picker and the
-/// three widths.
+/// Pen style, the eight preset colours, the custom colour picker, the three
+/// widths and the line-style pill that opens the pen settings panel.
 class PenOptions extends StatelessWidget {
   const PenOptions({super.key, required this.controller});
 
@@ -65,6 +68,15 @@ class PenOptions extends StatelessWidget {
             selected: ToolPresets.penWidths[i] == pen.size,
             onPressed: () => controller.setPenSize(ToolPresets.penWidths[i]),
           ),
+        const ToolbarDivider(),
+        LineStylePill(
+          key: const ValueKey('ink-settings-pill'),
+          line: pen.line,
+          color: inkSampleColor(Theme.of(context).colorScheme, pen.color),
+          tooltip: 'Pen settings',
+          onPressed: (context) =>
+              showInkSettingsPanel(context, InkSettingsModel.forPen(controller)),
+        ),
       ],
     );
   }
@@ -108,7 +120,8 @@ Future<void> pickCustomHighlighterColor(
 }
 
 /// The ends of the highlight (square, round, slanted), the six highlighter
-/// colours, any colour from the picker, and three widths.
+/// colours, any colour from the picker, three widths, and the
+/// line-style pill that opens the highlighter settings panel.
 class HighlighterOptions extends StatelessWidget {
   const HighlighterOptions({super.key, required this.controller});
 
@@ -150,6 +163,15 @@ class HighlighterOptions extends StatelessWidget {
             onPressed: () =>
                 controller.setHighlighterSize(ToolPresets.highlighterWidths[i]),
           ),
+        const ToolbarDivider(),
+        LineStylePill(
+          key: const ValueKey('ink-settings-pill'),
+          line: hl.line,
+          color: inkSampleColor(Theme.of(context).colorScheme, hl.color),
+          tooltip: 'Highlighter settings',
+          onPressed: (context) => showInkSettingsPanel(
+              context, InkSettingsModel.forHighlighter(controller)),
+        ),
       ],
     );
   }
@@ -274,12 +296,7 @@ class PenStyleMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final c = Color(color);
-    // A white pen on a light toolbar (or black on dark) would be invisible.
-    final visible = scheme.brightness == Brightness.light
-        ? c.computeLuminance() < 0.8
-        : c.computeLuminance() > 0.08;
-    final sample = visible ? color : scheme.onSurface.toARGB32();
+    final sample = inkSampleColor(scheme, color);
     return PopupMenuButton<PenStyle>(
       tooltip: 'Pen style: ${penStyleName(style)}',
       initialValue: style,

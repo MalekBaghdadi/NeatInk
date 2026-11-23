@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:perfect_freehand/perfect_freehand.dart';
 
 import '../ink/ink_point.dart';
+import '../ink/line_pattern.dart';
 import '../ink/stroke.dart';
 
 /// Stroke outlines shared by the screen renderer and the PDF exporter, so an
@@ -96,10 +97,21 @@ StrokeOptions strokeOptionsFor(Stroke s, {bool isComplete = true}) {
         simulatePressure: simulate,
         isComplete: isComplete,
       );
+    case PenStyle.technical:
+      // A fine-liner: one width, whatever the pressure.
+      return StrokeOptions(
+        size: s.size,
+        thinning: 0,
+        smoothing: 0.4,
+        streamline: 0.4,
+        simulatePressure: false,
+        isComplete: isComplete,
+      );
   }
 }
 
-/// Outline polygon of [s] in page coordinates.
+/// Outline polygon of [s] in page coordinates, drawn as one solid line
+/// whatever its [Stroke.line] (see [strokeOutlines] for the real thing).
 List<Offset> strokeOutline(Stroke s, {bool isComplete = true}) {
   final pts = s.points;
   if (pts.isEmpty) return const [];
@@ -171,16 +183,112 @@ List<Offset> _slantedEnd(Offset a, Offset b, Offset out) {
   return step >= 0 ? [a + u * step, b] : [a, b + u * -step];
 }
 
+/// Every outline polygon of [s] in page coordinates: one for a solid line,
+/// one per dash / dot / wave / line for the other [Stroke.line] styles. Fill
+/// them all with the same colour and [PathFillType.nonZero].
+///
+/// A solid stroke gives exactly [strokeOutline]. The other styles are drawn
+/// with one constant width whatever the pen (the marks come from
+/// `patternPolylines`, each outlined on its own), and every mark is complete,
+/// so [isComplete] does not matter to them. [fitPattern] false keeps a
+/// pattern's pitch from the start of the path instead of fitting it to the
+/// path's length; use it while a stroke is still growing.
+List<List<Offset>> strokeOutlines(Stroke s,
+    {bool isComplete = true, bool fitPattern = true}) {
+  if (s.points.isEmpty) return const [];
+  if (s.line.isSolid) {
+    final outline = strokeOutline(s, isComplete: isComplete);
+    return outline.isEmpty ? const [] : [outline];
+  }
+  if (!s.size.isFinite || s.size <= 0) return const [];
+  final roundEnds = !s.isHighlighter || s.highlightEnds == HighlightEnds.round;
+  final options = StrokeOptions(
+    size: s.size,
+    thinning: 0,
+    smoothing: _patternSmoothing,
+    streamline: 0,
+    simulatePressure: false,
+    // A pen's marks have round ends. A highlighter's are flat, like its solid
+    // lines, unless its ends are set to round.
+    start: StrokeEndOptions.start(cap: roundEnds),
+    end: StrokeEndOptions.end(cap: roundEnds),
+    isComplete: true,
+  );
+  final out = <List<Offset>>[];
+  for (final mark in patternPolylines(s.points, s.line, s.size,
+      smooth: s.shape == null, fit: fitPattern)) {
+    final polygon = _markOutline(mark, s.size, options);
+    if (polygon.length >= 3) out.add(polygon);
+  }
+  return out;
+}
+
+/// perfect_freehand's `smoothing` for the marks of a patterned line.
+const double _patternSmoothing = 0.2;
+
+/// A mark whose points all lie within this of its first is a dot.
+const double _dotExtent = 1e-3;
+
+/// A dot's circle is a polygon whose sides stray from the true circle by no
+/// more than this many points, with at least [_minDotSegments] sides.
+const double _dotFlatness = 0.05;
+const int _minDotSegments = 12;
+const int _maxDotSegments = 64;
+
+/// The outline of one dash, dot, wave or line.
+///
+/// perfect_freehand cannot draw a dot: given one point it adds a second one
+/// 1 pt away (down and to the right) and returns a lopsided capsule about
+/// 1.4 pt longer than the pen is wide. A one-point mark is therefore a
+/// circle of the pen's diameter, built by hand.
+List<Offset> _markOutline(
+    List<InkPoint> mark, double size, StrokeOptions options) {
+  final input = <PointVector>[
+    for (final p in mark)
+      if (p.isFinite) PointVector(p.x, p.y, p.pressure),
+  ];
+  if (input.isEmpty) return const [];
+  final first = input.first;
+  final isDot = input.every(
+      (p) => (p.x - first.x).abs() < _dotExtent && (p.y - first.y).abs() < _dotExtent);
+  if (isDot) return _dotOutline(first, size / 2);
+  return getStroke(input, options: options);
+}
+
+/// A circle of [radius] around [center], with enough sides to look round at
+/// that size.
+List<Offset> _dotOutline(Offset center, double radius) {
+  // A polygon of n sides strays about r * (pi / n)^2 / 2 from the circle. A
+  // multiple of four sides touches the circle at its left, right, top and
+  // bottom, so the dot is exactly one pen width across.
+  final needed = math.pi * math.sqrt(radius / (2 * _dotFlatness));
+  final sides = needed.isFinite ? needed.ceil() : _maxDotSegments;
+  final n = (math.min(math.max(sides, _minDotSegments), _maxDotSegments) + 3) ~/ 4 * 4;
+  return [
+    for (var i = 0; i < n; i++)
+      Offset(center.dx + radius * math.cos(2 * math.pi * i / n),
+          center.dy + radius * math.sin(2 * math.pi * i / n)),
+  ];
+}
+
 final Expando<Path> _pathCache = Expando('strokePath');
 final Expando<List<Offset>> _outlineCache = Expando('strokeOutline');
+final Expando<List<List<Offset>>> _outlinesCache = Expando('strokeOutlines');
 
-/// Cached outline of a finished stroke. Strokes are immutable, so the cache
-/// is keyed by instance and a changed stroke (a new instance) recomputes.
+/// Cached single outline of a finished stroke (solid lines only; the
+/// exporter and the painter use [cachedStrokeOutlines]). Strokes are
+/// immutable, so the cache is keyed by instance and a changed stroke (a new
+/// instance) recomputes.
 List<Offset> cachedStrokeOutline(Stroke s) =>
     _outlineCache[s] ??= strokeOutline(s);
 
-/// Cached fill path of a finished stroke (see [cachedStrokeOutline]).
-Path cachedStrokePath(Stroke s) => _pathCache[s] ??= outlinePath(cachedStrokeOutline(s));
+/// Cached [strokeOutlines] of a finished stroke.
+List<List<Offset>> cachedStrokeOutlines(Stroke s) =>
+    _outlinesCache[s] ??= strokeOutlines(s);
+
+/// Cached fill path of a finished stroke: all its outlines in one path.
+Path cachedStrokePath(Stroke s) =>
+    _pathCache[s] ??= outlinesPath(cachedStrokeOutlines(s));
 
 /// Builds a closed, non-zero-filled path from an outline polygon.
 Path outlinePath(List<Offset> outline) {
@@ -189,14 +297,24 @@ Path outlinePath(List<Offset> outline) {
   return path;
 }
 
-/// The colour to fill [s]'s outline with, including tool opacity.
+/// One non-zero-filled path holding every polygon of [outlines].
+Path outlinesPath(List<List<Offset>> outlines) {
+  final path = Path()..fillType = PathFillType.nonZero;
+  for (final outline in outlines) {
+    if (outline.length >= 3) path.addPolygon(outline, true);
+  }
+  return path;
+}
+
+/// The colour to fill [s]'s outlines with: its colour at the tool's opacity
+/// times the stroke's concentration.
 Color strokeFillColor(Stroke s) {
   final base = Color(s.color);
   final opacity = switch (s.tool) {
     StrokeTool.highlighter => highlighterOpacity,
     StrokeTool.pen => s.penStyle == PenStyle.pencil ? pencilOpacity : 1.0,
   };
-  return base.withValues(alpha: base.a * opacity);
+  return base.withValues(alpha: base.a * opacity * s.concentration);
 }
 
 /// ARGB int of [strokeFillColor], for the PDF exporter.

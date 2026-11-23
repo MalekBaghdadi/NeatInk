@@ -230,9 +230,10 @@ class RecognizedLine {
 ///    These [RecognizedLine.words] are only a fallback: the recogniser reads
 ///    whole lines ([RecognizedLine.inkStrokes]).
 ///
-/// Highlighter strokes and shapes are ignored (except a snapped arrow along
-/// the line: see `arrows.dart`). Lines come top to bottom,
-/// words left to right; every pen stroke ends up in exactly one line.
+/// Highlighter strokes, shapes and styled lines (dashed, wavy, double...) are
+/// ignored (except a snapped arrow along the line: see `arrows.dart`). Lines
+/// come top to bottom, words left to right; every pen stroke ends up in
+/// exactly one line.
 List<RecognizedLine> groupStrokes(
   List<Stroke> strokes, {
   double? expectedXHeight,
@@ -241,8 +242,13 @@ List<RecognizedLine> groupStrokes(
   final items = <_Item>[];
   for (final s in strokes) {
     // Shapes are drawings, except an arrow written in a line of text, which
-    // becomes "→" (arrows.dart).
-    if (s.tool != StrokeTool.pen || (s.shape != null && !_levelArrow(s))) continue;
+    // becomes "→" (arrows.dart). Styled lines (dashed, wavy, double...) are
+    // drawings too.
+    if (s.tool != StrokeTool.pen ||
+        !s.line.isSolid ||
+        (s.shape != null && !_levelArrow(s))) {
+      continue;
+    }
     final b = finiteBounds(s.points);
     if (b == null) continue;
     items.add(_Item(s, b, items.length));

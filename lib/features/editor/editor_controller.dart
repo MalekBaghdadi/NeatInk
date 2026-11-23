@@ -7,6 +7,7 @@ import '../../document/commands.dart';
 import '../../document/notebook_doc.dart';
 import '../../document/notebook_meta.dart';
 import '../../document/page_content.dart';
+import '../../ink/line_style.dart' show LineSettings;
 import '../../ink/stroke.dart' show HighlightEnds, PenStyle;
 import '../../storage/autosave.dart';
 import '../../storage/notebook_repository.dart';
@@ -520,6 +521,31 @@ class EditorController extends ChangeNotifier {
   void setPenStyle(PenStyle style) =>
       updateToolPrefs((p) => p.copyWith(pen: p.pen.copyWith(style: style)));
 
+  /// The pen settings panel's "Line Style" and wave sliders.
+  void setPenLine(LineSettings line) =>
+      updateToolPrefs((p) => p.copyWith(pen: p.pen.copyWith(line: line)));
+
+  /// The pen settings panel's "Concentration" (ink density).
+  void setPenConcentration(double value) => updateToolPrefs(
+      (p) => p.copyWith(pen: p.pen.copyWith(concentration: value)));
+
+  /// The pen settings panel's "Horizontal drawing" switch.
+  void setPenHorizontal(bool value) => updateToolPrefs(
+      (p) => p.copyWith(pen: p.pen.copyWith(horizontal: value)));
+
+  /// The panel's "Reset": thickness, concentration, line style and
+  /// horizontal drawing back to their defaults. The colour and the pen
+  /// style (which pen it is) stay.
+  void resetPen() => updateToolPrefs((p) {
+        const d = PenPrefs();
+        return p.copyWith(
+            pen: p.pen.copyWith(
+                size: d.size,
+                line: d.line,
+                concentration: d.concentration,
+                horizontal: d.horizontal));
+      });
+
   /// Sets the highlighter colour; a [custom] one joins the recent colours.
   void setHighlighterColor(int argb, {bool custom = false}) => updateToolPrefs((p) {
         final next = p.copyWith(highlighter: p.highlighter.copyWith(color: argb));
@@ -531,6 +557,25 @@ class EditorController extends ChangeNotifier {
 
   void setHighlighterEnds(HighlightEnds ends) => updateToolPrefs(
       (p) => p.copyWith(highlighter: p.highlighter.copyWith(ends: ends)));
+  void setHighlighterLine(LineSettings line) => updateToolPrefs(
+      (p) => p.copyWith(highlighter: p.highlighter.copyWith(line: line)));
+
+  void setHighlighterConcentration(double value) => updateToolPrefs((p) =>
+      p.copyWith(highlighter: p.highlighter.copyWith(concentration: value)));
+
+  void setHighlighterHorizontal(bool value) => updateToolPrefs(
+      (p) => p.copyWith(highlighter: p.highlighter.copyWith(horizontal: value)));
+
+  /// See [resetPen]; keeps the highlighter's colour.
+  void resetHighlighter() => updateToolPrefs((p) {
+        const d = HighlighterPrefs();
+        return p.copyWith(
+            highlighter: p.highlighter.copyWith(
+                size: d.size,
+                line: d.line,
+                concentration: d.concentration,
+                horizontal: d.horizontal));
+      });
 
   void setEraserMode(EraserMode mode) => updateToolPrefs(
       (p) => p.copyWith(eraser: p.eraser.copyWith(mode: mode)));

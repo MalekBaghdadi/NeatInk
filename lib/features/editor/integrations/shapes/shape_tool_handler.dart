@@ -58,6 +58,8 @@ class ShapeToolHandler extends CanvasToolHandler {
       penStyle: pen.style,
       color: pen.color,
       size: pen.size,
+      line: pen.line,
+      concentration: pen.concentration,
       builder: builder,
       pointer: e.pointer,
       live: live,
@@ -159,6 +161,8 @@ class ShapeToolHandler extends CanvasToolHandler {
         penStyle: active.penStyle,
         color: active.color,
         size: active.size,
+        line: active.line,
+        concentration: active.concentration,
       );
       final stroke = result.applyTo(raw);
       controller.execute(

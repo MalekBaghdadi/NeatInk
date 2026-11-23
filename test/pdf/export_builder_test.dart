@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,9 +7,12 @@ import 'package:neatink/document/page_content.dart';
 import 'package:neatink/document/page_items.dart';
 import 'package:neatink/document/paper.dart';
 import 'package:neatink/ink/ink_point.dart';
+import 'package:neatink/ink/line_style.dart';
 import 'package:neatink/ink/stroke.dart';
 import 'package:neatink/pdf/export_builder.dart';
 import 'package:neatink/render/paper_painter.dart' show pdfMarginEdgeColor;
+import 'package:neatink/pdf/pdf_export_request.dart';
+import 'package:neatink/render/stroke_outline.dart';
 
 Stroke stroke(String id, StrokeTool tool, {int color = 0xFF112233}) => Stroke(
       id: id,
@@ -74,6 +78,109 @@ void main() {
         expect(xy[i], inInclusiveRange(10, 125));
         expect(xy[i + 1], inInclusiveRange(30, 55));
       }
+    });
+
+    group('line styles', () {
+      /// A 200 pt horizontal pen line, in [style].
+      Stroke styled(
+        String id,
+        LineStyle style, {
+        StrokeTool tool = StrokeTool.pen,
+        double concentration = 1,
+        int color = 0xFF112233,
+      }) =>
+          Stroke(
+            id: id,
+            tool: tool,
+            penStyle: PenStyle.technical,
+            color: color,
+            size: 2,
+            raw: [
+              for (var x = 0.0; x <= 200; x += 2) InkPoint(x, 100, 0.5, x.round()),
+            ],
+            line: LineSettings(style: style),
+            concentration: concentration,
+          );
+
+      ExportPage export(List<Stroke> strokes) => buildExportPage(
+            const PageMeta(id: 'p'),
+            PageContent(strokes: strokes),
+            exportPaperLines: false,
+            assetPath: assetPath,
+          );
+
+      test('a dashed stroke exports one polygon per dash, all one colour', () {
+        final page = export([styled('a', LineStyle.dashed)]);
+        expect(page.ink.length, greaterThan(10));
+        expect(page.highlighter, isEmpty);
+        for (final polygon in page.ink) {
+          expect(polygon.xy.length ~/ 2, greaterThanOrEqualTo(3));
+          expect(polygon.color, 0xFF112233);
+        }
+        // Left to right, the dashes cover the whole 200 pt (plus the pen).
+        expect(page.ink.first.xy.reduce(math.min), closeTo(-1, 0.1));
+        expect(page.ink.last.xy.reduce(math.max), closeTo(201, 0.1));
+      });
+
+      test('the polygons are exactly the ones the screen fills', () {
+        for (final style in LineStyle.values) {
+          final s = styled('a', style);
+          final page = export([s]);
+          final screen = cachedStrokeOutlines(s);
+          expect(page.ink, hasLength(screen.length), reason: style.name);
+          for (var i = 0; i < screen.length; i++) {
+            expect(page.ink[i].xy.length, screen[i].length * 2,
+                reason: '${style.name} #$i');
+            expect(page.ink[i].xy[0], closeTo(screen[i].first.dx, 1e-3));
+            expect(page.ink[i].xy[1], closeTo(screen[i].first.dy, 1e-3));
+          }
+        }
+      });
+
+      test('dotted, wavy and double strokes export their own polygons', () {
+        expect(export([styled('a', LineStyle.dotted)]).ink.length, greaterThan(30));
+        expect(export([styled('a', LineStyle.wavy)]).ink, hasLength(1));
+        expect(export([styled('a', LineStyle.zigzag)]).ink, hasLength(1));
+        expect(export([styled('a', LineStyle.parallel)]).ink, hasLength(2));
+        expect(export([styled('a', LineStyle.solid)]).ink, hasLength(1));
+      });
+
+      test('the concentration is in the colour of every polygon', () {
+        final page = export([styled('a', LineStyle.dashed, concentration: 0.5)]);
+        expect(page.ink, isNotEmpty);
+        for (final polygon in page.ink) {
+          expect(polygon.color >>> 24, closeTo(128, 1));
+          expect(polygon.color & 0xFFFFFF, 0x112233);
+        }
+      });
+
+      test('a styled highlighter goes under the text with its own opacity', () {
+        final page = export([
+          styled('a', LineStyle.dashed,
+              tool: StrokeTool.highlighter, concentration: 0.5, color: 0xFFFFE600),
+          styled('b', LineStyle.wavy),
+        ]);
+        expect(page.ink, hasLength(1));
+        expect(page.highlighter.length, greaterThan(5));
+        for (final polygon in page.highlighter) {
+          // 35% of 50%
+          expect(polygon.color >>> 24, closeTo(255 * 0.35 * 0.5, 1));
+        }
+      });
+
+      test('strokes keep their order and a solid one is one polygon, as before', () {
+        final page = export([
+          styled('a', LineStyle.solid, color: 0xFF000001),
+          styled('b', LineStyle.dashed, color: 0xFF000002),
+          styled('c', LineStyle.solid, color: 0xFF000003),
+        ]);
+        final colors = [for (final p in page.ink) p.color & 0xFFFFFF];
+        expect(colors.first, 1);
+        expect(colors.last, 3);
+        expect(colors.where((c) => c == 2).length, greaterThan(5));
+        expect(colors.where((c) => c == 1), hasLength(1));
+        expect(colors.indexOf(2), 1);
+      });
     });
 
     test('a stroke without points produces no polygon', () {

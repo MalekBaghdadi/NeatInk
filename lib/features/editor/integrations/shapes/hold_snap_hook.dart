@@ -65,6 +65,9 @@ class HoldSnapHook extends LiveStrokeHook {
   @override
   void onStart(ActiveStroke stroke) {
     _end();
+    // A stroke pulled onto a ruler edge or a horizontal line is a straight
+    // line already; snapping it to another shape would fight the constraint.
+    if (stroke.constraint != null) return;
     if (!controller.settings.shapeSnapEnabled) return;
     _stroke = stroke;
     _detector = HoldDetector(config: config);
